@@ -5,6 +5,7 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 import io
 import json
+import os
 
 def download_image_from_url(url):
     """Download image from URL (Google Drive or direct link)"""
@@ -29,11 +30,25 @@ def create_text_block(text, width=760):
     temp_img = Image.new('RGBA', (width, 500), (255, 255, 255, 0))
     draw = ImageDraw.Draw(temp_img)
     
-    try:
-        # Try to use a nice font
-        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", 28)
-    except:
-        # Fallback to default
+    # Font selection with fallbacks
+    font = None
+    font_paths = [
+        "/tmp/NanumMyeongjo.ttf",  # Downloaded Korean font
+        "/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+    ]
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                font = ImageFont.truetype(font_path, 28)
+                break
+            except:
+                continue
+    
+    # Fallback to default if no font found
+    if font is None:
         font = ImageFont.load_default()
     
     # Word wrap
@@ -43,8 +58,14 @@ def create_text_block(text, width=760):
     
     for word in words:
         test_line = ' '.join(current_line + [word])
-        bbox = draw.textbbox((0, 0), test_line, font=font)
-        if bbox[2] > width - 40:  # 40px padding
+        try:
+            bbox = draw.textbbox((0, 0), test_line, font=font)
+            text_width = bbox[2] - bbox[0]
+        except:
+            # Fallback for older PIL versions
+            text_width = draw.textsize(test_line, font=font)[0]
+            
+        if text_width > width - 40:  # 40px padding
             if current_line:
                 lines.append(' '.join(current_line))
                 current_line = [word]
@@ -67,8 +88,13 @@ def create_text_block(text, width=760):
     # Draw text centered
     y = 20
     for line in lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        text_width = bbox[2] - bbox[0]
+        try:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            text_width = bbox[2] - bbox[0]
+        except:
+            # Fallback for older PIL versions
+            text_width = draw.textsize(line, font=font)[0]
+            
         x = (width - text_width) // 2
         draw.text((x, y), line, font=font, fill=(80, 80, 80))
         y += line_height
@@ -155,13 +181,26 @@ def handler(event):
         # 3. Add subtle page indicator
         draw = ImageDraw.Draw(detail_page)
         page_text = f"- {image_number} -"
-        try:
-            small_font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 16)
-        except:
+        
+        # Use same font selection logic
+        small_font = None
+        for font_path in ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
+            if os.path.exists(font_path):
+                try:
+                    small_font = ImageFont.truetype(font_path, 16)
+                    break
+                except:
+                    continue
+        
+        if small_font is None:
             small_font = ImageFont.load_default()
         
-        bbox = draw.textbbox((0, 0), page_text, font=small_font)
-        text_width = bbox[2] - bbox[0]
+        try:
+            bbox = draw.textbbox((0, 0), page_text, font=small_font)
+            text_width = bbox[2] - bbox[0]
+        except:
+            text_width = draw.textsize(page_text, font=small_font)[0]
+            
         draw.text((PAGE_WIDTH//2 - text_width//2, TOTAL_HEIGHT - 50), 
                  page_text, fill=(200, 200, 200), font=small_font)
         
