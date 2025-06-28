@@ -6,15 +6,14 @@ from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 import io
 import json
 import os
+import re
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
     try:
-        # Try new method first (PIL 8.0+)
         bbox = draw.textbbox((0, 0), text, font=font)
         return bbox[2] - bbox[0], bbox[3] - bbox[1]
     except AttributeError:
-        # Fall back to old method
         return draw.textsize(text, font=font)
 
 def create_text_block(text, width=760):
@@ -22,15 +21,13 @@ def create_text_block(text, width=760):
     if not text:
         return Image.new('RGBA', (1, 1), (255, 255, 255, 0))
     
-    # Create temporary image for text
     temp_img = Image.new('RGBA', (width, 500), (255, 255, 255, 0))
     draw = ImageDraw.Draw(temp_img)
     
-    # Font selection with fallbacks
     font = None
     font_size = 28
     font_paths = [
-        "/tmp/NanumMyeongjo.ttf",  # Downloaded Korean font
+        "/tmp/NanumMyeongjo.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
@@ -45,12 +42,8 @@ def create_text_block(text, width=760):
             except:
                 continue
     
-    # Fallback to default if no font found
     if font is None:
-        try:
-            font = ImageFont.load_default()
-        except:
-            font = ImageFont.load_default()
+        font = ImageFont.load_default()
     
     # Word wrap
     words = text.split()
@@ -61,7 +54,7 @@ def create_text_block(text, width=760):
         test_line = ' '.join(current_line + [word])
         text_width, _ = get_text_dimensions(draw, test_line, font)
             
-        if text_width > width - 40:  # 40px padding
+        if text_width > width - 40:
             if current_line:
                 lines.append(' '.join(current_line))
                 current_line = [word]
@@ -73,15 +66,12 @@ def create_text_block(text, width=760):
     if current_line:
         lines.append(' '.join(current_line))
     
-    # Calculate text height
     line_height = 40
     text_height = max(len(lines) * line_height + 40, 100)
     
-    # Create actual text image
     text_img = Image.new('RGBA', (width, text_height), (255, 255, 255, 0))
     draw = ImageDraw.Draw(text_img)
     
-    # Draw text centered
     y = 20
     for line in lines:
         text_width, _ = get_text_dimensions(draw, line, font)
@@ -91,42 +81,111 @@ def create_text_block(text, width=760):
     
     return text_img
 
-def get_image_from_input(input_data):
-    """Get image from base64 string (from Google Script)"""
+def extract_file_id_from_url(url):
+    """Extract Google Drive file ID from various URL formats"""
+    if not url:
+        return None
+        
+    patterns = [
+        r'/file/d/([a-zA-Z0-9_-]+)',
+        r'id=([a-zA-Z0-9_-]+)',
+        r'/d/([a-zA-Z0-9_-]+)',
+        r'^([a-zA-Z0-9_-]{25,})$'
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    
+    return None
+
+def download_image_from_google_drive(url):
+    """Download image from Google Drive URL"""
     try:
-        # Priority 1: Direct base64 fields
-        image_base64 = None
-        base64_fields = [
-            'image_base64', 
-            'image_base64_with_padding',
-            'imageBase64', 
-            'base64', 
-            'image_data',
-            'image'
+        print(f"Processing Google Drive URL: {url}")
+        
+        # Extract file ID
+        file_id = extract_file_id_from_url(url)
+        if not file_id:
+            raise ValueError(f"Could not extract file ID from URL: {url}")
+        
+        print(f"Extracted file ID: {file_id}")
+        
+        # Try multiple download URLs
+        download_urls = [
+            f'https://drive.google.com/uc?export=download&id={file_id}',
+            f'https://drive.google.com/uc?export=download&id={file_id}&confirm=t',
+            f'https://docs.google.com/uc?export=download&id={file_id}'
         ]
         
-        for field in base64_fields:
-            if field in input_data and input_data[field]:
-                image_base64 = input_data[field]
-                print(f"Found base64 data in field: {field}")
-                break
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
         
-        if not image_base64:
-            raise ValueError("No base64 image data found")
+        session = requests.Session()
         
-        print(f"Base64 data length: {len(image_base64)}")
+        for download_url in download_urls:
+            try:
+                print(f"Trying: {download_url}")
+                response = session.get(download_url, headers=headers, stream=True, timeout=30)
+                
+                # Check if we got an image
+                content_type = response.headers.get('content-type', '')
+                if response.status_code == 200 and ('image' in content_type or len(response.content) > 1000):
+                    img = Image.open(BytesIO(response.content))
+                    print(f"Successfully downloaded image: {img.size}")
+                    return img
+                    
+            except Exception as e:
+                print(f"Failed with URL: {download_url}, Error: {str(e)}")
+                continue
         
-        # Add padding if needed
-        missing_padding = len(image_base64) % 4
-        if missing_padding:
-            image_base64 += '=' * (4 - missing_padding)
-            print(f"Added {4 - missing_padding} padding characters")
+        raise Exception("Failed to download from all URLs")
         
-        # Decode base64
-        image_data = base64.b64decode(image_base64)
-        img = Image.open(BytesIO(image_data))
-        print(f"Image decoded successfully: {img.size}")
-        return img
+    except Exception as e:
+        print(f"Error downloading from Google Drive: {str(e)}")
+        raise
+
+def get_image_from_input(input_data):
+    """Get image from URL or base64"""
+    try:
+        # Check for URL first
+        image_url = (input_data.get('image_url') or 
+                    input_data.get('imageUrl') or 
+                    input_data.get('url') or 
+                    input_data.get('webContentLink') or '')
+        
+        if image_url:
+            print(f"Found image URL: {image_url}")
+            if 'drive.google.com' in image_url or 'docs.google.com' in image_url:
+                return download_image_from_google_drive(image_url)
+            else:
+                # Regular URL download
+                response = requests.get(image_url, timeout=30)
+                return Image.open(BytesIO(response.content))
+        
+        # Check for base64
+        image_base64 = (input_data.get('image_base64') or 
+                       input_data.get('base64') or 
+                       input_data.get('image_data') or '')
+        
+        if image_base64:
+            print(f"Using base64 data, length: {len(image_base64)}")
+            # Add padding if needed
+            missing_padding = len(image_base64) % 4
+            if missing_padding:
+                image_base64 += '=' * (4 - missing_padding)
+            
+            image_data = base64.b64decode(image_base64)
+            return Image.open(BytesIO(image_data))
+        
+        raise ValueError("No image URL or base64 data provided")
         
     except Exception as e:
         print(f"Error getting image: {e}")
@@ -135,24 +194,20 @@ def get_image_from_input(input_data):
 def handler(event):
     """Create individual jewelry detail page"""
     try:
-        # Debug: Print event structure
-        print(f"=== EVENT STRUCTURE ===")
-        print(f"Event type: {type(event)}")
-        print(f"Event keys: {event.keys() if isinstance(event, dict) else 'Not a dict'}")
+        print(f"=== Detail Page Handler Started ===")
         
         # Find input data
         input_data = event.get('input', event)
-        print(f"Input data keys: {input_data.keys() if isinstance(input_data, dict) else 'Not a dict'}")
+        print(f"Input keys: {list(input_data.keys())}")
         
         # Get parameters
         claude_advice = input_data.get('claude_advice', '')
         image_number = int(input_data.get('image_number', 1))
-        file_name = input_data.get('file_name', '')
+        file_name = input_data.get('file_name', 'unknown.jpg')
         
         print(f"Processing {file_name} (Image #{image_number})")
-        print(f"Claude advice: {claude_advice[:50]}..." if claude_advice else "No Claude advice")
         
-        # Get image from base64
+        # Get image
         img = get_image_from_input(input_data)
         
         # Design settings based on image number
@@ -185,7 +240,6 @@ def handler(event):
         height_ratio = IMAGE_HEIGHT / img.height
         temp_width = int(img.width * height_ratio)
         
-        # Use compatible resampling filter
         try:
             resample_filter = Image.Resampling.LANCZOS
         except AttributeError:
@@ -200,7 +254,7 @@ def handler(event):
         else:
             img_cropped = img_resized
         
-        # Apply subtle enhancement for luxury feel
+        # Apply subtle enhancement
         if claude_advice and ('luxury' in claude_advice.lower() or 'premium' in claude_advice.lower() or 
                              '프리미엄' in claude_advice or '럭셔리' in claude_advice):
             enhancer = ImageEnhance.Brightness(img_cropped)
@@ -212,7 +266,7 @@ def handler(event):
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, TOP_MARGIN))
         
-        # Add Claude's advice text (if available)
+        # Add Claude's advice text
         if claude_advice and claude_advice.strip():
             text_img = create_text_block(claude_advice, CONTENT_WIDTH)
             if text_img.width > 1 and text_img.height > 1:
@@ -224,11 +278,10 @@ def handler(event):
                 else:
                     detail_page.paste(text_img, (text_x, text_y))
         
-        # Add subtle page indicator
+        # Add page indicator
         draw = ImageDraw.Draw(detail_page)
         page_text = f"- {image_number} -"
         
-        # Use same font selection logic
         small_font = None
         for font_path in ["/tmp/NanumMyeongjo.ttf", 
                          "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
@@ -255,8 +308,8 @@ def handler(event):
         # Remove padding for Make.com
         result_base64_no_padding = result_base64.rstrip('=')
         
-        print(f"Successfully created detail page for {file_name}")
-        print(f"Output base64 length: {len(result_base64_no_padding)}")
+        print(f"Successfully created detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
+        print(f"Output length: {len(result_base64_no_padding)}")
         
         return {
             "output": {
