@@ -7,23 +7,6 @@ import io
 import json
 import os
 
-def download_image_from_url(url):
-    """Download image from URL (Google Drive or direct link)"""
-    try:
-        # Handle Google Drive URLs
-        if 'drive.google.com' in url:
-            # Convert to direct download link
-            if '/file/d/' in url:
-                file_id = url.split('/file/d/')[1].split('/')[0]
-                url = f'https://drive.google.com/uc?export=download&id={file_id}'
-        
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        return Image.open(BytesIO(response.content))
-    except Exception as e:
-        print(f"Error downloading image from {url}: {e}")
-        raise
-
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
     try:
@@ -48,7 +31,8 @@ def create_text_block(text, width=760):
     font_size = 28
     font_paths = [
         "/tmp/NanumMyeongjo.ttf",  # Downloaded Korean font
-        "/usr/share/fonts/truetype/nanum/NanumMyeongjo.ttf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
     ]
@@ -64,7 +48,6 @@ def create_text_block(text, width=760):
     # Fallback to default if no font found
     if font is None:
         try:
-            # Try to make default font bigger
             font = ImageFont.load_default()
         except:
             font = ImageFont.load_default()
@@ -108,20 +91,69 @@ def create_text_block(text, width=760):
     
     return text_img
 
+def get_image_from_input(input_data):
+    """Get image from base64 string (from Google Script)"""
+    try:
+        # Priority 1: Direct base64 fields
+        image_base64 = None
+        base64_fields = [
+            'image_base64', 
+            'image_base64_with_padding',
+            'imageBase64', 
+            'base64', 
+            'image_data',
+            'image'
+        ]
+        
+        for field in base64_fields:
+            if field in input_data and input_data[field]:
+                image_base64 = input_data[field]
+                print(f"Found base64 data in field: {field}")
+                break
+        
+        if not image_base64:
+            raise ValueError("No base64 image data found")
+        
+        print(f"Base64 data length: {len(image_base64)}")
+        
+        # Add padding if needed
+        missing_padding = len(image_base64) % 4
+        if missing_padding:
+            image_base64 += '=' * (4 - missing_padding)
+            print(f"Added {4 - missing_padding} padding characters")
+        
+        # Decode base64
+        image_data = base64.b64decode(image_base64)
+        img = Image.open(BytesIO(image_data))
+        print(f"Image decoded successfully: {img.size}")
+        return img
+        
+    except Exception as e:
+        print(f"Error getting image: {e}")
+        raise
+
 def handler(event):
     """Create individual jewelry detail page"""
     try:
+        # Debug: Print event structure
+        print(f"=== EVENT STRUCTURE ===")
+        print(f"Event type: {type(event)}")
+        print(f"Event keys: {event.keys() if isinstance(event, dict) else 'Not a dict'}")
+        
         # Find input data
         input_data = event.get('input', event)
+        print(f"Input data keys: {input_data.keys() if isinstance(input_data, dict) else 'Not a dict'}")
         
-        # Get parameters with proper key names
-        image_url = input_data.get('image_url', '')
+        # Get parameters
         claude_advice = input_data.get('claude_advice', '')
         image_number = int(input_data.get('image_number', 1))
         file_name = input_data.get('file_name', '')
         
         print(f"Processing {file_name} (Image #{image_number})")
         print(f"Claude advice: {claude_advice[:50]}..." if claude_advice else "No Claude advice")
+        
+        # Get image from base64
+        img = get_image_from_input(input_data)
         
         # Design settings based on image number
         if image_number == 1:  # Main hero
@@ -149,19 +181,14 @@ def handler(event):
         # Create canvas
         detail_page = Image.new('RGB', (PAGE_WIDTH, TOTAL_HEIGHT), '#FAFAFA')
         
-        # 1. Download and process image
-        img = download_image_from_url(image_url)
-        
-        # Resize with aspect ratio - using compatible constant
+        # Resize image with aspect ratio
         height_ratio = IMAGE_HEIGHT / img.height
         temp_width = int(img.width * height_ratio)
         
         # Use compatible resampling filter
         try:
-            # Try new constant first
             resample_filter = Image.Resampling.LANCZOS
         except AttributeError:
-            # Fall back to old constant
             resample_filter = Image.LANCZOS
             
         img_resized = img.resize((temp_width, IMAGE_HEIGHT), resample_filter)
@@ -174,7 +201,8 @@ def handler(event):
             img_cropped = img_resized
         
         # Apply subtle enhancement for luxury feel
-        if claude_advice and ('luxury' in claude_advice.lower() or 'premium' in claude_advice.lower() or '프리미엄' in claude_advice or '럭셔리' in claude_advice):
+        if claude_advice and ('luxury' in claude_advice.lower() or 'premium' in claude_advice.lower() or 
+                             '프리미엄' in claude_advice or '럭셔리' in claude_advice):
             enhancer = ImageEnhance.Brightness(img_cropped)
             img_cropped = enhancer.enhance(1.05)
             enhancer = ImageEnhance.Contrast(img_cropped)
@@ -184,7 +212,7 @@ def handler(event):
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, TOP_MARGIN))
         
-        # 2. Add Claude's advice text (if available)
+        # Add Claude's advice text (if available)
         if claude_advice and claude_advice.strip():
             text_img = create_text_block(claude_advice, CONTENT_WIDTH)
             if text_img.width > 1 and text_img.height > 1:
@@ -196,13 +224,14 @@ def handler(event):
                 else:
                     detail_page.paste(text_img, (text_x, text_y))
         
-        # 3. Add subtle page indicator
+        # Add subtle page indicator
         draw = ImageDraw.Draw(detail_page)
         page_text = f"- {image_number} -"
         
         # Use same font selection logic
         small_font = None
-        for font_path in ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
+        for font_path in ["/tmp/NanumMyeongjo.ttf", 
+                         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
             if os.path.exists(font_path):
                 try:
                     small_font = ImageFont.truetype(font_path, 16)
@@ -224,13 +253,14 @@ def handler(event):
         result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         
         # Remove padding for Make.com
-        result_base64 = result_base64.rstrip('=')
+        result_base64_no_padding = result_base64.rstrip('=')
         
         print(f"Successfully created detail page for {file_name}")
+        print(f"Output base64 length: {len(result_base64_no_padding)}")
         
         return {
             "output": {
-                "detail_page": result_base64,
+                "detail_page": result_base64_no_padding,
                 "page_number": image_number,
                 "file_name": file_name,
                 "dimensions": {
@@ -251,7 +281,7 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "error_type": type(e).__name__,
-                "file_name": input_data.get('file_name', 'unknown')
+                "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown'
             }
         }
 
