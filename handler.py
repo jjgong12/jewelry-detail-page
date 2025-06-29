@@ -173,10 +173,15 @@ def get_image_from_input(input_data):
         # Check for base64
         image_base64 = (input_data.get('image_base64') or 
                        input_data.get('base64') or 
-                       input_data.get('image_data') or '')
+                       input_data.get('image_data') or 
+                       input_data.get('enhanced_image') or '')
         
         if image_base64:
             print(f"Using base64 data, length: {len(image_base64)}")
+            # Remove data URL prefix if present
+            if image_base64.startswith('data:'):
+                image_base64 = image_base64.split(',')[1]
+            
             # Add padding if needed
             missing_padding = len(image_base64) % 4
             if missing_padding:
@@ -191,8 +196,114 @@ def get_image_from_input(input_data):
         print(f"Error getting image: {e}")
         raise
 
+def process_combined_images(images_data, PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
+    """Process images 3-6 combined with spacing"""
+    print(f"Processing {len(images_data)} images for combined layout")
+    
+    # Calculate total height
+    IMAGE_SPACING = 200  # Space between images
+    TOP_MARGIN = 150
+    BOTTOM_MARGIN = 150
+    
+    total_height = TOP_MARGIN + BOTTOM_MARGIN
+    total_height += len(images_data) * IMAGE_HEIGHT
+    total_height += (len(images_data) - 1) * IMAGE_SPACING  # Spacing between images
+    
+    # Add height for Claude advice texts
+    for img_data in images_data:
+        if img_data.get('claude_advice'):
+            total_height += 300  # Approximate text height
+    
+    print(f"Creating combined canvas: {PAGE_WIDTH}x{total_height}")
+    
+    # Create canvas
+    detail_page = Image.new('RGB', (PAGE_WIDTH, total_height), '#FAFAFA')
+    
+    # Current Y position
+    current_y = TOP_MARGIN
+    
+    # Process each image
+    for idx, img_data in enumerate(images_data):
+        print(f"Processing image {idx + 1}/{len(images_data)}: {img_data.get('file_name', 'unknown')}")
+        
+        # Get image
+        img = get_image_from_input(img_data)
+        
+        # Resize image
+        height_ratio = IMAGE_HEIGHT / img.height
+        temp_width = int(img.width * height_ratio)
+        
+        try:
+            resample_filter = Image.Resampling.LANCZOS
+        except AttributeError:
+            resample_filter = Image.LANCZOS
+            
+        img_resized = img.resize((temp_width, IMAGE_HEIGHT), resample_filter)
+        
+        # Center crop if needed
+        if temp_width > CONTENT_WIDTH:
+            left = (temp_width - CONTENT_WIDTH) // 2
+            img_cropped = img_resized.crop((left, 0, left + CONTENT_WIDTH, IMAGE_HEIGHT))
+        else:
+            img_cropped = img_resized
+        
+        # Apply enhancement
+        claude_advice = img_data.get('claude_advice', '')
+        if claude_advice and ('luxury' in claude_advice.lower() or 'premium' in claude_advice.lower() or 
+                             '프리미엄' in claude_advice or '럭셔리' in claude_advice):
+            enhancer = ImageEnhance.Brightness(img_cropped)
+            img_cropped = enhancer.enhance(1.05)
+            enhancer = ImageEnhance.Contrast(img_cropped)
+            img_cropped = enhancer.enhance(1.1)
+        
+        # Paste image
+        x_position = (PAGE_WIDTH - img_cropped.width) // 2
+        detail_page.paste(img_cropped, (x_position, current_y))
+        current_y += IMAGE_HEIGHT
+        
+        # Add Claude's advice text if exists
+        if claude_advice and claude_advice.strip():
+            text_img = create_text_block(claude_advice, CONTENT_WIDTH)
+            if text_img.width > 1 and text_img.height > 1:
+                text_x = (PAGE_WIDTH - text_img.width) // 2
+                text_y = current_y + 50
+                
+                if text_img.mode == 'RGBA':
+                    detail_page.paste(text_img, (text_x, text_y), text_img)
+                else:
+                    detail_page.paste(text_img, (text_x, text_y))
+                
+                current_y = text_y + text_img.height + 50
+        
+        # Add spacing between images (except for last image)
+        if idx < len(images_data) - 1:
+            current_y += IMAGE_SPACING
+    
+    # Add page indicator
+    draw = ImageDraw.Draw(detail_page)
+    page_text = "- Details -"
+    
+    small_font = None
+    for font_path in ["/tmp/NanumMyeongjo.ttf", 
+                     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
+        if os.path.exists(font_path):
+            try:
+                small_font = ImageFont.truetype(font_path, 16)
+                break
+            except:
+                continue
+    
+    if small_font is None:
+        small_font = ImageFont.load_default()
+    
+    text_width, _ = get_text_dimensions(draw, page_text, small_font)
+    draw.text((PAGE_WIDTH//2 - text_width//2, total_height - 50), 
+             page_text, fill=(200, 200, 200), font=small_font)
+    
+    return detail_page
+
 def handler(event):
-    """Create individual jewelry detail page"""
+    """Create jewelry detail page - individual for 1,2 and combined for 3-6"""
     try:
         print(f"=== Detail Page Handler Started ===")
         
@@ -200,12 +311,44 @@ def handler(event):
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         
+        # Check if this is a combined request for images 3-6
+        if 'images' in input_data and isinstance(input_data['images'], list):
+            # Combined processing for images 3-6
+            print(f"Processing combined images: {len(input_data['images'])} images")
+            
+            detail_page = process_combined_images(input_data['images'])
+            
+            # Save to base64
+            buffer = io.BytesIO()
+            detail_page.save(buffer, format='JPEG', quality=95, optimize=True)
+            buffer.seek(0)
+            result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            
+            # Remove padding for Make.com
+            result_base64_no_padding = result_base64.rstrip('=')
+            
+            print(f"Successfully created combined detail page")
+            
+            return {
+                "output": {
+                    "detail_page": result_base64_no_padding,
+                    "page_type": "combined_3_to_6",
+                    "image_count": len(input_data['images']),
+                    "dimensions": {
+                        "width": detail_page.width,
+                        "height": detail_page.height
+                    },
+                    "format": "base64_no_padding"
+                }
+            }
+        
+        # Individual image processing (for images 1 and 2)
         # Get parameters
         claude_advice = input_data.get('claude_advice', '')
         image_number = int(input_data.get('image_number', 1))
         file_name = input_data.get('file_name', 'unknown.jpg')
         
-        print(f"Processing {file_name} (Image #{image_number})")
+        print(f"Processing individual image: {file_name} (Image #{image_number})")
         
         # Get image
         img = get_image_from_input(input_data)
@@ -219,7 +362,7 @@ def handler(event):
             PAGE_WIDTH = 1000
             IMAGE_HEIGHT = 1333
             CONTENT_WIDTH = 900
-        else:  # Details (3-6)
+        else:  # Details (3-6) - but this should not happen in individual mode
             PAGE_WIDTH = 860
             IMAGE_HEIGHT = 1147
             CONTENT_WIDTH = 760
