@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+from datetime import datetime
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
@@ -491,125 +492,6 @@ def process_combined_images(images_data, html_section_content="", include_color_
     text_width, _ = get_text_dimensions(draw, page_text, small_font)
     draw.text((PAGE_WIDTH//2 - text_width//2, total_height - 50), 
              page_text, fill=(200, 200, 200), font=small_font)
-                              # handler 함수 끝부분에 추가할 웹훅 전송 코드
-# return 문 바로 전에 추가하세요
-
-        # ========== 웹훅 전송 코드 추가 시작 ==========
-        webhook_url = input_data.get('webhook')
-        if webhook_url:
-            import requests
-            from datetime import datetime
-            try:
-                # 결과 데이터 준비
-                webhook_data = {
-                    "handler_type": "detail",
-                    "file_name": file_name if 'file_name' in locals() else 'combined',
-                    "runpod_result": {
-                        "output": {
-                            "detail_page": result_base64_no_padding,
-                            "page_type": "combined_3_to_6" if 'images' in input_data else f"individual_{image_number}",
-                            "image_count": len(input_data['images']) if 'images' in input_data else 1,
-                            "dimensions": {
-                                "width": detail_page.width,
-                                "height": detail_page.height if 'detail_page' in locals() else TOTAL_HEIGHT
-                            },
-                            "has_md_talk": include_md if 'include_md' in locals() else False,
-                            "has_color_options": include_colors if 'include_colors' in locals() else False,
-                            "has_logo": image_number == 1 if 'image_number' in locals() else False,
-                            "format": "base64_no_padding"
-                        }
-                    },
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                # 웹훅으로 POST 요청
-                response = requests.post(
-                    webhook_url,
-                    json=webhook_data,
-                    headers={'Content-Type': 'application/json'},
-                    timeout=30
-                )
-                
-                print(f"Webhook sent successfully: {response.status_code}")
-                print(f"Webhook response: {response.text[:200]}")  # 처음 200자만 로그
-                
-                # 원래 return에 웹훅 정보 추가
-                if 'images' in input_data:
-                    # Combined images return
-                    return {
-                        "output": {
-                            "detail_page": result_base64_no_padding,
-                            "page_type": "combined_3_to_6",
-                            "image_count": len(input_data['images']),
-                            "dimensions": {
-                                "width": detail_page.width,
-                                "height": detail_page.height
-                            },
-                            "has_md_talk": include_md,
-                            "has_color_options": include_colors,
-                            "format": "base64_no_padding",
-                            "webhook_sent": True,
-                            "webhook_status": response.status_code
-                        }
-                    }
-                else:
-                    # Individual image return
-                    return {
-                        "output": {
-                            "detail_page": result_base64_no_padding,
-                            "page_number": image_number,
-                            "file_name": file_name,
-                            "dimensions": {
-                                "width": PAGE_WIDTH,
-                                "height": TOTAL_HEIGHT
-                            },
-                            "has_claude_advice": bool(claude_advice),
-                            "has_logo": image_number == 1,
-                            "format": "base64_no_padding",
-                            "webhook_sent": True,
-                            "webhook_status": response.status_code
-                        }
-                    }
-                
-            except Exception as webhook_error:
-                print(f"Webhook error: {str(webhook_error)}")
-                # 웹훅 실패해도 원래 결과는 반환
-                if 'images' in input_data:
-                    return {
-                        "output": {
-                            "detail_page": result_base64_no_padding,
-                            "page_type": "combined_3_to_6",
-                            "image_count": len(input_data['images']),
-                            "dimensions": {
-                                "width": detail_page.width,
-                                "height": detail_page.height
-                            },
-                            "has_md_talk": include_md,
-                            "has_color_options": include_colors,
-                            "format": "base64_no_padding",
-                            "webhook_error": str(webhook_error)
-                        }
-                    }
-                else:
-                    return {
-                        "output": {
-                            "detail_page": result_base64_no_padding,
-                            "page_number": image_number,
-                            "file_name": file_name,
-                            "dimensions": {
-                                "width": PAGE_WIDTH,
-                                "height": TOTAL_HEIGHT
-                            },
-                            "has_claude_advice": bool(claude_advice),
-                            "has_logo": image_number == 1,
-                            "format": "base64_no_padding",
-                            "webhook_error": str(webhook_error)
-                        }
-                    }
-        # ========== 웹훅 전송 코드 추가 끝 ==========
-        
-        # 웹훅이 없는 경우 원래 return 문 사용
-        # (기존 return 문들은 그대로 유지)
     
     return detail_page
 
@@ -664,6 +546,59 @@ def handler(event):
             result_base64_no_padding = result_base64.rstrip('=')
             
             print(f"Successfully created combined detail page")
+            
+            # Send webhook if provided
+            webhook_url = input_data.get('webhook')
+            if webhook_url:
+                try:
+                    webhook_data = {
+                        "handler_type": "detail",
+                        "file_name": "combined_3_to_6",
+                        "runpod_result": {
+                            "output": {
+                                "detail_page": result_base64_no_padding,
+                                "page_type": "combined_3_to_6",
+                                "image_count": len(input_data['images']),
+                                "dimensions": {
+                                    "width": detail_page.width,
+                                    "height": detail_page.height
+                                },
+                                "has_md_talk": include_md,
+                                "has_color_options": include_colors,
+                                "format": "base64_no_padding"
+                            }
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    response = requests.post(
+                        webhook_url,
+                        json=webhook_data,
+                        headers={'Content-Type': 'application/json'},
+                        timeout=30
+                    )
+                    
+                    print(f"Webhook sent successfully: {response.status_code}")
+                    
+                    return {
+                        "output": {
+                            "detail_page": result_base64_no_padding,
+                            "page_type": "combined_3_to_6",
+                            "image_count": len(input_data['images']),
+                            "dimensions": {
+                                "width": detail_page.width,
+                                "height": detail_page.height
+                            },
+                            "has_md_talk": include_md,
+                            "has_color_options": include_colors,
+                            "format": "base64_no_padding",
+                            "webhook_sent": True,
+                            "webhook_status": response.status_code
+                        }
+                    }
+                except Exception as webhook_error:
+                    print(f"Webhook error: {str(webhook_error)}")
+                    # Return result even if webhook fails
             
             return {
                 "output": {
@@ -805,6 +740,59 @@ def handler(event):
         
         print(f"Successfully created detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
         print(f"Output length: {len(result_base64_no_padding)}")
+        
+        # Send webhook if provided
+        webhook_url = input_data.get('webhook')
+        if webhook_url:
+            try:
+                webhook_data = {
+                    "handler_type": "detail",
+                    "file_name": file_name,
+                    "runpod_result": {
+                        "output": {
+                            "detail_page": result_base64_no_padding,
+                            "page_number": image_number,
+                            "file_name": file_name,
+                            "dimensions": {
+                                "width": PAGE_WIDTH,
+                                "height": TOTAL_HEIGHT
+                            },
+                            "has_claude_advice": bool(claude_advice),
+                            "has_logo": image_number == 1,
+                            "format": "base64_no_padding"
+                        }
+                    },
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                response = requests.post(
+                    webhook_url,
+                    json=webhook_data,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=30
+                )
+                
+                print(f"Webhook sent successfully: {response.status_code}")
+                
+                return {
+                    "output": {
+                        "detail_page": result_base64_no_padding,
+                        "page_number": image_number,
+                        "file_name": file_name,
+                        "dimensions": {
+                            "width": PAGE_WIDTH,
+                            "height": TOTAL_HEIGHT
+                        },
+                        "has_claude_advice": bool(claude_advice),
+                        "has_logo": image_number == 1,
+                        "format": "base64_no_padding",
+                        "webhook_sent": True,
+                        "webhook_status": response.status_code
+                    }
+                }
+            except Exception as webhook_error:
+                print(f"Webhook error: {str(webhook_error)}")
+                # Return result even if webhook fails
         
         return {
             "output": {
