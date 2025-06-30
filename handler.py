@@ -19,7 +19,8 @@ def get_text_dimensions(draw, text, font):
 
 def create_logo_text(text="twinkring", width=1200, height=150):
     """Create elegant logo text for image 1"""
-    logo_img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
+    # RGB로 만들고 흰색 배경 사용
+    logo_img = Image.new('RGB', (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(logo_img)
     
     # Try to use elegant fonts
@@ -57,9 +58,9 @@ def create_logo_text(text="twinkring", width=1200, height=150):
     
     # Draw text with subtle shadow for elegance
     # Shadow
-    draw.text((x+2, y+2), text, font=font, fill=(200, 200, 200, 180))
-    # Main text - 진한 검정색으로 변경
-    draw.text((x, y), text, font=font, fill=(20, 20, 20, 255))
+    draw.text((x+2, y+2), text, font=font, fill=(200, 200, 200))
+    # Main text - 진하고 선명하게
+    draw.text((x, y), text, font=font, fill=(40, 40, 40))
     
     print(f"Logo created: {text} at position ({x}, {y})")
     
@@ -157,7 +158,7 @@ def create_html_section(html_content="", width=860, height=400):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 48)  # 더 크게
+                title_font = ImageFont.truetype(font_path, 42)
                 body_font = ImageFont.truetype(font_path, 24)
                 break
             except:
@@ -181,9 +182,8 @@ def create_html_section(html_content="", width=860, height=400):
         if i == 0:
             text_width, text_height = get_text_dimensions(draw, line, title_font)
             x = (width - text_width) // 2
-            draw.text((x, y_position), line, font=title_font, fill=(20, 20, 20))  # 더 진한 색
+            draw.text((x, y_position), line, font=title_font, fill=(40, 40, 40))
             y_position += text_height + 40
-            print(f"MD TALK title drawn: {line}")
         else:
             # Body text
             text_width, text_height = get_text_dimensions(draw, line, body_font)
@@ -207,8 +207,8 @@ def create_color_options_section(width=860, thumbnail_images=None):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 48)  # 더 크게
-                label_font = ImageFont.truetype(font_path, 20)
+                title_font = ImageFont.truetype(font_path, 36)
+                label_font = ImageFont.truetype(font_path, 18)
                 break
             except:
                 continue
@@ -220,21 +220,19 @@ def create_color_options_section(width=860, thumbnail_images=None):
     # Draw title
     title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 40), title, font=title_font, fill=(20, 20, 20))  # 더 진한 색
+    draw.text((width//2 - title_width//2, 40), title, font=title_font, fill=(60, 60, 60))
     
-    print(f"COLOR title drawn at y=40")
-    
-    # Color information - 정확한 순서와 색상
+    # Color information
     colors = [
-        ("yellow", "#FFD700", "yellow"),
-        ("rose", "#FFC0CB", "rose"),
-        ("white", "#E8E8E8", "white"),
-        ("antique", "#D4A574", "antique")  # 더 진한 antique 색상
+        ("yellow", "#FFD700", "yellow gold"),
+        ("rose", "#FFC0CB", "rose gold"),
+        ("white", "#E8E8E8", "white gold"),
+        ("antique", "#D2B48C", "antique white")
     ]
     
     # Draw color boxes
-    box_size = 140  # 좀 더 크게
-    spacing = 45    # 간격 조정
+    box_size = 120
+    spacing = 50
     total_width = len(colors) * box_size + (len(colors) - 1) * spacing
     start_x = (width - total_width) // 2
     y = 120
@@ -242,19 +240,16 @@ def create_color_options_section(width=860, thumbnail_images=None):
     for i, (name, color, label) in enumerate(colors):
         x = start_x + i * (box_size + spacing)
         
-        # Draw outer ring with thicker border
-        draw.ellipse([x+5, y+5, x+box_size-5, y+box_size-5], 
-                    fill=color, outline=(140, 140, 140), width=3)
-        # Draw inner hole
-        draw.ellipse([x+35, y+35, x+box_size-35, y+box_size-35], 
+        # Draw ring placeholder
+        draw.ellipse([x+10, y+10, x+box_size-10, y+box_size-10], 
+                    fill=color, outline=(180, 180, 180), width=2)
+        draw.ellipse([x+30, y+30, x+box_size-30, y+box_size-30], 
                     fill=(255, 255, 255), outline=None)
         
         # Draw label
         label_width, _ = get_text_dimensions(draw, label, label_font)
-        draw.text((x + box_size//2 - label_width//2, y + box_size + 20), 
-                 label, font=label_font, fill=(60, 60, 60))
-        
-        print(f"Color {label} drawn at x={x}")
+        draw.text((x + box_size//2 - label_width//2, y + box_size + 15), 
+                 label, font=label_font, fill=(80, 80, 80))
     
     return section_img
 
@@ -411,10 +406,11 @@ def process_combined_images(images_data, html_section_content="", include_color_
     
     # Add MD TALK section at the beginning (only for images 3-4)
     if include_md_talk:
-        print("Adding MD TALK section")
+        print("Adding MD TALK section at the top")
         md_talk_section = create_html_section(html_section_content, PAGE_WIDTH, MD_TALK_HEIGHT)
         detail_page.paste(md_talk_section, (0, current_y))
         current_y += MD_TALK_HEIGHT + MD_TALK_SPACING
+        print(f"MD TALK added, current_y: {current_y}")
     
     # Process each image
     for idx, img_data in enumerate(images_data):
@@ -473,10 +469,11 @@ def process_combined_images(images_data, html_section_content="", include_color_
     
     # Add color options section if requested (only for images 5-6)
     if include_color_options:
-        print("Adding COLOR section")
+        print("Adding COLOR section at the bottom")
         current_y += COLOR_SECTION_SPACING
         color_section = create_color_options_section(PAGE_WIDTH)
         detail_page.paste(color_section, (0, current_y))
+        print(f"COLOR section added at y={current_y}")
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
@@ -533,15 +530,18 @@ def handler(event):
                 first_file = input_data['images'][0].get('file_name', '')
                 print(f"First file name: {first_file}")
                 
-                # 파일명 패턴 체크를 더 명확하게
-                if any(pattern in first_file for pattern in ['_005', '_006', '005_', '006_']):
+                # 모든 파일명 출력
+                all_files = [img.get('file_name', '') for img in input_data['images']]
+                print(f"All files: {all_files}")
+                
+                if '_005' in first_file or '_006' in first_file:
                     # This is route 4 (images 5-6)
-                    print("Detected as route 4 (images 5-6) - COLOR section")
+                    print("Detected as route 4 (images 5-6) - Will add COLOR section")
                     include_md = False
                     include_colors = True
-                elif any(pattern in first_file for pattern in ['_003', '_004', '003_', '004_']):
+                elif '_003' in first_file or '_004' in first_file:
                     # This is route 3 (images 3-4)
-                    print("Detected as route 3 (images 3-4) - MD TALK section")
+                    print("Detected as route 3 (images 3-4) - Will add MD TALK section")
                     include_md = True
                     include_colors = False
             
@@ -638,20 +638,17 @@ def handler(event):
         file_name = input_data.get('file_name', 'unknown.jpg')
         
         print(f"Processing individual image: {file_name} (Image #{image_number})")
-        print(f"Image number type: {type(image_number)}, value: {image_number}")
         
         # Get image
         img = get_image_from_input(input_data)
         
         # Design settings based on image number
         if image_number == 1:  # Main hero
-            print("Processing as Image 1 - WITH LOGO")
             PAGE_WIDTH = 1200
             IMAGE_HEIGHT = 1600
             CONTENT_WIDTH = 1100
             LOGO_HEIGHT = 150  # Space for logo
         elif image_number == 2:  # Sub hero
-            print("Processing as Image 2 - NO LOGO")
             PAGE_WIDTH = 1000
             IMAGE_HEIGHT = 1333
             CONTENT_WIDTH = 900
@@ -679,18 +676,9 @@ def handler(event):
         if image_number == 1 and LOGO_HEIGHT > 0:
             print("Creating and adding twinkring logo")
             logo_img = create_logo_text("twinkring", PAGE_WIDTH, LOGO_HEIGHT)
-            
-            # Convert RGBA to RGB if needed
-            if logo_img.mode == 'RGBA':
-                # Create white background
-                white_bg = Image.new('RGB', (PAGE_WIDTH, LOGO_HEIGHT), '#FFFFFF')
-                white_bg.paste(logo_img, (0, 0), logo_img)
-                detail_page.paste(white_bg, (0, current_y))
-            else:
-                detail_page.paste(logo_img, (0, current_y))
-            
+            detail_page.paste(logo_img, (0, current_y))
             current_y += LOGO_HEIGHT
-            print(f"Logo added, current_y: {current_y}")
+            print(f"Logo added at y={current_y-LOGO_HEIGHT}, size={PAGE_WIDTH}x{LOGO_HEIGHT}")
         
         # Resize image with aspect ratio
         height_ratio = IMAGE_HEIGHT / img.height
@@ -766,7 +754,6 @@ def handler(event):
         result_base64_no_padding = result_base64.rstrip('=')
         
         print(f"Successfully created detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
-        print(f"Has logo: {image_number == 1}")
         print(f"Output length: {len(result_base64_no_padding)}")
         
         # Send webhook if provided
