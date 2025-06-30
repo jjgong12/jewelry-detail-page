@@ -16,6 +16,52 @@ def get_text_dimensions(draw, text, font):
     except AttributeError:
         return draw.textsize(text, font=font)
 
+def create_logo_text(text="twinkring", width=1200, height=150):
+    """Create elegant logo text for image 1"""
+    logo_img = Image.new('RGBA', (width, height), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(logo_img)
+    
+    # Try to use elegant fonts
+    font = None
+    font_size = 72
+    font_paths = [
+        "/tmp/Playfair_Display.ttf",  # Elegant serif font
+        "/tmp/Cormorant_Garamond.ttf",  # Elegant serif
+        "/tmp/EB_Garamond.ttf",  # Classic serif
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+    ]
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            except:
+                continue
+    
+    # If no elegant font found, use default with larger size
+    if font is None:
+        try:
+            font = ImageFont.load_default()
+            # Try to make it larger if possible
+            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+    
+    # Center the text
+    text_width, text_height = get_text_dimensions(draw, text, font)
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
+    
+    # Draw text with subtle shadow for elegance
+    # Shadow
+    draw.text((x+2, y+2), text, font=font, fill=(200, 200, 200, 180))
+    # Main text
+    draw.text((x, y), text, font=font, fill=(60, 60, 60))
+    
+    return logo_img
+
 def create_text_block(text, width=760):
     """Create elegant text block with Korean font support"""
     if not text:
@@ -82,7 +128,7 @@ def create_text_block(text, width=760):
     return text_img
 
 def create_html_section(html_content="", width=860, height=400):
-    """Create HTML-like section (placeholder for now, can be replaced with actual HTML rendering)"""
+    """Create HTML-like section (MD TALK)"""
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -142,11 +188,10 @@ def create_html_section(html_content="", width=860, height=400):
     
     return section_img
 
-def create_color_options_section(width=860):
-    """Create color options section showing different metal colors"""
-    # This is a placeholder - in real implementation, you'd use actual product images
-    section_height = 500
-    section_img = Image.new('RGB', (width, section_height), '#FAFAFA')
+def create_color_options_section(width=860, thumbnail_images=None):
+    """Create color options section with actual thumbnails or placeholders"""
+    section_height = 350
+    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
     # Title
@@ -157,8 +202,8 @@ def create_color_options_section(width=860):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 32)
-                label_font = ImageFont.truetype(font_path, 20)
+                title_font = ImageFont.truetype(font_path, 36)
+                label_font = ImageFont.truetype(font_path, 18)
                 break
             except:
                 continue
@@ -167,35 +212,38 @@ def create_color_options_section(width=860):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
-    # Draw placeholder color options
+    # Draw title
+    title = "COLOR"
+    title_width, _ = get_text_dimensions(draw, title, title_font)
+    draw.text((width//2 - title_width//2, 40), title, font=title_font, fill=(60, 60, 60))
+    
+    # Color information
     colors = [
-        ("yellow", "#FFD700", "옐로우골드"),
-        ("rose", "#E8B4B8", "로즈골드"),
-        ("white", "#E8E8E8", "화이트골드"),
-        ("antique", "#D4AF37", "무도금화이트")
+        ("yellow", "#FFD700", "yellow"),
+        ("rose", "#FFC0CB", "rose"),
+        ("white", "#E8E8E8", "white"),
+        ("antique", "#F5DEB3", "antique")
     ]
     
-    # Draw title
-    title = "COLOR OPTIONS"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 50), title, font=title_font, fill=(60, 60, 60))
-    
     # Draw color boxes
-    box_size = 150
-    spacing = 40
+    box_size = 120
+    spacing = 50
     total_width = len(colors) * box_size + (len(colors) - 1) * spacing
     start_x = (width - total_width) // 2
-    y = 150
+    y = 120
     
     for i, (name, color, label) in enumerate(colors):
         x = start_x + i * (box_size + spacing)
         
-        # Draw box
-        draw.rectangle([x, y, x + box_size, y + box_size], fill=color, outline=(200, 200, 200), width=2)
+        # Draw ring placeholder
+        draw.ellipse([x+10, y+10, x+box_size-10, y+box_size-10], 
+                    fill=color, outline=(180, 180, 180), width=2)
+        draw.ellipse([x+30, y+30, x+box_size-30, y+box_size-30], 
+                    fill=(255, 255, 255), outline=None)
         
         # Draw label
         label_width, _ = get_text_dimensions(draw, label, label_font)
-        draw.text((x + box_size//2 - label_width//2, y + box_size + 20), 
+        draw.text((x + box_size//2 - label_width//2, y + box_size + 15), 
                  label, font=label_font, fill=(80, 80, 80))
     
     return section_img
@@ -315,41 +363,47 @@ def get_image_from_input(input_data):
         print(f"Error getting image: {e}")
         raise
 
-def process_combined_images(images_data, html_section_content="", include_color_options=True, 
-                          PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
-    """Process images 3-6 combined with spacing and additional sections"""
+def process_combined_images(images_data, html_section_content="", include_color_options=False, 
+                          include_md_talk=True, PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
+    """Process images combined - with MD TALK for 3-4, with COLOR for 5-6"""
     print(f"Processing {len(images_data)} images for combined layout")
+    print(f"MD TALK: {include_md_talk}, COLOR: {include_color_options}")
     
-    # Calculate total height
-    IMAGE_SPACING = 200  # Space between images
-    TOP_MARGIN = 150
-    BOTTOM_MARGIN = 150
-    HTML_SECTION_HEIGHT = 400  # Height for MD TALK section
-    COLOR_SECTION_HEIGHT = 500 if include_color_options else 0
+    # Debug: Print all image data
+    for i, img_data in enumerate(images_data):
+        print(f"Image {i+1}: {img_data.get('file_name', 'unknown')}")
+    
+    # Calculate total height (NO SPACING between images)
+    TOP_MARGIN = 100
+    BOTTOM_MARGIN = 100
+    MD_TALK_HEIGHT = 400 if include_md_talk else 0
+    MD_TALK_SPACING = 50 if include_md_talk else 0
+    COLOR_SECTION_HEIGHT = 350 if include_color_options else 0
+    COLOR_SECTION_SPACING = 50 if include_color_options else 0
     
     total_height = TOP_MARGIN + BOTTOM_MARGIN
-    total_height += len(images_data) * IMAGE_HEIGHT
-    total_height += (len(images_data) - 1) * IMAGE_SPACING  # Spacing between images
-    total_height += HTML_SECTION_HEIGHT + IMAGE_SPACING  # HTML section before images
-    total_height += COLOR_SECTION_HEIGHT + IMAGE_SPACING if include_color_options else 0
+    total_height += len(images_data) * IMAGE_HEIGHT  # No spacing between images
+    total_height += MD_TALK_HEIGHT + MD_TALK_SPACING
+    total_height += COLOR_SECTION_HEIGHT + COLOR_SECTION_SPACING
     
     # Add height for Claude advice texts
     for img_data in images_data:
         if img_data.get('claude_advice'):
-            total_height += 300  # Approximate text height
+            total_height += 200  # Text block height
     
     print(f"Creating combined canvas: {PAGE_WIDTH}x{total_height}")
     
     # Create canvas
-    detail_page = Image.new('RGB', (PAGE_WIDTH, total_height), '#FAFAFA')
+    detail_page = Image.new('RGB', (PAGE_WIDTH, total_height), '#FFFFFF')
     
     # Current Y position
     current_y = TOP_MARGIN
     
-    # Add HTML section at the beginning (like MD TALK)
-    html_section = create_html_section(html_section_content, PAGE_WIDTH, HTML_SECTION_HEIGHT)
-    detail_page.paste(html_section, (0, current_y))
-    current_y += HTML_SECTION_HEIGHT + IMAGE_SPACING
+    # Add MD TALK section at the beginning (only for images 3-4)
+    if include_md_talk:
+        md_talk_section = create_html_section(html_section_content, PAGE_WIDTH, MD_TALK_HEIGHT)
+        detail_page.paste(md_talk_section, (0, current_y))
+        current_y += MD_TALK_HEIGHT + MD_TALK_SPACING
     
     # Process each image
     for idx, img_data in enumerate(images_data):
@@ -357,6 +411,7 @@ def process_combined_images(images_data, html_section_content="", include_color_
         
         # Get image
         img = get_image_from_input(img_data)
+        print(f"Original image size: {img.size}")
         
         # Resize image
         height_ratio = IMAGE_HEIGHT / img.height
@@ -388,35 +443,37 @@ def process_combined_images(images_data, html_section_content="", include_color_
         # Paste image
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
-        current_y += IMAGE_HEIGHT
+        print(f"Pasted image at ({x_position}, {current_y})")
+        current_y += IMAGE_HEIGHT  # NO spacing after image
         
         # Add Claude's advice text if exists
         if claude_advice and claude_advice.strip():
             text_img = create_text_block(claude_advice, CONTENT_WIDTH)
             if text_img.width > 1 and text_img.height > 1:
                 text_x = (PAGE_WIDTH - text_img.width) // 2
-                text_y = current_y + 50
+                text_y = current_y + 30  # Small spacing before text
                 
                 if text_img.mode == 'RGBA':
                     detail_page.paste(text_img, (text_x, text_y), text_img)
                 else:
                     detail_page.paste(text_img, (text_x, text_y))
                 
-                current_y = text_y + text_img.height + 50
-        
-        # Add spacing between images (except for last image)
-        if idx < len(images_data) - 1:
-            current_y += IMAGE_SPACING
+                current_y = text_y + text_img.height + 30  # Small spacing after text
     
-    # Add color options section if requested
+    # Add color options section if requested (only for images 5-6)
     if include_color_options:
-        current_y += IMAGE_SPACING
+        current_y += COLOR_SECTION_SPACING
         color_section = create_color_options_section(PAGE_WIDTH)
         detail_page.paste(color_section, (0, current_y))
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
-    page_text = "- Details -"
+    if include_md_talk:
+        page_text = "- Details 3-4 -"
+    elif include_color_options:
+        page_text = "- Details 5-6 -"
+    else:
+        page_text = "- Details -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -451,14 +508,31 @@ def handler(event):
             # Combined processing for images 3-6
             print(f"Processing combined images: {len(input_data['images'])} images")
             
-            # Get optional parameters
+            # Determine type based on parameters or image count
+            # Route 3: MD TALK + images 3-4 (no color options)
+            # Route 4: images 5-6 + COLOR (no MD TALK)
+            
             html_content = input_data.get('html_section_content', '')
-            include_colors = input_data.get('include_color_options', True)
+            include_colors = input_data.get('include_color_options', False)
+            include_md = input_data.get('include_md_talk', True)
+            
+            # Auto-detect based on file names if not explicitly set
+            if len(input_data['images']) >= 1:
+                first_file = input_data['images'][0].get('file_name', '')
+                if '_005' in first_file or '_006' in first_file:
+                    # This is route 4 (images 5-6)
+                    include_md = False
+                    include_colors = True
+                elif '_003' in first_file or '_004' in first_file:
+                    # This is route 3 (images 3-4)
+                    include_md = True
+                    include_colors = False
             
             detail_page = process_combined_images(
                 input_data['images'], 
                 html_section_content=html_content,
-                include_color_options=include_colors
+                include_color_options=include_colors,
+                include_md_talk=include_md
             )
             
             # Save to base64
@@ -481,7 +555,7 @@ def handler(event):
                         "width": detail_page.width,
                         "height": detail_page.height
                     },
-                    "has_html_section": bool(html_content),
+                    "has_md_talk": include_md,
                     "has_color_options": include_colors,
                     "format": "base64_no_padding"
                 }
@@ -499,32 +573,43 @@ def handler(event):
         img = get_image_from_input(input_data)
         
         # Design settings based on image number
-        IMAGE_SPACING = 200  # Common spacing between sections
-        
         if image_number == 1:  # Main hero
             PAGE_WIDTH = 1200
             IMAGE_HEIGHT = 1600
             CONTENT_WIDTH = 1100
+            LOGO_HEIGHT = 150  # Space for logo
         elif image_number == 2:  # Sub hero
             PAGE_WIDTH = 1000
             IMAGE_HEIGHT = 1333
             CONTENT_WIDTH = 900
+            LOGO_HEIGHT = 0  # No logo for image 2
         else:  # Details (3-6) - but this should not happen in individual mode
             PAGE_WIDTH = 860
             IMAGE_HEIGHT = 1147
             CONTENT_WIDTH = 760
+            LOGO_HEIGHT = 0
         
-        # Section heights
-        TOP_MARGIN = 100
-        IMAGE_SECTION = IMAGE_HEIGHT + IMAGE_SPACING  # Add spacing after image
-        TEXT_SECTION = 300 if claude_advice else 100
-        BOTTOM_MARGIN = 100
+        # Section heights (simplified)
+        TOP_MARGIN = 50
+        BOTTOM_MARGIN = 50
+        TEXT_HEIGHT = 200 if claude_advice else 0
         
         # Total height
-        TOTAL_HEIGHT = TOP_MARGIN + IMAGE_SECTION + TEXT_SECTION + BOTTOM_MARGIN
+        TOTAL_HEIGHT = TOP_MARGIN + LOGO_HEIGHT + IMAGE_HEIGHT + TEXT_HEIGHT + BOTTOM_MARGIN
         
         # Create canvas
-        detail_page = Image.new('RGB', (PAGE_WIDTH, TOTAL_HEIGHT), '#FAFAFA')
+        detail_page = Image.new('RGB', (PAGE_WIDTH, TOTAL_HEIGHT), '#FFFFFF')
+        
+        current_y = TOP_MARGIN
+        
+        # Add logo for image 1
+        if image_number == 1 and LOGO_HEIGHT > 0:
+            logo_img = create_logo_text("twinkring", PAGE_WIDTH, LOGO_HEIGHT)
+            if logo_img.mode == 'RGBA':
+                detail_page.paste(logo_img, (0, current_y), logo_img)
+            else:
+                detail_page.paste(logo_img, (0, current_y))
+            current_y += LOGO_HEIGHT
         
         # Resize image with aspect ratio
         height_ratio = IMAGE_HEIGHT / img.height
@@ -554,14 +639,15 @@ def handler(event):
         
         # Paste image
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
-        detail_page.paste(img_cropped, (x_position, TOP_MARGIN))
+        detail_page.paste(img_cropped, (x_position, current_y))
+        current_y += IMAGE_HEIGHT
         
         # Add Claude's advice text
         if claude_advice and claude_advice.strip():
             text_img = create_text_block(claude_advice, CONTENT_WIDTH)
             if text_img.width > 1 and text_img.height > 1:
                 text_x = (PAGE_WIDTH - text_img.width) // 2
-                text_y = TOP_MARGIN + IMAGE_HEIGHT + IMAGE_SPACING  # Use consistent spacing
+                text_y = current_y + 30  # Small spacing
                 
                 if text_img.mode == 'RGBA':
                     detail_page.paste(text_img, (text_x, text_y), text_img)
@@ -586,7 +672,7 @@ def handler(event):
             small_font = ImageFont.load_default()
         
         text_width, _ = get_text_dimensions(draw, page_text, small_font)
-        draw.text((PAGE_WIDTH//2 - text_width//2, TOTAL_HEIGHT - 50), 
+        draw.text((PAGE_WIDTH//2 - text_width//2, TOTAL_HEIGHT - 30), 
                  page_text, fill=(200, 200, 200), font=small_font)
         
         # Save to base64
@@ -611,6 +697,7 @@ def handler(event):
                     "height": TOTAL_HEIGHT
                 },
                 "has_claude_advice": bool(claude_advice),
+                "has_logo": image_number == 1,
                 "format": "base64_no_padding"
             }
         }
