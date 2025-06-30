@@ -335,7 +335,8 @@ def get_image_from_input(input_data):
         image_url = (input_data.get('image_url') or 
                     input_data.get('imageUrl') or 
                     input_data.get('url') or 
-                    input_data.get('webContentLink') or '')
+                    input_data.get('webContentLink') or
+                    input_data.get('image') or '')  # Added 'image' field
         
         if image_url:
             print(f"Found image URL: {image_url}")
@@ -502,11 +503,25 @@ def process_combined_images(images_data, html_section_content="", include_color_
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V84 Detail Page Handler Started ===")
+        print(f"=== V85 Detail Page Handler Started ===")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
+        
+        # NEW: Handle semicolon-separated URLs
+        if 'image' in input_data and isinstance(input_data['image'], str) and ';' in input_data['image']:
+            print(f"Processing semicolon-separated URLs")
+            urls = input_data['image'].split(';')
+            input_data['images'] = []
+            for i, url in enumerate(urls):
+                url = url.strip()
+                if url:
+                    input_data['images'].append({
+                        'url': url,
+                        'file_name': f'image_{i+1}.jpg'
+                    })
+            print(f"Created {len(input_data['images'])} images from semicolon-separated URLs")
         
         # CRITICAL: First check if file_name contains _001 or _002 for individual processing
         file_name = input_data.get('file_name', '')
@@ -524,31 +539,24 @@ def handler(event):
             all_files = [img.get('file_name', '') for img in input_data['images']]
             print(f"All file names: {all_files}")
             
-            # Check if ANY file contains specific numbers
-            has_001_002 = any('_001' in f or '_002' in f for f in all_files)
-            has_005_006 = any('_005' in f or '_006' in f for f in all_files)
-            has_003_004 = any('_003' in f or '_004' in f for f in all_files)
-            has_007_008_009 = any('_007' in f or '_008' in f or '_009' in f for f in all_files)
+            # Determine route based on input data
+            route_number = input_data.get('route_number', 0)
             
-            # REJECT if trying to combine 001 or 002
-            if has_001_002:
-                raise ValueError("Images 001 and 002 must be processed individually, not combined!")
-            
-            # Set flags based on file names
-            if has_007_008_009:
-                # This is route 5 (images 7-8-9) - three images
+            # Set flags based on route number or file analysis
+            if route_number == 5 or len(input_data['images']) == 3:
+                # Route 5 (images 7-8-9)
                 print("Detected as route 5 (images 7-8-9) - Will add COLOR section at bottom")
                 include_md = False
                 include_colors = True
                 include_design_point = False
-            elif has_005_006:
-                # This is route 4 (images 5-6) - with DESIGN POINT between them
+            elif route_number == 4:
+                # Route 4 (images 5-6)
                 print("Detected as route 4 (images 5-6) - Will add DESIGN POINT between images")
                 include_md = False
                 include_colors = False
                 include_design_point = True
-            elif has_003_004:
-                # This is route 3 (images 3-4)
+            elif route_number == 3:
+                # Route 3 (images 3-4)
                 print("Detected as route 3 (images 3-4) - Will add MD TALK section")
                 include_md = True
                 include_colors = False
@@ -596,11 +604,11 @@ def handler(event):
                     "has_design_point": include_design_point,
                     "format": "base64_no_padding",
                     "status": "success",
-                    "version": "V84"
+                    "version": "V85"
                 }
             }
         
-        # Individual image processing (for images 1 and 2) - NO MD TALK!
+        # Individual image processing (for images 1 and 2)
         image_number = int(input_data.get('image_number', 1))
         file_name = input_data.get('file_name', 'unknown.jpg')
         
@@ -611,7 +619,11 @@ def handler(event):
             image_number = 2
         
         print(f"Processing INDIVIDUAL image: {file_name} (Image #{image_number})")
-        print(f"INDIVIDUAL PROCESSING - NO MD TALK, NO COMBINING")
+        
+        # NEW: Handle single image URL in 'image' field
+        if 'image' in input_data and not input_data.get('image_url'):
+            input_data['image_url'] = input_data['image']
+            print(f"Using 'image' field as image_url: {input_data['image_url']}")
         
         # Get image
         img = get_image_from_input(input_data)
@@ -722,7 +734,7 @@ def handler(event):
                 "has_md_talk": False,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V84"
+                "version": "V85"
             }
         }
         
@@ -737,7 +749,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V84"
+                "version": "V85"
             }
         }
 
