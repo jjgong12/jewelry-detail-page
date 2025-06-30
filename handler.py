@@ -2,7 +2,7 @@ import runpod
 import base64
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+from PIL import Image, ImageDraw, ImageFont
 import io
 import json
 import os
@@ -58,70 +58,6 @@ def create_logo_text(text="twinkring", width=1200, height=150):
     print(f"Logo created: {text} at position ({x}, {y})")
     
     return logo_img
-
-def create_text_block(text, width=760):
-    """Create elegant text block with Korean font support"""
-    if not text:
-        return Image.new('RGBA', (1, 1), (255, 255, 255, 0))
-    
-    temp_img = Image.new('RGBA', (width, 500), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(temp_img)
-    
-    font = None
-    font_size = 28
-    font_paths = [
-        "/tmp/NanumMyeongjo.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-    ]
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-                break
-            except:
-                continue
-    
-    if font is None:
-        font = ImageFont.load_default()
-    
-    words = text.split()
-    lines = []
-    current_line = []
-    
-    for word in words:
-        test_line = ' '.join(current_line + [word])
-        text_width, _ = get_text_dimensions(draw, test_line, font)
-            
-        if text_width > width - 40:
-            if current_line:
-                lines.append(' '.join(current_line))
-                current_line = [word]
-            else:
-                lines.append(word)
-        else:
-            current_line.append(word)
-    
-    if current_line:
-        lines.append(' '.join(current_line))
-    
-    line_height = 40
-    text_height = max(len(lines) * line_height + 40, 100)
-    
-    text_img = Image.new('RGBA', (width, text_height), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(text_img)
-    
-    y = 20
-    for line in lines:
-        text_width, _ = get_text_dimensions(draw, line, font)
-        x = (width - text_width) // 2
-        draw.text((x, y), line, font=font, fill=(80, 80, 80))
-        y += line_height
-    
-    return text_img
 
 def create_html_section(html_content="", width=860, height=400):
     """Create HTML-like section (MD TALK) - ONLY for combined 3-4"""
@@ -204,7 +140,7 @@ def create_design_point_section(design_content="", width=860, height=500):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 48)  # Larger title
+                title_font = ImageFont.truetype(font_path, 48)
                 body_font = ImageFont.truetype(font_path, 26)
                 break
             except:
@@ -215,7 +151,7 @@ def create_design_point_section(design_content="", width=860, height=500):
         body_font = ImageFont.load_default()
     
     lines = design_content.strip().split('\n')
-    y_position = 120  # Start lower for design point
+    y_position = 120
     
     for i, line in enumerate(lines):
         line = line.strip()
@@ -223,13 +159,12 @@ def create_design_point_section(design_content="", width=860, height=500):
             y_position += 30
             continue
             
-        if i == 0:  # DESIGN POINT title
+        if i == 0:
             text_width, text_height = get_text_dimensions(draw, line, title_font)
             x = (width - text_width) // 2
             draw.text((x, y_position), line, font=title_font, fill=(40, 40, 40))
-            y_position += text_height + 60  # More space after title
+            y_position += text_height + 60
         else:
-            # Body text with line wrapping
             words = line.split()
             current_line = []
             wrapped_lines = []
@@ -238,7 +173,7 @@ def create_design_point_section(design_content="", width=860, height=500):
                 test_line = ' '.join(current_line + [word])
                 text_width, _ = get_text_dimensions(draw, test_line, body_font)
                 
-                if text_width > width - 100:  # Leave margins
+                if text_width > width - 100:
                     if current_line:
                         wrapped_lines.append(' '.join(current_line))
                         current_line = [word]
@@ -250,7 +185,6 @@ def create_design_point_section(design_content="", width=860, height=500):
             if current_line:
                 wrapped_lines.append(' '.join(current_line))
             
-            # Draw wrapped lines
             for wrapped_line in wrapped_lines:
                 text_width, text_height = get_text_dimensions(draw, wrapped_line, body_font)
                 x = (width - text_width) // 2
@@ -261,7 +195,7 @@ def create_design_point_section(design_content="", width=860, height=500):
 
 def create_color_options_section(width=860, thumbnail_images=None):
     """Create color options section with 2x2 layout - for combined 7-8-9"""
-    section_height = 400  # Increased height for 2x2 layout
+    section_height = 400
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -297,8 +231,8 @@ def create_color_options_section(width=860, thumbnail_images=None):
     
     # Draw color boxes in 2x2 grid
     box_size = 120
-    h_spacing = 100  # Horizontal spacing
-    v_spacing = 180  # Vertical spacing (includes label)
+    h_spacing = 100
+    v_spacing = 180
     
     # Calculate starting positions for centered 2x2 grid
     grid_width = 2 * box_size + h_spacing
@@ -464,11 +398,6 @@ def process_combined_images(images_data, html_section_content="", include_color_
     total_height += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING
     total_height += COLOR_SECTION_HEIGHT + COLOR_SECTION_SPACING
     
-    # Add height for Claude advice texts
-    for img_data in images_data:
-        if img_data.get('claude_advice'):
-            total_height += 200
-    
     print(f"Creating combined canvas: {PAGE_WIDTH}x{total_height}")
     
     # Create canvas
@@ -526,36 +455,13 @@ def process_combined_images(images_data, html_section_content="", include_color_
         else:
             img_cropped = img_resized
         
-        # Apply enhancement
-        claude_advice = img_data.get('claude_advice', '')
-        if claude_advice and ('luxury' in claude_advice.lower() or 'premium' in claude_advice.lower() or 
-                             '프리미엄' in claude_advice or '럭셔리' in claude_advice):
-            enhancer = ImageEnhance.Brightness(img_cropped)
-            img_cropped = enhancer.enhance(1.05)
-            enhancer = ImageEnhance.Contrast(img_cropped)
-            img_cropped = enhancer.enhance(1.1)
-        
         # Paste image
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
         print(f"Pasted image at ({x_position}, {current_y})")
         current_y += IMAGE_HEIGHT
-        
-        # Add Claude's advice text if exists
-        if claude_advice and claude_advice.strip():
-            text_img = create_text_block(claude_advice, CONTENT_WIDTH)
-            if text_img.width > 1 and text_img.height > 1:
-                text_x = (PAGE_WIDTH - text_img.width) // 2
-                text_y = current_y + 30
-                
-                if text_img.mode == 'RGBA':
-                    detail_page.paste(text_img, (text_x, text_y), text_img)
-                else:
-                    detail_page.paste(text_img, (text_x, text_y))
-                
-                current_y = text_y + text_img.height + 30
     
-    # Add color options section if requested (only for images 5-6)
+    # Add color options section if requested
     if include_color_options:
         print("Adding COLOR section at the bottom")
         current_y += COLOR_SECTION_SPACING
@@ -594,9 +500,9 @@ def process_combined_images(images_data, html_section_content="", include_color_
     return detail_page
 
 def handler(event):
-    """Create jewelry detail page - individual for 1,2 and combined for 3-6"""
+    """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== Detail Page Handler Started ===")
+        print(f"=== V84 Detail Page Handler Started ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -609,12 +515,12 @@ def handler(event):
             # Force individual processing even if 'images' is present
             input_data.pop('images', None)
         
-        # Check if this is a combined request for images 3-6
+        # Check if this is a combined request
         if 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) > 0:
-            # Combined processing for images 3-6
+            # Combined processing
             print(f"Processing combined images: {len(input_data['images'])} images")
             
-            # CRITICAL: Check ALL file names to determine route
+            # Check ALL file names to determine route
             all_files = [img.get('file_name', '') for img in input_data['images']]
             print(f"All file names: {all_files}")
             
@@ -667,7 +573,7 @@ def handler(event):
             
             # Save to base64
             buffer = io.BytesIO()
-            detail_page.save(buffer, format='JPEG', quality=95, optimize=True)
+            detail_page.save(buffer, format='PNG', quality=95, optimize=True)
             buffer.seek(0)
             result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
             
@@ -676,63 +582,9 @@ def handler(event):
             
             print(f"Successfully created combined detail page")
             
-            # Send webhook if provided
-            webhook_url = input_data.get('webhook')
-            if webhook_url:
-                try:
-                    webhook_data = {
-                        "handler_type": "detail",
-                        "file_name": "combined_3_to_9",
-                        "runpod_result": {
-                            "output": {
-                                "detail_page": result_base64_no_padding,
-                                "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
-                                "image_count": len(input_data['images']),
-                                "dimensions": {
-                                    "width": detail_page.width,
-                                    "height": detail_page.height
-                                },
-                                "has_md_talk": include_md,
-                                "has_color_options": include_colors,
-                                "has_design_point": include_design_point,
-                                "has_design_point": include_design_point,
-                                "format": "base64_no_padding"
-                            }
-                        },
-                        "timestamp": datetime.now().isoformat()
-                    }
-                    
-                    response = requests.post(
-                        webhook_url,
-                        json=webhook_data,
-                        headers={'Content-Type': 'application/json'},
-                        timeout=30
-                    )
-                    
-                    print(f"Webhook sent successfully: {response.status_code}")
-                    
-                    return {
-                        "output": {
-                            "detail_page": result_base64_no_padding,
-                            "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
-                            "image_count": len(input_data['images']),
-                            "dimensions": {
-                                "width": detail_page.width,
-                                "height": detail_page.height
-                            },
-                            "has_md_talk": include_md,
-                            "has_color_options": include_colors,
-                            "format": "base64_no_padding",
-                            "webhook_sent": True,
-                            "webhook_status": response.status_code
-                        }
-                    }
-                except Exception as webhook_error:
-                    print(f"Webhook error: {str(webhook_error)}")
-            
             return {
                 "output": {
-                    "detail_page": result_base64_no_padding,
+                    "enhanced_image": result_base64_no_padding,
                     "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
                     "image_count": len(input_data['images']),
                     "dimensions": {
@@ -742,12 +594,13 @@ def handler(event):
                     "has_md_talk": include_md,
                     "has_color_options": include_colors,
                     "has_design_point": include_design_point,
-                    "format": "base64_no_padding"
+                    "format": "base64_no_padding",
+                    "status": "success",
+                    "version": "V84"
                 }
             }
         
         # Individual image processing (for images 1 and 2) - NO MD TALK!
-        claude_advice = input_data.get('claude_advice', '')
         image_number = int(input_data.get('image_number', 1))
         file_name = input_data.get('file_name', 'unknown.jpg')
         
@@ -783,10 +636,9 @@ def handler(event):
         # Section heights (simplified)
         TOP_MARGIN = 50
         BOTTOM_MARGIN = 50
-        TEXT_HEIGHT = 200 if claude_advice else 0
         
         # Total height - NO MD TALK for individual images!
-        TOTAL_HEIGHT = TOP_MARGIN + LOGO_HEIGHT + IMAGE_HEIGHT + TEXT_HEIGHT + BOTTOM_MARGIN
+        TOTAL_HEIGHT = TOP_MARGIN + LOGO_HEIGHT + IMAGE_HEIGHT + BOTTOM_MARGIN
         
         # Create canvas
         detail_page = Image.new('RGB', (PAGE_WIDTH, TOTAL_HEIGHT), '#FFFFFF')
@@ -819,30 +671,10 @@ def handler(event):
         else:
             img_cropped = img_resized
         
-        # Apply subtle enhancement
-        if claude_advice and ('luxury' in claude_advice.lower() or 'premium' in claude_advice.lower() or 
-                             '프리미엄' in claude_advice or '럭셔리' in claude_advice):
-            enhancer = ImageEnhance.Brightness(img_cropped)
-            img_cropped = enhancer.enhance(1.05)
-            enhancer = ImageEnhance.Contrast(img_cropped)
-            img_cropped = enhancer.enhance(1.1)
-        
         # Paste image
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
         current_y += IMAGE_HEIGHT
-        
-        # Add Claude's advice text if exists (but NO MD TALK!)
-        if claude_advice and claude_advice.strip():
-            text_img = create_text_block(claude_advice, CONTENT_WIDTH)
-            if text_img.width > 1 and text_img.height > 1:
-                text_x = (PAGE_WIDTH - text_img.width) // 2
-                text_y = current_y + 30
-                
-                if text_img.mode == 'RGBA':
-                    detail_page.paste(text_img, (text_x, text_y), text_img)
-                else:
-                    detail_page.paste(text_img, (text_x, text_y))
         
         # Add page indicator
         draw = ImageDraw.Draw(detail_page)
@@ -867,7 +699,7 @@ def handler(event):
         
         # Save to base64
         buffer = io.BytesIO()
-        detail_page.save(buffer, format='JPEG', quality=95, optimize=True)
+        detail_page.save(buffer, format='PNG', quality=95, optimize=True)
         buffer.seek(0)
         result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
         
@@ -877,73 +709,20 @@ def handler(event):
         print(f"Successfully created INDIVIDUAL detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
         print(f"Has logo: {image_number == 1}, Has MD TALK: FALSE")
         
-        # Send webhook if provided
-        webhook_url = input_data.get('webhook')
-        if webhook_url:
-            try:
-                webhook_data = {
-                    "handler_type": "detail",
-                    "file_name": file_name,
-                    "runpod_result": {
-                        "output": {
-                            "detail_page": result_base64_no_padding,
-                            "page_number": image_number,
-                            "file_name": file_name,
-                            "dimensions": {
-                                "width": PAGE_WIDTH,
-                                "height": TOTAL_HEIGHT
-                            },
-                            "has_claude_advice": bool(claude_advice),
-                            "has_logo": image_number == 1,
-                            "has_md_talk": False,  # ALWAYS FALSE for individual images
-                            "format": "base64_no_padding"
-                        }
-                    },
-                    "timestamp": datetime.now().isoformat()
-                }
-                
-                response = requests.post(
-                    webhook_url,
-                    json=webhook_data,
-                    headers={'Content-Type': 'application/json'},
-                    timeout=30
-                )
-                
-                print(f"Webhook sent successfully: {response.status_code}")
-                
-                return {
-                    "output": {
-                        "detail_page": result_base64_no_padding,
-                        "page_number": image_number,
-                        "file_name": file_name,
-                        "dimensions": {
-                            "width": PAGE_WIDTH,
-                            "height": TOTAL_HEIGHT
-                        },
-                        "has_claude_advice": bool(claude_advice),
-                        "has_logo": image_number == 1,
-                        "has_md_talk": False,
-                        "format": "base64_no_padding",
-                        "webhook_sent": True,
-                        "webhook_status": response.status_code
-                    }
-                }
-            except Exception as webhook_error:
-                print(f"Webhook error: {str(webhook_error)}")
-        
         return {
             "output": {
-                "detail_page": result_base64_no_padding,
+                "enhanced_image": result_base64_no_padding,
                 "page_number": image_number,
                 "file_name": file_name,
                 "dimensions": {
                     "width": PAGE_WIDTH,
                     "height": TOTAL_HEIGHT
                 },
-                "has_claude_advice": bool(claude_advice),
                 "has_logo": image_number == 1,
                 "has_md_talk": False,
-                "format": "base64_no_padding"
+                "format": "base64_no_padding",
+                "status": "success",
+                "version": "V84"
             }
         }
         
@@ -956,7 +735,9 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "error_type": type(e).__name__,
-                "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown'
+                "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
+                "status": "error",
+                "version": "V84"
             }
         }
 
