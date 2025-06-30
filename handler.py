@@ -180,8 +180,87 @@ def create_html_section(html_content="", width=860, height=400):
     
     return section_img
 
+def create_design_point_section(design_content="", width=860, height=500):
+    """Create DESIGN POINT section - for between 005 and 006"""
+    section_img = Image.new('RGB', (width, height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    if not design_content:
+        design_content = """DESIGN POINT
+
+중앙의 꼬임 텍스처가 따뜻한 연결감을 표현하고,
+여자 단품은 파베 세팅과 메인 스톤의 화려한 반짝임을,
+남자 단품은 하나의 메인 스톤으로 단단한 중심을 상징합니다."""
+    
+    font_paths = [
+        "/tmp/NanumMyeongjo.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+    ]
+    
+    title_font = None
+    body_font = None
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                title_font = ImageFont.truetype(font_path, 48)  # Larger title
+                body_font = ImageFont.truetype(font_path, 26)
+                break
+            except:
+                continue
+    
+    if title_font is None:
+        title_font = ImageFont.load_default()
+        body_font = ImageFont.load_default()
+    
+    lines = design_content.strip().split('\n')
+    y_position = 120  # Start lower for design point
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if not line:
+            y_position += 30
+            continue
+            
+        if i == 0:  # DESIGN POINT title
+            text_width, text_height = get_text_dimensions(draw, line, title_font)
+            x = (width - text_width) // 2
+            draw.text((x, y_position), line, font=title_font, fill=(40, 40, 40))
+            y_position += text_height + 60  # More space after title
+        else:
+            # Body text with line wrapping
+            words = line.split()
+            current_line = []
+            wrapped_lines = []
+            
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                text_width, _ = get_text_dimensions(draw, test_line, body_font)
+                
+                if text_width > width - 100:  # Leave margins
+                    if current_line:
+                        wrapped_lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        wrapped_lines.append(word)
+                else:
+                    current_line.append(word)
+            
+            if current_line:
+                wrapped_lines.append(' '.join(current_line))
+            
+            # Draw wrapped lines
+            for wrapped_line in wrapped_lines:
+                text_width, text_height = get_text_dimensions(draw, wrapped_line, body_font)
+                x = (width - text_width) // 2
+                draw.text((x, y_position), wrapped_line, font=body_font, fill=(60, 60, 60))
+                y_position += text_height + 20
+    
+    return section_img
+
 def create_color_options_section(width=860, thumbnail_images=None):
-    """Create color options section with 2x2 layout - ONLY for combined 5-6"""
+    """Create color options section with 2x2 layout - for combined 7-8-9"""
     section_height = 400  # Increased height for 2x2 layout
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -357,34 +436,30 @@ def get_image_from_input(input_data):
         raise
 
 def process_combined_images(images_data, html_section_content="", include_color_options=False, 
-                          include_md_talk=True, PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
-    """Process images combined - with MD TALK for 3-4, with COLOR for 5-6"""
+                          include_md_talk=True, include_design_point=False, design_content="",
+                          PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
+    """Process images combined - MD TALK for 3-4, DESIGN POINT for 5-6, COLOR for 7-8-9"""
     print(f"Processing {len(images_data)} images for combined layout")
-    print(f"MD TALK: {include_md_talk}, COLOR: {include_color_options}")
+    print(f"MD TALK: {include_md_talk}, COLOR: {include_color_options}, DESIGN POINT: {include_design_point}")
     
     # Debug: Print all image data
     for i, img_data in enumerate(images_data):
         print(f"Image {i+1}: {img_data.get('file_name', 'unknown')}")
     
-    # IMPORTANT: Verify we have exactly 2 images
-    if len(images_data) != 2:
-        print(f"WARNING: Expected 2 images, got {len(images_data)}")
-        # If only one image, duplicate it for testing
-        if len(images_data) == 1:
-            images_data.append(images_data[0])
-            print("Duplicated single image for testing")
-    
-    # Calculate total height
+    # Calculate total height WITH SPACING between images
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
+    IMAGE_SPACING = 80  # IMPORTANT: Space between images
     MD_TALK_HEIGHT = 400 if include_md_talk else 0
     MD_TALK_SPACING = 50 if include_md_talk else 0
-    COLOR_SECTION_HEIGHT = 400 if include_color_options else 0  # Increased for 2x2
+    COLOR_SECTION_HEIGHT = 400 if include_color_options else 0
     COLOR_SECTION_SPACING = 50 if include_color_options else 0
     
     total_height = TOP_MARGIN + BOTTOM_MARGIN
     total_height += len(images_data) * IMAGE_HEIGHT
+    total_height += (len(images_data) - 1) * IMAGE_SPACING  # Spacing between images
     total_height += MD_TALK_HEIGHT + MD_TALK_SPACING
+    total_height += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING
     total_height += COLOR_SECTION_HEIGHT + COLOR_SECTION_SPACING
     
     # Add height for Claude advice texts
@@ -410,6 +485,22 @@ def process_combined_images(images_data, html_section_content="", include_color_
     # Process each image
     for idx, img_data in enumerate(images_data):
         print(f"Processing image {idx + 1}/{len(images_data)}: {img_data.get('file_name', 'unknown')}")
+        
+        # Add spacing between images (except before first image)
+        if idx > 0:
+            current_y += IMAGE_SPACING
+            print(f"Added {IMAGE_SPACING}px spacing, current_y: {current_y}")
+        
+        # Check if we need to add DESIGN POINT between 005 and 006
+        file_name = img_data.get('file_name', '')
+        if include_design_point and idx == 1 and '_006' in file_name:
+            # Add DESIGN POINT before image 006
+            print("Adding DESIGN POINT section between 005 and 006")
+            current_y += DESIGN_POINT_SPACING // 2  # Half spacing before
+            design_section = create_design_point_section(design_content, PAGE_WIDTH, DESIGN_POINT_HEIGHT)
+            detail_page.paste(design_section, (0, current_y))
+            current_y += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING // 2  # Half spacing after
+            print(f"DESIGN POINT added, current_y: {current_y}")
         
         # Get image
         img = get_image_from_input(img_data)
@@ -474,8 +565,10 @@ def process_combined_images(images_data, html_section_content="", include_color_
     draw = ImageDraw.Draw(detail_page)
     if include_md_talk:
         page_text = "- Details 3-4 -"
-    elif include_color_options:
+    elif include_design_point:
         page_text = "- Details 5-6 -"
+    elif include_color_options:
+        page_text = "- Details 7-8-9 -"
     else:
         page_text = "- Details -"
     
@@ -507,8 +600,15 @@ def handler(event):
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         
+        # CRITICAL: First check if file_name contains _001 or _002 for individual processing
+        file_name = input_data.get('file_name', '')
+        if '_001' in file_name or '_002' in file_name:
+            print(f"FORCING INDIVIDUAL PROCESSING for {file_name}")
+            # Force individual processing even if 'images' is present
+            input_data.pop('images', None)
+        
         # Check if this is a combined request for images 3-6
-        if 'images' in input_data and isinstance(input_data['images'], list):
+        if 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) > 0:
             # Combined processing for images 3-6
             print(f"Processing combined images: {len(input_data['images'])} images")
             
@@ -516,33 +616,51 @@ def handler(event):
             all_files = [img.get('file_name', '') for img in input_data['images']]
             print(f"All file names: {all_files}")
             
-            # Check if ANY file contains 005 or 006
+            # Check if ANY file contains specific numbers
+            has_001_002 = any('_001' in f or '_002' in f for f in all_files)
             has_005_006 = any('_005' in f or '_006' in f for f in all_files)
             has_003_004 = any('_003' in f or '_004' in f for f in all_files)
+            has_007_008_009 = any('_007' in f or '_008' in f or '_009' in f for f in all_files)
+            
+            # REJECT if trying to combine 001 or 002
+            if has_001_002:
+                raise ValueError("Images 001 and 002 must be processed individually, not combined!")
             
             # Set flags based on file names
-            if has_005_006:
-                # This is route 4 (images 5-6)
-                print("Detected as route 4 (images 5-6) - Will add COLOR section")
+            if has_007_008_009:
+                # This is route 5 (images 7-8-9) - three images
+                print("Detected as route 5 (images 7-8-9) - Will add COLOR section at bottom")
                 include_md = False
                 include_colors = True
+                include_design_point = False
+            elif has_005_006:
+                # This is route 4 (images 5-6) - with DESIGN POINT between them
+                print("Detected as route 4 (images 5-6) - Will add DESIGN POINT between images")
+                include_md = False
+                include_colors = False
+                include_design_point = True
             elif has_003_004:
                 # This is route 3 (images 3-4)
                 print("Detected as route 3 (images 3-4) - Will add MD TALK section")
                 include_md = True
                 include_colors = False
+                include_design_point = False
             else:
                 # Default based on explicit parameters
                 include_colors = input_data.get('include_color_options', False)
                 include_md = input_data.get('include_md_talk', True)
+                include_design_point = input_data.get('include_design_point', False)
             
             html_content = input_data.get('html_section_content', '')
+            design_content = input_data.get('design_content', '')
             
             detail_page = process_combined_images(
                 input_data['images'], 
                 html_section_content=html_content,
                 include_color_options=include_colors,
-                include_md_talk=include_md
+                include_md_talk=include_md,
+                include_design_point=include_design_point,
+                design_content=design_content
             )
             
             # Save to base64
@@ -562,11 +680,11 @@ def handler(event):
                 try:
                     webhook_data = {
                         "handler_type": "detail",
-                        "file_name": "combined_3_to_6",
+                        "file_name": "combined_3_to_9",
                         "runpod_result": {
                             "output": {
                                 "detail_page": result_base64_no_padding,
-                                "page_type": "combined_3_to_6",
+                                "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
                                 "image_count": len(input_data['images']),
                                 "dimensions": {
                                     "width": detail_page.width,
@@ -574,6 +692,7 @@ def handler(event):
                                 },
                                 "has_md_talk": include_md,
                                 "has_color_options": include_colors,
+                                "has_design_point": include_design_point,
                                 "format": "base64_no_padding"
                             }
                         },
@@ -592,7 +711,7 @@ def handler(event):
                     return {
                         "output": {
                             "detail_page": result_base64_no_padding,
-                            "page_type": "combined_3_to_6",
+                            "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
                             "image_count": len(input_data['images']),
                             "dimensions": {
                                 "width": detail_page.width,
@@ -619,6 +738,7 @@ def handler(event):
                     },
                     "has_md_talk": include_md,
                     "has_color_options": include_colors,
+                    "has_design_point": include_design_point,
                     "format": "base64_no_padding"
                 }
             }
@@ -628,8 +748,14 @@ def handler(event):
         image_number = int(input_data.get('image_number', 1))
         file_name = input_data.get('file_name', 'unknown.jpg')
         
-        print(f"Processing individual image: {file_name} (Image #{image_number})")
-        print(f"INDIVIDUAL PROCESSING - NO MD TALK SHOULD BE ADDED")
+        # Auto-detect image number from filename if not provided
+        if '_001' in file_name:
+            image_number = 1
+        elif '_002' in file_name:
+            image_number = 2
+        
+        print(f"Processing INDIVIDUAL image: {file_name} (Image #{image_number})")
+        print(f"INDIVIDUAL PROCESSING - NO MD TALK, NO COMBINING")
         
         # Get image
         img = get_image_from_input(input_data)
@@ -645,7 +771,7 @@ def handler(event):
             IMAGE_HEIGHT = 1333
             CONTENT_WIDTH = 900
             LOGO_HEIGHT = 0  # No logo for image 2
-        else:  # Details (3-6) - but this should not happen in individual mode
+        else:  # Should not happen
             PAGE_WIDTH = 860
             IMAGE_HEIGHT = 1147
             CONTENT_WIDTH = 760
@@ -746,7 +872,7 @@ def handler(event):
         result_base64_no_padding = result_base64.rstrip('=')
         
         print(f"Successfully created INDIVIDUAL detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
-        print(f"Has logo: {image_number == 1}, Has MD TALK: FALSE (individual images never have MD TALK)")
+        print(f"Has logo: {image_number == 1}, Has MD TALK: FALSE")
         
         # Send webhook if provided
         webhook_url = input_data.get('webhook')
@@ -793,7 +919,7 @@ def handler(event):
                         },
                         "has_claude_advice": bool(claude_advice),
                         "has_logo": image_number == 1,
-                        "has_md_talk": False,  # ALWAYS FALSE
+                        "has_md_talk": False,
                         "format": "base64_no_padding",
                         "webhook_sent": True,
                         "webhook_status": response.status_code
@@ -813,7 +939,7 @@ def handler(event):
                 },
                 "has_claude_advice": bool(claude_advice),
                 "has_logo": image_number == 1,
-                "has_md_talk": False,  # ALWAYS FALSE
+                "has_md_talk": False,
                 "format": "base64_no_padding"
             }
         }
