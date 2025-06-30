@@ -452,6 +452,8 @@ def process_combined_images(images_data, html_section_content="", include_color_
     IMAGE_SPACING = 80  # IMPORTANT: Space between images
     MD_TALK_HEIGHT = 400 if include_md_talk else 0
     MD_TALK_SPACING = 50 if include_md_talk else 0
+    DESIGN_POINT_HEIGHT = 500 if include_design_point else 0
+    DESIGN_POINT_SPACING = 80 if include_design_point else 0  # Space around design point
     COLOR_SECTION_HEIGHT = 400 if include_color_options else 0
     COLOR_SECTION_SPACING = 50 if include_color_options else 0
     
@@ -693,6 +695,7 @@ def handler(event):
                                 "has_md_talk": include_md,
                                 "has_color_options": include_colors,
                                 "has_design_point": include_design_point,
+                                "has_design_point": include_design_point,
                                 "format": "base64_no_padding"
                             }
                         },
@@ -730,7 +733,7 @@ def handler(event):
             return {
                 "output": {
                     "detail_page": result_base64_no_padding,
-                    "page_type": "combined_3_to_6",
+                    "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
                     "image_count": len(input_data['images']),
                     "dimensions": {
                         "width": detail_page.width,
