@@ -18,18 +18,16 @@ def get_text_dimensions(draw, text, font):
         return draw.textsize(text, font=font)
 
 def create_logo_text(text="twinkring", width=1200, height=150):
-    """Create elegant logo text for image 1"""
-    # RGB로 만들고 흰색 배경 사용
+    """Create elegant logo text for image 1 ONLY"""
     logo_img = Image.new('RGB', (width, height), (255, 255, 255))
     draw = ImageDraw.Draw(logo_img)
     
-    # Try to use elegant fonts
     font = None
     font_size = 72
     font_paths = [
-        "/tmp/Playfair_Display.ttf",  # Elegant serif font
-        "/tmp/Cormorant_Garamond.ttf",  # Elegant serif
-        "/tmp/EB_Garamond.ttf",  # Classic serif
+        "/tmp/Playfair_Display.ttf",
+        "/tmp/Cormorant_Garamond.ttf",
+        "/tmp/EB_Garamond.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
     ]
@@ -42,24 +40,19 @@ def create_logo_text(text="twinkring", width=1200, height=150):
             except:
                 continue
     
-    # If no elegant font found, use default with larger size
     if font is None:
         try:
-            font = ImageFont.load_default()
-            # Try to make it larger if possible
             font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
         except:
             font = ImageFont.load_default()
     
-    # Center the text
     text_width, text_height = get_text_dimensions(draw, text, font)
     x = (width - text_width) // 2
     y = (height - text_height) // 2
     
-    # Draw text with subtle shadow for elegance
     # Shadow
     draw.text((x+2, y+2), text, font=font, fill=(200, 200, 200))
-    # Main text - 진하고 선명하게
+    # Main text
     draw.text((x, y), text, font=font, fill=(40, 40, 40))
     
     print(f"Logo created: {text} at position ({x}, {y})")
@@ -95,7 +88,6 @@ def create_text_block(text, width=760):
     if font is None:
         font = ImageFont.load_default()
     
-    # Word wrap
     words = text.split()
     lines = []
     current_line = []
@@ -132,11 +124,10 @@ def create_text_block(text, width=760):
     return text_img
 
 def create_html_section(html_content="", width=860, height=400):
-    """Create HTML-like section (MD TALK)"""
+    """Create HTML-like section (MD TALK) - ONLY for combined 3-4"""
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
-    # Default MD TALK style content if no content provided
     if not html_content:
         html_content = """MD TALK
 
@@ -145,7 +136,6 @@ def create_html_section(html_content="", width=860, height=400):
 결혼이라는 가장 빛나는 순간을
 손끝에 남기고 싶은 분들께 추천드립니다:)"""
     
-    # Font setup
     font_paths = [
         "/tmp/NanumMyeongjo.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
@@ -168,7 +158,6 @@ def create_html_section(html_content="", width=860, height=400):
         title_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
     
-    # Parse content (simple version)
     lines = html_content.strip().split('\n')
     y_position = 80
     
@@ -178,14 +167,12 @@ def create_html_section(html_content="", width=860, height=400):
             y_position += 20
             continue
             
-        # First line as title
         if i == 0:
             text_width, text_height = get_text_dimensions(draw, line, title_font)
             x = (width - text_width) // 2
             draw.text((x, y_position), line, font=title_font, fill=(40, 40, 40))
             y_position += text_height + 40
         else:
-            # Body text
             text_width, text_height = get_text_dimensions(draw, line, body_font)
             x = (width - text_width) // 2
             draw.text((x, y_position), line, font=body_font, fill=(60, 60, 60))
@@ -194,12 +181,11 @@ def create_html_section(html_content="", width=860, height=400):
     return section_img
 
 def create_color_options_section(width=860, thumbnail_images=None):
-    """Create color options section with actual thumbnails or placeholders"""
-    section_height = 350
+    """Create color options section with 2x2 layout - ONLY for combined 5-6"""
+    section_height = 400  # Increased height for 2x2 layout
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
-    # Title
     font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
     title_font = None
     label_font = None
@@ -230,15 +216,23 @@ def create_color_options_section(width=860, thumbnail_images=None):
         ("antique", "#D2B48C", "antique white")
     ]
     
-    # Draw color boxes
+    # Draw color boxes in 2x2 grid
     box_size = 120
-    spacing = 50
-    total_width = len(colors) * box_size + (len(colors) - 1) * spacing
-    start_x = (width - total_width) // 2
-    y = 120
+    h_spacing = 100  # Horizontal spacing
+    v_spacing = 180  # Vertical spacing (includes label)
+    
+    # Calculate starting positions for centered 2x2 grid
+    grid_width = 2 * box_size + h_spacing
+    grid_height = 2 * v_spacing
+    start_x = (width - grid_width) // 2
+    start_y = 100
     
     for i, (name, color, label) in enumerate(colors):
-        x = start_x + i * (box_size + spacing)
+        row = i // 2
+        col = i % 2
+        
+        x = start_x + col * (box_size + h_spacing)
+        y = start_y + row * v_spacing
         
         # Draw ring placeholder
         draw.ellipse([x+10, y+10, x+box_size-10, y+box_size-10], 
@@ -277,14 +271,12 @@ def download_image_from_google_drive(url):
     try:
         print(f"Processing Google Drive URL: {url}")
         
-        # Extract file ID
         file_id = extract_file_id_from_url(url)
         if not file_id:
             raise ValueError(f"Could not extract file ID from URL: {url}")
         
         print(f"Extracted file ID: {file_id}")
         
-        # Try multiple download URLs
         download_urls = [
             f'https://drive.google.com/uc?export=download&id={file_id}',
             f'https://drive.google.com/uc?export=download&id={file_id}&confirm=t',
@@ -307,7 +299,6 @@ def download_image_from_google_drive(url):
                 print(f"Trying: {download_url}")
                 response = session.get(download_url, headers=headers, stream=True, timeout=30)
                 
-                # Check if we got an image
                 content_type = response.headers.get('content-type', '')
                 if response.status_code == 200 and ('image' in content_type or len(response.content) > 1000):
                     img = Image.open(BytesIO(response.content))
@@ -338,7 +329,6 @@ def get_image_from_input(input_data):
             if 'drive.google.com' in image_url or 'docs.google.com' in image_url:
                 return download_image_from_google_drive(image_url)
             else:
-                # Regular URL download
                 response = requests.get(image_url, timeout=30)
                 return Image.open(BytesIO(response.content))
         
@@ -350,11 +340,9 @@ def get_image_from_input(input_data):
         
         if image_base64:
             print(f"Using base64 data, length: {len(image_base64)}")
-            # Remove data URL prefix if present
             if image_base64.startswith('data:'):
                 image_base64 = image_base64.split(',')[1]
             
-            # Add padding if needed
             missing_padding = len(image_base64) % 4
             if missing_padding:
                 image_base64 += '=' * (4 - missing_padding)
@@ -378,30 +366,37 @@ def process_combined_images(images_data, html_section_content="", include_color_
     for i, img_data in enumerate(images_data):
         print(f"Image {i+1}: {img_data.get('file_name', 'unknown')}")
     
-    # Calculate total height (NO SPACING between images)
+    # IMPORTANT: Verify we have exactly 2 images
+    if len(images_data) != 2:
+        print(f"WARNING: Expected 2 images, got {len(images_data)}")
+        # If only one image, duplicate it for testing
+        if len(images_data) == 1:
+            images_data.append(images_data[0])
+            print("Duplicated single image for testing")
+    
+    # Calculate total height
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
     MD_TALK_HEIGHT = 400 if include_md_talk else 0
     MD_TALK_SPACING = 50 if include_md_talk else 0
-    COLOR_SECTION_HEIGHT = 350 if include_color_options else 0
+    COLOR_SECTION_HEIGHT = 400 if include_color_options else 0  # Increased for 2x2
     COLOR_SECTION_SPACING = 50 if include_color_options else 0
     
     total_height = TOP_MARGIN + BOTTOM_MARGIN
-    total_height += len(images_data) * IMAGE_HEIGHT  # No spacing between images
+    total_height += len(images_data) * IMAGE_HEIGHT
     total_height += MD_TALK_HEIGHT + MD_TALK_SPACING
     total_height += COLOR_SECTION_HEIGHT + COLOR_SECTION_SPACING
     
     # Add height for Claude advice texts
     for img_data in images_data:
         if img_data.get('claude_advice'):
-            total_height += 200  # Text block height
+            total_height += 200
     
     print(f"Creating combined canvas: {PAGE_WIDTH}x{total_height}")
     
     # Create canvas
     detail_page = Image.new('RGB', (PAGE_WIDTH, total_height), '#FFFFFF')
     
-    # Current Y position
     current_y = TOP_MARGIN
     
     # Add MD TALK section at the beginning (only for images 3-4)
@@ -451,21 +446,21 @@ def process_combined_images(images_data, html_section_content="", include_color_
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
         print(f"Pasted image at ({x_position}, {current_y})")
-        current_y += IMAGE_HEIGHT  # NO spacing after image
+        current_y += IMAGE_HEIGHT
         
         # Add Claude's advice text if exists
         if claude_advice and claude_advice.strip():
             text_img = create_text_block(claude_advice, CONTENT_WIDTH)
             if text_img.width > 1 and text_img.height > 1:
                 text_x = (PAGE_WIDTH - text_img.width) // 2
-                text_y = current_y + 30  # Small spacing before text
+                text_y = current_y + 30
                 
                 if text_img.mode == 'RGBA':
                     detail_page.paste(text_img, (text_x, text_y), text_img)
                 else:
                     detail_page.paste(text_img, (text_x, text_y))
                 
-                current_y = text_y + text_img.height + 30  # Small spacing after text
+                current_y = text_y + text_img.height + 30
     
     # Add color options section if requested (only for images 5-6)
     if include_color_options:
@@ -517,33 +512,31 @@ def handler(event):
             # Combined processing for images 3-6
             print(f"Processing combined images: {len(input_data['images'])} images")
             
-            # Determine type based on parameters or image count
-            # Route 3: MD TALK + images 3-4 (no color options)
-            # Route 4: images 5-6 + COLOR (no MD TALK)
+            # CRITICAL: Check ALL file names to determine route
+            all_files = [img.get('file_name', '') for img in input_data['images']]
+            print(f"All file names: {all_files}")
+            
+            # Check if ANY file contains 005 or 006
+            has_005_006 = any('_005' in f or '_006' in f for f in all_files)
+            has_003_004 = any('_003' in f or '_004' in f for f in all_files)
+            
+            # Set flags based on file names
+            if has_005_006:
+                # This is route 4 (images 5-6)
+                print("Detected as route 4 (images 5-6) - Will add COLOR section")
+                include_md = False
+                include_colors = True
+            elif has_003_004:
+                # This is route 3 (images 3-4)
+                print("Detected as route 3 (images 3-4) - Will add MD TALK section")
+                include_md = True
+                include_colors = False
+            else:
+                # Default based on explicit parameters
+                include_colors = input_data.get('include_color_options', False)
+                include_md = input_data.get('include_md_talk', True)
             
             html_content = input_data.get('html_section_content', '')
-            include_colors = input_data.get('include_color_options', False)
-            include_md = input_data.get('include_md_talk', True)
-            
-            # Auto-detect based on file names if not explicitly set
-            if len(input_data['images']) >= 1:
-                first_file = input_data['images'][0].get('file_name', '')
-                print(f"First file name: {first_file}")
-                
-                # 모든 파일명 출력
-                all_files = [img.get('file_name', '') for img in input_data['images']]
-                print(f"All files: {all_files}")
-                
-                if '_005' in first_file or '_006' in first_file:
-                    # This is route 4 (images 5-6)
-                    print("Detected as route 4 (images 5-6) - Will add COLOR section")
-                    include_md = False
-                    include_colors = True
-                elif '_003' in first_file or '_004' in first_file:
-                    # This is route 3 (images 3-4)
-                    print("Detected as route 3 (images 3-4) - Will add MD TALK section")
-                    include_md = True
-                    include_colors = False
             
             detail_page = process_combined_images(
                 input_data['images'], 
@@ -614,7 +607,6 @@ def handler(event):
                     }
                 except Exception as webhook_error:
                     print(f"Webhook error: {str(webhook_error)}")
-                    # Return result even if webhook fails
             
             return {
                 "output": {
@@ -631,13 +623,13 @@ def handler(event):
                 }
             }
         
-        # Individual image processing (for images 1 and 2)
-        # Get parameters
+        # Individual image processing (for images 1 and 2) - NO MD TALK!
         claude_advice = input_data.get('claude_advice', '')
         image_number = int(input_data.get('image_number', 1))
         file_name = input_data.get('file_name', 'unknown.jpg')
         
         print(f"Processing individual image: {file_name} (Image #{image_number})")
+        print(f"INDIVIDUAL PROCESSING - NO MD TALK SHOULD BE ADDED")
         
         # Get image
         img = get_image_from_input(input_data)
@@ -664,7 +656,7 @@ def handler(event):
         BOTTOM_MARGIN = 50
         TEXT_HEIGHT = 200 if claude_advice else 0
         
-        # Total height
+        # Total height - NO MD TALK for individual images!
         TOTAL_HEIGHT = TOP_MARGIN + LOGO_HEIGHT + IMAGE_HEIGHT + TEXT_HEIGHT + BOTTOM_MARGIN
         
         # Create canvas
@@ -672,9 +664,9 @@ def handler(event):
         
         current_y = TOP_MARGIN
         
-        # Add logo for image 1
+        # Add logo for image 1 ONLY
         if image_number == 1 and LOGO_HEIGHT > 0:
-            print("Creating and adding twinkring logo")
+            print("Creating and adding twinkring logo for image 1")
             logo_img = create_logo_text("twinkring", PAGE_WIDTH, LOGO_HEIGHT)
             detail_page.paste(logo_img, (0, current_y))
             current_y += LOGO_HEIGHT
@@ -711,12 +703,12 @@ def handler(event):
         detail_page.paste(img_cropped, (x_position, current_y))
         current_y += IMAGE_HEIGHT
         
-        # Add Claude's advice text
+        # Add Claude's advice text if exists (but NO MD TALK!)
         if claude_advice and claude_advice.strip():
             text_img = create_text_block(claude_advice, CONTENT_WIDTH)
             if text_img.width > 1 and text_img.height > 1:
                 text_x = (PAGE_WIDTH - text_img.width) // 2
-                text_y = current_y + 30  # Small spacing
+                text_y = current_y + 30
                 
                 if text_img.mode == 'RGBA':
                     detail_page.paste(text_img, (text_x, text_y), text_img)
@@ -753,8 +745,8 @@ def handler(event):
         # Remove padding for Make.com
         result_base64_no_padding = result_base64.rstrip('=')
         
-        print(f"Successfully created detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
-        print(f"Output length: {len(result_base64_no_padding)}")
+        print(f"Successfully created INDIVIDUAL detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
+        print(f"Has logo: {image_number == 1}, Has MD TALK: FALSE (individual images never have MD TALK)")
         
         # Send webhook if provided
         webhook_url = input_data.get('webhook')
@@ -774,6 +766,7 @@ def handler(event):
                             },
                             "has_claude_advice": bool(claude_advice),
                             "has_logo": image_number == 1,
+                            "has_md_talk": False,  # ALWAYS FALSE for individual images
                             "format": "base64_no_padding"
                         }
                     },
@@ -800,6 +793,7 @@ def handler(event):
                         },
                         "has_claude_advice": bool(claude_advice),
                         "has_logo": image_number == 1,
+                        "has_md_talk": False,  # ALWAYS FALSE
                         "format": "base64_no_padding",
                         "webhook_sent": True,
                         "webhook_status": response.status_code
@@ -807,7 +801,6 @@ def handler(event):
                 }
             except Exception as webhook_error:
                 print(f"Webhook error: {str(webhook_error)}")
-                # Return result even if webhook fails
         
         return {
             "output": {
@@ -820,6 +813,7 @@ def handler(event):
                 },
                 "has_claude_advice": bool(claude_advice),
                 "has_logo": image_number == 1,
+                "has_md_talk": False,  # ALWAYS FALSE
                 "format": "base64_no_padding"
             }
         }
