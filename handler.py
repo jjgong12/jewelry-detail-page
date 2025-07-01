@@ -20,48 +20,6 @@ def get_text_dimensions(draw, text, font):
     except AttributeError:
         return draw.textsize(text, font=font)
 
-def create_logo_text(text="twinkring", width=1200, height=150):
-    """Create elegant logo text for image 1 ONLY"""
-    logo_img = Image.new('RGB', (width, height), (255, 255, 255))
-    draw = ImageDraw.Draw(logo_img)
-    
-    font = None
-    font_size = 72
-    font_paths = [
-        "/tmp/Playfair_Display.ttf",
-        "/tmp/Cormorant_Garamond.ttf",
-        "/tmp/EB_Garamond.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-    ]
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-                break
-            except:
-                continue
-    
-    if font is None:
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
-        except:
-            font = ImageFont.load_default()
-    
-    text_width, text_height = get_text_dimensions(draw, text, font)
-    x = (width - text_width) // 2
-    y = (height - text_height) // 2
-    
-    # Shadow
-    draw.text((x+2, y+2), text, font=font, fill=(200, 200, 200))
-    # Main text
-    draw.text((x, y), text, font=font, fill=(40, 40, 40))
-    
-    print(f"Logo created: {text} at position ({x}, {y})")
-    
-    return logo_img
-
 def create_html_section(html_content="", width=860, height=400):
     """Create HTML-like section (MD TALK) - ONLY for combined 3-4"""
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
@@ -392,15 +350,16 @@ def process_combined_images(images_data, html_section_content="", include_color_
     MD_TALK_SPACING = 50 if include_md_talk else 0
     DESIGN_POINT_HEIGHT = 500 if include_design_point else 0
     DESIGN_POINT_SPACING = 80 if include_design_point else 0  # Space around design point
-    COLOR_SECTION_HEIGHT = 400 if include_color_options else 0
-    COLOR_SECTION_SPACING = 50 if include_color_options else 0
+    
+    # COLOR section at the bottom of last image for 7-8-9
+    COLOR_SECTION_HEIGHT = 0
+    COLOR_SECTION_SPACING = 0
     
     total_height = TOP_MARGIN + BOTTOM_MARGIN
     total_height += len(images_data) * IMAGE_HEIGHT
     total_height += (len(images_data) - 1) * IMAGE_SPACING  # Spacing between images
     total_height += MD_TALK_HEIGHT + MD_TALK_SPACING
     total_height += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING
-    total_height += COLOR_SECTION_HEIGHT + COLOR_SECTION_SPACING
     
     print(f"Creating combined canvas: {PAGE_WIDTH}x{total_height}")
     
@@ -463,15 +422,17 @@ def process_combined_images(images_data, html_section_content="", include_color_
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
         print(f"Pasted image at ({x_position}, {current_y})")
+        
+        # If this is the last image and we need color options, add them ON the image
+        if include_color_options and idx == len(images_data) - 1:
+            print("Adding COLOR section on bottom of last image")
+            # Create color section
+            color_section = create_color_options_section(PAGE_WIDTH)
+            # Paste at bottom of current image
+            color_y = current_y + IMAGE_HEIGHT - 400  # 400 is height of color section
+            detail_page.paste(color_section, (0, color_y), color_section)
+        
         current_y += IMAGE_HEIGHT
-    
-    # Add color options section if requested
-    if include_color_options:
-        print("Adding COLOR section at the bottom")
-        current_y += COLOR_SECTION_SPACING
-        color_section = create_color_options_section(PAGE_WIDTH)
-        detail_page.paste(color_section, (0, current_y))
-        print(f"COLOR section added at y={current_y}")
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
@@ -506,7 +467,7 @@ def process_combined_images(images_data, html_section_content="", include_color_
 def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
     """Send results to Google Apps Script webhook"""
     try:
-        if not WEBHOOK_URL or WEBHOOK_URL == "https://script.google.com/macros/s/YOUR_GOOGLE_SCRIPT_ID/exec":
+        if not WEBHOOK_URL:
             print("WARNING: Webhook URL not configured, skipping webhook send")
             return None
             
@@ -528,6 +489,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
             webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
         
         print(f"Sending to webhook: {handler_type} for {file_name}")
+        print(f"Webhook URL: {WEBHOOK_URL}")
         
         response = requests.post(
             WEBHOOK_URL,
@@ -546,12 +508,15 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
             
     except Exception as e:
         print(f"Webhook error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V87 Detail Page Handler with Webhook Started ===")
+        print(f"=== V89 Detail Page Handler with Webhook Started ===")
+        print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
         input_data = event.get('input', event)
@@ -650,7 +615,7 @@ def handler(event):
                 "has_design_point": include_design_point,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V87"
+                "version": "V89"
             }
             
             # Send to webhook if configured
@@ -700,37 +665,26 @@ def handler(event):
             PAGE_WIDTH = 1200
             IMAGE_HEIGHT = 1600
             CONTENT_WIDTH = 1100
-            LOGO_HEIGHT = 150  # Space for logo
         elif image_number == 2:  # Sub hero
             PAGE_WIDTH = 1000
             IMAGE_HEIGHT = 1333
             CONTENT_WIDTH = 900
-            LOGO_HEIGHT = 0  # No logo for image 2
         else:  # Should not happen
             PAGE_WIDTH = 860
             IMAGE_HEIGHT = 1147
             CONTENT_WIDTH = 760
-            LOGO_HEIGHT = 0
         
         # Section heights (simplified)
         TOP_MARGIN = 50
         BOTTOM_MARGIN = 50
         
-        # Total height - NO MD TALK for individual images!
-        TOTAL_HEIGHT = TOP_MARGIN + LOGO_HEIGHT + IMAGE_HEIGHT + BOTTOM_MARGIN
+        # Total height - NO separate logo section for image 1
+        TOTAL_HEIGHT = TOP_MARGIN + IMAGE_HEIGHT + BOTTOM_MARGIN
         
         # Create canvas
         detail_page = Image.new('RGB', (PAGE_WIDTH, TOTAL_HEIGHT), '#FFFFFF')
         
         current_y = TOP_MARGIN
-        
-        # Add logo for image 1 ONLY
-        if image_number == 1 and LOGO_HEIGHT > 0:
-            print("Creating and adding twinkring logo for image 1")
-            logo_img = create_logo_text("twinkring", PAGE_WIDTH, LOGO_HEIGHT)
-            detail_page.paste(logo_img, (0, current_y))
-            current_y += LOGO_HEIGHT
-            print(f"Logo added at y={current_y-LOGO_HEIGHT}, size={PAGE_WIDTH}x{LOGO_HEIGHT}")
         
         # Resize image with aspect ratio
         height_ratio = IMAGE_HEIGHT / img.height
@@ -753,6 +707,51 @@ def handler(event):
         # Paste image
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
+        
+        # Add logo INSIDE image 1 with bigger size
+        if image_number == 1:
+            print("Adding twinkring logo inside image 1")
+            draw = ImageDraw.Draw(detail_page)
+            
+            # Font settings - increased to 2.5x (72 * 2.5 = 180)
+            font_size = 180
+            font = None
+            font_paths = [
+                "/tmp/Playfair_Display.ttf",
+                "/tmp/Cormorant_Garamond.ttf",
+                "/tmp/EB_Garamond.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+            ]
+            
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    try:
+                        font = ImageFont.truetype(font_path, font_size)
+                        break
+                    except:
+                        continue
+            
+            if font is None:
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
+                except:
+                    font = ImageFont.load_default()
+            
+            text = "twinkring"
+            text_width, text_height = get_text_dimensions(draw, text, font)
+            
+            # Position at top area of image (inside the red marked area)
+            text_x = (PAGE_WIDTH - text_width) // 2
+            text_y = current_y + 100  # Position inside image top area
+            
+            # Shadow effect
+            draw.text((text_x+3, text_y+3), text, font=font, fill=(200, 200, 200))
+            # Main text
+            draw.text((text_x, text_y), text, font=font, fill=(40, 40, 40))
+            
+            print(f"Logo added inside image at ({text_x}, {text_y})")
+        
         current_y += IMAGE_HEIGHT
         
         # Add page indicator
@@ -798,7 +797,7 @@ def handler(event):
             "has_md_talk": False,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V87"
+            "version": "V89"
         }
         
         # Send to webhook if configured
@@ -835,7 +834,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V87"
+                "version": "V89"
             }
         }
 
