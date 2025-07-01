@@ -509,7 +509,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V91 Detail Page Handler with Webhook Started ===")
+        print(f"=== V92 Detail Page Handler with Webhook Started ===")
         print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
@@ -621,7 +621,7 @@ def handler(event):
                 "is_thumbnail_group": is_thumbnail_group,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V91"
+                "version": "V92"
             }
             
             # Send to webhook if configured
@@ -716,11 +716,11 @@ def handler(event):
         
         # Add logo INSIDE image 1 with MUCH BIGGER size
         if image_number == 1:
-            print("Adding twinkring logo inside image 1 with HUGE size")
+            print("Adding twinkring logo inside image 1 with MASSIVE size")
             draw = ImageDraw.Draw(detail_page)
             
-            # Font settings - MASSIVELY increased to fill the blue box
-            font_size = 420  # V91: Confirmed at 420 for maximum impact
+            # Font settings - V92: 3x bigger than 420 = 1260!
+            font_size = 1260  # TRIPLED from 420!
             font = None
             font_paths = [
                 "/tmp/Playfair_Display.ttf",
@@ -742,17 +742,32 @@ def handler(event):
                 try:
                     font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
                 except:
-                    font = ImageFont.load_default()
+                    # If font_size is too large, use maximum available
+                    try:
+                        font_size = 800  # Fallback size
+                        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
+                    except:
+                        font = ImageFont.load_default()
             
             text = "twinkring"
             text_width, text_height = get_text_dimensions(draw, text, font)
             
-            # Position at top area of image (inside the blue marked area)
+            # Check if text is too wide and adjust if necessary
+            if text_width > PAGE_WIDTH - 100:  # Leave some margin
+                # Recalculate font size to fit
+                font_size = int(font_size * (PAGE_WIDTH - 100) / text_width)
+                try:
+                    font = ImageFont.truetype(font_paths[3], font_size)
+                    text_width, text_height = get_text_dimensions(draw, text, font)
+                except:
+                    pass
+            
+            # Position at lower area of image (more down in the blue box)
             text_x = (PAGE_WIDTH - text_width) // 2
-            text_y = current_y + 40  # Adjusted position for bigger font
+            text_y = current_y + 300  # Much lower position (increased from 40 to 300)
             
             # Shadow effect
-            draw.text((text_x+4, text_y+4), text, font=font, fill=(200, 200, 200))
+            draw.text((text_x+6, text_y+6), text, font=font, fill=(200, 200, 200))
             # Main text
             draw.text((text_x, text_y), text, font=font, fill=(40, 40, 40))
             
@@ -803,7 +818,7 @@ def handler(event):
             "has_md_talk": False,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V91"
+            "version": "V92"
         }
         
         # Send to webhook if configured
@@ -840,7 +855,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V91"
+                "version": "V92"
             }
         }
 
