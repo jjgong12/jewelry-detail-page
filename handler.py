@@ -78,7 +78,7 @@ def create_html_section(html_content="", width=860, height=400):
     return section_img
 
 def create_design_point_section(design_content="", width=860, height=500):
-    """Create DESIGN POINT section - for between 005 and 006"""
+    """Create DESIGN POINT section - for TOP of 5-6 group"""
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -155,7 +155,7 @@ def create_design_point_section(design_content="", width=860, height=500):
     return section_img
 
 def create_color_options_section(width=860, thumbnail_images=None):
-    """Create color options section with 2x2 layout - for combined 3-4 and 7-8-9"""
+    """Create color options section with 2x2 layout - ONLY for 7-8-9"""
     section_height = 400
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -334,7 +334,7 @@ def get_image_from_input(input_data):
 def process_combined_images(images_data, html_section_content="", include_color_options=False, 
                           include_md_talk=True, include_design_point=False, design_content="",
                           PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
-    """Process images combined - MD TALK for 3-4, DESIGN POINT for 5-6, COLOR for 3-4 and 7-8-9"""
+    """Process images combined - MD TALK for 3-4, DESIGN POINT for 5-6, COLOR for 7-8-9"""
     print(f"Processing {len(images_data)} images for combined layout")
     print(f"MD TALK: {include_md_talk}, COLOR: {include_color_options}, DESIGN POINT: {include_design_point}")
     
@@ -345,16 +345,13 @@ def process_combined_images(images_data, html_section_content="", include_color_
     # Calculate total height WITH SPACING between images
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
-    IMAGE_SPACING = 80  # IMPORTANT: Space between images
+    IMAGE_SPACING = 120  # INCREASED from 80 to 120 for more breathing room
     MD_TALK_HEIGHT = 400 if include_md_talk else 0
     MD_TALK_SPACING = 50 if include_md_talk else 0
     DESIGN_POINT_HEIGHT = 500 if include_design_point else 0
-    DESIGN_POINT_SPACING = 80 if include_design_point else 0  # Space around design point
+    DESIGN_POINT_SPACING = 50 if include_design_point else 0  # Consistent with MD_TALK_SPACING
     
-    # COLOR section at the bottom of last image
-    COLOR_SECTION_HEIGHT = 0
-    COLOR_SECTION_SPACING = 0
-    
+    # Calculate total height
     total_height = TOP_MARGIN + BOTTOM_MARGIN
     total_height += len(images_data) * IMAGE_HEIGHT
     total_height += (len(images_data) - 1) * IMAGE_SPACING  # Spacing between images
@@ -376,6 +373,14 @@ def process_combined_images(images_data, html_section_content="", include_color_
         current_y += MD_TALK_HEIGHT + MD_TALK_SPACING
         print(f"MD TALK added, current_y: {current_y}")
     
+    # Add DESIGN POINT section at the beginning (only for images 5-6)
+    if include_design_point:
+        print("Adding DESIGN POINT section at the top")
+        design_section = create_design_point_section(design_content, PAGE_WIDTH, DESIGN_POINT_HEIGHT)
+        detail_page.paste(design_section, (0, current_y))
+        current_y += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING
+        print(f"DESIGN POINT added, current_y: {current_y}")
+    
     # Process each image
     for idx, img_data in enumerate(images_data):
         print(f"Processing image {idx + 1}/{len(images_data)}: {img_data.get('file_name', 'unknown')}")
@@ -384,17 +389,6 @@ def process_combined_images(images_data, html_section_content="", include_color_
         if idx > 0:
             current_y += IMAGE_SPACING
             print(f"Added {IMAGE_SPACING}px spacing, current_y: {current_y}")
-        
-        # Check if we need to add DESIGN POINT between 005 and 006
-        file_name = img_data.get('file_name', '')
-        if include_design_point and idx == 1 and '_006' in file_name:
-            # Add DESIGN POINT before image 006
-            print("Adding DESIGN POINT section between 005 and 006")
-            current_y += DESIGN_POINT_SPACING // 2  # Half spacing before
-            design_section = create_design_point_section(design_content, PAGE_WIDTH, DESIGN_POINT_HEIGHT)
-            detail_page.paste(design_section, (0, current_y))
-            current_y += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING // 2  # Half spacing after
-            print(f"DESIGN POINT added, current_y: {current_y}")
         
         # Get image
         img = get_image_from_input(img_data)
@@ -426,10 +420,8 @@ def process_combined_images(images_data, html_section_content="", include_color_
         # If this is the last image and we need color options, add them ON the image
         if include_color_options and idx == len(images_data) - 1:
             print("Adding COLOR section on bottom of last image")
-            # Create color section with transparency
+            # Create color section
             color_section = create_color_options_section(PAGE_WIDTH)
-            # Convert to RGBA for transparency
-            color_section_rgba = color_section.convert("RGBA")
             # Paste at bottom of current image
             color_y = current_y + IMAGE_HEIGHT - 400  # 400 is height of color section
             detail_page.paste(color_section, (0, color_y))
@@ -438,9 +430,7 @@ def process_combined_images(images_data, html_section_content="", include_color_
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
-    if include_md_talk and include_color_options:
-        page_text = "- Details 3-4 -"
-    elif include_md_talk:
+    if include_md_talk:
         page_text = "- Details 3-4 -"
     elif include_design_point:
         page_text = "- Details 5-6 -"
@@ -519,7 +509,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V90 Detail Page Handler with Webhook Started ===")
+        print(f"=== V91 Detail Page Handler with Webhook Started ===")
         print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
@@ -559,24 +549,35 @@ def handler(event):
             # Determine route based on input data
             route_number = input_data.get('route_number', 0)
             
-            # Set flags based on route number or file analysis
+            # Check if this is thumbnail group (route 5)
+            is_thumbnail_group = False
             if route_number == 5 or len(input_data['images']) == 3:
-                # Route 5 (images 7-8-9)
+                # Additional check for thumbnail filenames
+                for fname in all_files:
+                    if 'thumb' in fname.lower() or '_007' in fname or '_008' in fname or '_009' in fname:
+                        is_thumbnail_group = True
+                        break
+                if is_thumbnail_group:
+                    print("Detected as thumbnail group (images 7-8-9)")
+            
+            # Set flags based on route number or file analysis
+            if route_number == 5 or is_thumbnail_group:
+                # Route 5 (images 7-8-9) - thumbnails
                 print("Detected as route 5 (images 7-8-9) - Will add COLOR section at bottom")
                 include_md = False
                 include_colors = True
                 include_design_point = False
             elif route_number == 4:
                 # Route 4 (images 5-6)
-                print("Detected as route 4 (images 5-6) - Will add DESIGN POINT between images")
+                print("Detected as route 4 (images 5-6) - Will add DESIGN POINT at TOP")
                 include_md = False
-                include_colors = False
+                include_colors = False  # NO COLOR section for route 4
                 include_design_point = True
             elif route_number == 3:
-                # Route 3 (images 3-4) - IMPORTANT: Add COLOR section here too!
-                print("Detected as route 3 (images 3-4) - Will add MD TALK section AND COLOR")
+                # Route 3 (images 3-4) - FIXED: NO COLOR section
+                print("Detected as route 3 (images 3-4) - Will add MD TALK section only")
                 include_md = True
-                include_colors = True  # ADD COLOR SECTION TO ROUTE 3!
+                include_colors = False  # FIXED: NO COLOR section for route 3!
                 include_design_point = False
             else:
                 # Default based on explicit parameters
@@ -617,9 +618,10 @@ def handler(event):
                 "has_md_talk": include_md,
                 "has_color_options": include_colors,
                 "has_design_point": include_design_point,
+                "is_thumbnail_group": is_thumbnail_group,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V90"
+                "version": "V91"
             }
             
             # Send to webhook if configured
@@ -718,7 +720,7 @@ def handler(event):
             draw = ImageDraw.Draw(detail_page)
             
             # Font settings - MASSIVELY increased to fill the blue box
-            font_size = 420  # INCREASED from 180 to 420!
+            font_size = 420  # V91: Confirmed at 420 for maximum impact
             font = None
             font_paths = [
                 "/tmp/Playfair_Display.ttf",
@@ -801,7 +803,7 @@ def handler(event):
             "has_md_talk": False,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V90"
+            "version": "V91"
         }
         
         # Send to webhook if configured
@@ -838,7 +840,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V90"
+                "version": "V91"
             }
         }
 
