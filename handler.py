@@ -509,7 +509,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V92 Detail Page Handler with Webhook Started ===")
+        print(f"=== V93 Detail Page Handler with HUGE Logo Started ===")
         print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
@@ -621,7 +621,7 @@ def handler(event):
                 "is_thumbnail_group": is_thumbnail_group,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V92"
+                "version": "V93"
             }
             
             # Send to webhook if configured
@@ -716,11 +716,11 @@ def handler(event):
         
         # Add logo INSIDE image 1 with MUCH BIGGER size
         if image_number == 1:
-            print("Adding twinkring logo inside image 1 with MASSIVE size")
+            print("Adding twinkring logo inside image 1 with SUPER MASSIVE size")
             draw = ImageDraw.Draw(detail_page)
             
-            # Font settings - V92: 3x bigger than 420 = 1260!
-            font_size = 1260  # TRIPLED from 420!
+            # Font settings - V93: SUPER MASSIVE SIZE!
+            font_size = 2400  # ALMOST DOUBLED from 1260!
             font = None
             font_paths = [
                 "/tmp/Playfair_Display.ttf",
@@ -730,48 +730,64 @@ def handler(event):
                 "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
             ]
             
-            for font_path in font_paths:
-                if os.path.exists(font_path):
-                    try:
-                        font = ImageFont.truetype(font_path, font_size)
-                        break
-                    except:
-                        continue
+            # Try different font sizes to find the maximum that works
+            font_sizes_to_try = [2400, 2000, 1800, 1600, 1400, 1200, 1000, 800]
+            
+            for try_size in font_sizes_to_try:
+                for font_path in font_paths:
+                    if os.path.exists(font_path):
+                        try:
+                            font = ImageFont.truetype(font_path, try_size)
+                            font_size = try_size
+                            print(f"Successfully loaded font at size {font_size}")
+                            break
+                        except:
+                            continue
+                if font is not None:
+                    break
             
             if font is None:
-                try:
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
-                except:
-                    # If font_size is too large, use maximum available
-                    try:
-                        font_size = 800  # Fallback size
-                        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", font_size)
-                    except:
-                        font = ImageFont.load_default()
+                font = ImageFont.load_default()
+                print("Using default font as fallback")
             
             text = "twinkring"
             text_width, text_height = get_text_dimensions(draw, text, font)
             
             # Check if text is too wide and adjust if necessary
-            if text_width > PAGE_WIDTH - 100:  # Leave some margin
+            max_text_width = PAGE_WIDTH - 50  # Leave 25px margin on each side
+            if text_width > max_text_width:
                 # Recalculate font size to fit
-                font_size = int(font_size * (PAGE_WIDTH - 100) / text_width)
+                font_size = int(font_size * max_text_width / text_width)
+                print(f"Text too wide, adjusting font size to {font_size}")
                 try:
-                    font = ImageFont.truetype(font_paths[3], font_size)
+                    for font_path in font_paths:
+                        if os.path.exists(font_path):
+                            try:
+                                font = ImageFont.truetype(font_path, font_size)
+                                break
+                            except:
+                                continue
                     text_width, text_height = get_text_dimensions(draw, text, font)
                 except:
                     pass
             
-            # Position at lower area of image (more down in the blue box)
+            # Position at lower area of image - CENTER VERTICALLY IN THE IMAGE
             text_x = (PAGE_WIDTH - text_width) // 2
-            text_y = current_y + 300  # Much lower position (increased from 40 to 300)
+            # Center vertically in the image area (not including margins)
+            text_y = current_y + (IMAGE_HEIGHT - text_height) // 2
             
-            # Shadow effect
-            draw.text((text_x+6, text_y+6), text, font=font, fill=(200, 200, 200))
-            # Main text
-            draw.text((text_x, text_y), text, font=font, fill=(40, 40, 40))
+            # Strong shadow effect for visibility
+            shadow_offset = 8
+            shadow_color = (150, 150, 150)
+            # Multiple shadow layers for stronger effect
+            for offset in [shadow_offset, shadow_offset//2]:
+                draw.text((text_x+offset, text_y+offset), text, font=font, fill=shadow_color)
+            
+            # Main text - darker color for better contrast
+            draw.text((text_x, text_y), text, font=font, fill=(30, 30, 30))
             
             print(f"Logo added inside image at ({text_x}, {text_y}) with font size {font_size}")
+            print(f"Text dimensions: {text_width}x{text_height}")
         
         current_y += IMAGE_HEIGHT
         
@@ -818,7 +834,7 @@ def handler(event):
             "has_md_talk": False,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V92"
+            "version": "V93"
         }
         
         # Send to webhook if configured
@@ -855,7 +871,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V92"
+                "version": "V93"
             }
         }
 
