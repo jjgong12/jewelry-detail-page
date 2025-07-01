@@ -10,8 +10,7 @@ import re
 from datetime import datetime
 
 # Webhook URL - Replace with your Google Apps Script Web App URL
-WEBHOOK_URL = "https://hook.eu2.make.com/popn43w5sv3mi4msf1tpj814e2f7pq58
-"  # User must set this
+WEBHOOK_URL = "https://script.google.com/macros/s/YOUR_GOOGLE_SCRIPT_ID/exec"  # Replace with actual Google Apps Script URL
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
@@ -507,7 +506,7 @@ def process_combined_images(images_data, html_section_content="", include_color_
 def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
     """Send results to Google Apps Script webhook"""
     try:
-        if not WEBHOOK_URL or WEBHOOK_URL == "YOUR_GOOGLE_APPS_SCRIPT_WEBHOOK_URL":
+        if not WEBHOOK_URL or WEBHOOK_URL == "https://script.google.com/macros/s/YOUR_GOOGLE_SCRIPT_ID/exec":
             print("WARNING: Webhook URL not configured, skipping webhook send")
             return None
             
@@ -552,7 +551,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V86 Detail Page Handler with Webhook Started ===")
+        print(f"=== V87 Detail Page Handler with Webhook Started ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -651,7 +650,7 @@ def handler(event):
                 "has_design_point": include_design_point,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V86"
+                "version": "V87"
             }
             
             # Send to webhook if configured
@@ -799,7 +798,7 @@ def handler(event):
             "has_md_talk": False,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V86"
+            "version": "V87"
         }
         
         # Send to webhook if configured
@@ -836,7 +835,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V86"
+                "version": "V87"
             }
         }
 
