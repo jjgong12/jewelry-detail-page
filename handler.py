@@ -509,7 +509,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V93 Detail Page Handler with HUGE Logo Started ===")
+        print(f"=== V94 Detail Page Handler with Stable Large Logo Started ===")
         print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
@@ -621,7 +621,7 @@ def handler(event):
                 "is_thumbnail_group": is_thumbnail_group,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V93"
+                "version": "V94"
             }
             
             # Send to webhook if configured
@@ -714,80 +714,82 @@ def handler(event):
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
         
-        # Add logo INSIDE image 1 with MUCH BIGGER size
+        # Add logo INSIDE image 1 with stable large size
         if image_number == 1:
-            print("Adding twinkring logo inside image 1 with SUPER MASSIVE size")
+            print("Adding twinkring logo inside image 1 with stable large size")
             draw = ImageDraw.Draw(detail_page)
             
-            # Font settings - V93: SUPER MASSIVE SIZE!
-            font_size = 2400  # ALMOST DOUBLED from 1260!
-            font = None
+            # V94: Use stable font size based on page width
+            # Target: 50% of page width for the text
+            target_font_size = int(PAGE_WIDTH * 0.5)  # 600px for 1200px width
+            
+            # Font paths - prioritize system fonts
             font_paths = [
+                "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
                 "/tmp/Playfair_Display.ttf",
                 "/tmp/Cormorant_Garamond.ttf",
-                "/tmp/EB_Garamond.ttf",
-                "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
+                "/tmp/EB_Garamond.ttf"
             ]
             
-            # Try different font sizes to find the maximum that works
-            font_sizes_to_try = [2400, 2000, 1800, 1600, 1400, 1200, 1000, 800]
+            # Start with reasonable sizes and work down
+            font_sizes_to_try = [600, 500, 400, 350, 300, 250, 200]
             
-            for try_size in font_sizes_to_try:
+            font = None
+            actual_font_size = 200  # Default fallback
+            
+            for size in font_sizes_to_try:
                 for font_path in font_paths:
                     if os.path.exists(font_path):
                         try:
-                            font = ImageFont.truetype(font_path, try_size)
-                            font_size = try_size
-                            print(f"Successfully loaded font at size {font_size}")
-                            break
-                        except:
+                            test_font = ImageFont.truetype(font_path, size)
+                            # Test if font loads properly
+                            test_text = "twinkring"
+                            test_width, test_height = get_text_dimensions(draw, test_text, test_font)
+                            
+                            # Check if text fits within page width with margin
+                            if test_width <= PAGE_WIDTH - 100:
+                                font = test_font
+                                actual_font_size = size
+                                print(f"Successfully loaded {font_path} at size {size}")
+                                print(f"Text dimensions: {test_width}x{test_height}")
+                                break
+                        except Exception as e:
+                            print(f"Failed to load {font_path} at size {size}: {e}")
                             continue
+                
                 if font is not None:
                     break
             
+            # If all attempts failed, use a guaranteed working size
             if font is None:
-                font = ImageFont.load_default()
-                print("Using default font as fallback")
+                print("All font attempts failed, using fallback")
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", 150)
+                    actual_font_size = 150
+                except:
+                    font = ImageFont.load_default()
+                    actual_font_size = 40
             
             text = "twinkring"
             text_width, text_height = get_text_dimensions(draw, text, font)
             
-            # Check if text is too wide and adjust if necessary
-            max_text_width = PAGE_WIDTH - 50  # Leave 25px margin on each side
-            if text_width > max_text_width:
-                # Recalculate font size to fit
-                font_size = int(font_size * max_text_width / text_width)
-                print(f"Text too wide, adjusting font size to {font_size}")
-                try:
-                    for font_path in font_paths:
-                        if os.path.exists(font_path):
-                            try:
-                                font = ImageFont.truetype(font_path, font_size)
-                                break
-                            except:
-                                continue
-                    text_width, text_height = get_text_dimensions(draw, text, font)
-                except:
-                    pass
-            
-            # Position at lower area of image - CENTER VERTICALLY IN THE IMAGE
+            # Position text in upper area of image (like reference image)
             text_x = (PAGE_WIDTH - text_width) // 2
-            # Center vertically in the image area (not including margins)
-            text_y = current_y + (IMAGE_HEIGHT - text_height) // 2
+            # Place at 20% from top of image area
+            text_y = current_y + int(IMAGE_HEIGHT * 0.2)
             
-            # Strong shadow effect for visibility
-            shadow_offset = 8
-            shadow_color = (150, 150, 150)
-            # Multiple shadow layers for stronger effect
-            for offset in [shadow_offset, shadow_offset//2]:
-                draw.text((text_x+offset, text_y+offset), text, font=font, fill=shadow_color)
+            # Subtle shadow for depth (like reference image)
+            shadow_offset = 3
+            shadow_color = (200, 200, 200)
+            draw.text((text_x + shadow_offset, text_y + shadow_offset), text, font=font, fill=shadow_color)
             
-            # Main text - darker color for better contrast
-            draw.text((text_x, text_y), text, font=font, fill=(30, 30, 30))
+            # Main text - black color like reference
+            draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0))
             
-            print(f"Logo added inside image at ({text_x}, {text_y}) with font size {font_size}")
-            print(f"Text dimensions: {text_width}x{text_height}")
+            print(f"Logo added at ({text_x}, {text_y}) with font size {actual_font_size}")
+            print(f"Final text dimensions: {text_width}x{text_height}")
+            print(f"Text width ratio to page: {text_width/PAGE_WIDTH:.2%}")
         
         current_y += IMAGE_HEIGHT
         
@@ -834,7 +836,7 @@ def handler(event):
             "has_md_talk": False,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V93"
+            "version": "V94"
         }
         
         # Send to webhook if configured
@@ -871,7 +873,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V93"
+                "version": "V94"
             }
         }
 
