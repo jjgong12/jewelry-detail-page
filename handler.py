@@ -10,7 +10,8 @@ import re
 from datetime import datetime
 
 # Webhook URL - Replace with your Google Apps Script Web App URL
-WEBHOOK_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEBHOOK_URL"  # User must set this
+WEBHOOK_URL = "https://hook.eu2.make.com/popn43w5sv3mi4msf1tpj814e2f7pq58
+"  # User must set this
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
