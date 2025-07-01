@@ -155,7 +155,7 @@ def create_design_point_section(design_content="", width=860, height=500):
     return section_img
 
 def create_color_options_section(width=860, thumbnail_images=None):
-    """Create color options section with 2x2 layout - for combined 7-8-9"""
+    """Create color options section with 2x2 layout - for combined 3-4 and 7-8-9"""
     section_height = 400
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -334,7 +334,7 @@ def get_image_from_input(input_data):
 def process_combined_images(images_data, html_section_content="", include_color_options=False, 
                           include_md_talk=True, include_design_point=False, design_content="",
                           PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
-    """Process images combined - MD TALK for 3-4, DESIGN POINT for 5-6, COLOR for 7-8-9"""
+    """Process images combined - MD TALK for 3-4, DESIGN POINT for 5-6, COLOR for 3-4 and 7-8-9"""
     print(f"Processing {len(images_data)} images for combined layout")
     print(f"MD TALK: {include_md_talk}, COLOR: {include_color_options}, DESIGN POINT: {include_design_point}")
     
@@ -351,7 +351,7 @@ def process_combined_images(images_data, html_section_content="", include_color_
     DESIGN_POINT_HEIGHT = 500 if include_design_point else 0
     DESIGN_POINT_SPACING = 80 if include_design_point else 0  # Space around design point
     
-    # COLOR section at the bottom of last image for 7-8-9
+    # COLOR section at the bottom of last image
     COLOR_SECTION_HEIGHT = 0
     COLOR_SECTION_SPACING = 0
     
@@ -426,17 +426,21 @@ def process_combined_images(images_data, html_section_content="", include_color_
         # If this is the last image and we need color options, add them ON the image
         if include_color_options and idx == len(images_data) - 1:
             print("Adding COLOR section on bottom of last image")
-            # Create color section
+            # Create color section with transparency
             color_section = create_color_options_section(PAGE_WIDTH)
+            # Convert to RGBA for transparency
+            color_section_rgba = color_section.convert("RGBA")
             # Paste at bottom of current image
             color_y = current_y + IMAGE_HEIGHT - 400  # 400 is height of color section
-            detail_page.paste(color_section, (0, color_y), color_section)
+            detail_page.paste(color_section, (0, color_y))
         
         current_y += IMAGE_HEIGHT
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
-    if include_md_talk:
+    if include_md_talk and include_color_options:
+        page_text = "- Details 3-4 -"
+    elif include_md_talk:
         page_text = "- Details 3-4 -"
     elif include_design_point:
         page_text = "- Details 5-6 -"
@@ -515,7 +519,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V89 Detail Page Handler with Webhook Started ===")
+        print(f"=== V90 Detail Page Handler with Webhook Started ===")
         print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
@@ -569,10 +573,10 @@ def handler(event):
                 include_colors = False
                 include_design_point = True
             elif route_number == 3:
-                # Route 3 (images 3-4)
-                print("Detected as route 3 (images 3-4) - Will add MD TALK section")
+                # Route 3 (images 3-4) - IMPORTANT: Add COLOR section here too!
+                print("Detected as route 3 (images 3-4) - Will add MD TALK section AND COLOR")
                 include_md = True
-                include_colors = False
+                include_colors = True  # ADD COLOR SECTION TO ROUTE 3!
                 include_design_point = False
             else:
                 # Default based on explicit parameters
@@ -615,7 +619,7 @@ def handler(event):
                 "has_design_point": include_design_point,
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V89"
+                "version": "V90"
             }
             
             # Send to webhook if configured
@@ -708,13 +712,13 @@ def handler(event):
         x_position = (PAGE_WIDTH - img_cropped.width) // 2
         detail_page.paste(img_cropped, (x_position, current_y))
         
-        # Add logo INSIDE image 1 with bigger size
+        # Add logo INSIDE image 1 with MUCH BIGGER size
         if image_number == 1:
-            print("Adding twinkring logo inside image 1")
+            print("Adding twinkring logo inside image 1 with HUGE size")
             draw = ImageDraw.Draw(detail_page)
             
-            # Font settings - increased to 2.5x (72 * 2.5 = 180)
-            font_size = 180
+            # Font settings - MASSIVELY increased to fill the blue box
+            font_size = 420  # INCREASED from 180 to 420!
             font = None
             font_paths = [
                 "/tmp/Playfair_Display.ttf",
@@ -741,16 +745,16 @@ def handler(event):
             text = "twinkring"
             text_width, text_height = get_text_dimensions(draw, text, font)
             
-            # Position at top area of image (inside the red marked area)
+            # Position at top area of image (inside the blue marked area)
             text_x = (PAGE_WIDTH - text_width) // 2
-            text_y = current_y + 100  # Position inside image top area
+            text_y = current_y + 40  # Adjusted position for bigger font
             
             # Shadow effect
-            draw.text((text_x+3, text_y+3), text, font=font, fill=(200, 200, 200))
+            draw.text((text_x+4, text_y+4), text, font=font, fill=(200, 200, 200))
             # Main text
             draw.text((text_x, text_y), text, font=font, fill=(40, 40, 40))
             
-            print(f"Logo added inside image at ({text_x}, {text_y})")
+            print(f"Logo added inside image at ({text_x}, {text_y}) with font size {font_size}")
         
         current_y += IMAGE_HEIGHT
         
@@ -797,7 +801,7 @@ def handler(event):
             "has_md_talk": False,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V89"
+            "version": "V90"
         }
         
         # Send to webhook if configured
@@ -834,7 +838,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V89"
+                "version": "V90"
             }
         }
 
