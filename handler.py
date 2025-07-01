@@ -9,6 +9,9 @@ import os
 import re
 from datetime import datetime
 
+# Webhook URL - Replace with your Google Apps Script Web App URL
+WEBHOOK_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEBHOOK_URL"  # User must set this
+
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
     try:
@@ -500,10 +503,55 @@ def process_combined_images(images_data, html_section_content="", include_color_
     
     return detail_page
 
+def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
+    """Send results to Google Apps Script webhook"""
+    try:
+        if not WEBHOOK_URL or WEBHOOK_URL == "YOUR_GOOGLE_APPS_SCRIPT_WEBHOOK_URL":
+            print("WARNING: Webhook URL not configured, skipping webhook send")
+            return None
+            
+        webhook_data = {
+            "handler_type": handler_type,
+            "file_name": file_name,
+            "route_number": route_number,
+            "runpod_result": {
+                "output": {
+                    "output": metadata
+                }
+            }
+        }
+        
+        # Add base64 image to the appropriate field
+        if handler_type == "detail":
+            webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
+        else:
+            webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
+        
+        print(f"Sending to webhook: {handler_type} for {file_name}")
+        
+        response = requests.post(
+            WEBHOOK_URL,
+            json=webhook_data,
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            print(f"Webhook success: {result}")
+            return result
+        else:
+            print(f"Webhook failed: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"Webhook error: {str(e)}")
+        return None
+
 def handler(event):
     """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
     try:
-        print(f"=== V85 Detail Page Handler Started ===")
+        print(f"=== V86 Detail Page Handler with Webhook Started ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -588,23 +636,42 @@ def handler(event):
             # Remove padding for Make.com
             result_base64_no_padding = result_base64.rstrip('=')
             
+            # Prepare metadata
+            metadata = {
+                "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
+                "page_number": 0,
+                "image_count": len(input_data['images']),
+                "dimensions": {
+                    "width": detail_page.width,
+                    "height": detail_page.height
+                },
+                "has_md_talk": include_md,
+                "has_color_options": include_colors,
+                "has_design_point": include_design_point,
+                "format": "base64_no_padding",
+                "status": "success",
+                "version": "V86"
+            }
+            
+            # Send to webhook if configured
+            webhook_result = send_to_webhook(
+                result_base64_no_padding,
+                "detail",
+                f"combined_{route_number}.png",
+                route_number,
+                metadata
+            )
+            
+            # Add webhook result to response if available
+            if webhook_result:
+                metadata["webhook_result"] = webhook_result
+            
             print(f"Successfully created combined detail page")
             
             return {
                 "output": {
                     "enhanced_image": result_base64_no_padding,
-                    "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
-                    "image_count": len(input_data['images']),
-                    "dimensions": {
-                        "width": detail_page.width,
-                        "height": detail_page.height
-                    },
-                    "has_md_talk": include_md,
-                    "has_color_options": include_colors,
-                    "has_design_point": include_design_point,
-                    "format": "base64_no_padding",
-                    "status": "success",
-                    "version": "V85"
+                    **metadata
                 }
             }
         
@@ -718,23 +785,42 @@ def handler(event):
         # Remove padding for Make.com
         result_base64_no_padding = result_base64.rstrip('=')
         
+        # Prepare metadata
+        metadata = {
+            "page_number": image_number,
+            "page_type": "individual",
+            "file_name": file_name,
+            "dimensions": {
+                "width": PAGE_WIDTH,
+                "height": TOTAL_HEIGHT
+            },
+            "has_logo": image_number == 1,
+            "has_md_talk": False,
+            "format": "base64_no_padding",
+            "status": "success",
+            "version": "V86"
+        }
+        
+        # Send to webhook if configured
+        webhook_result = send_to_webhook(
+            result_base64_no_padding,
+            "detail",
+            file_name,
+            image_number,
+            metadata
+        )
+        
+        # Add webhook result to response if available
+        if webhook_result:
+            metadata["webhook_result"] = webhook_result
+        
         print(f"Successfully created INDIVIDUAL detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
         print(f"Has logo: {image_number == 1}, Has MD TALK: FALSE")
         
         return {
             "output": {
                 "enhanced_image": result_base64_no_padding,
-                "page_number": image_number,
-                "file_name": file_name,
-                "dimensions": {
-                    "width": PAGE_WIDTH,
-                    "height": TOTAL_HEIGHT
-                },
-                "has_logo": image_number == 1,
-                "has_md_talk": False,
-                "format": "base64_no_padding",
-                "status": "success",
-                "version": "V85"
+                **metadata
             }
         }
         
@@ -749,7 +835,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V85"
+                "version": "V86"
             }
         }
 
