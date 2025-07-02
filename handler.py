@@ -719,7 +719,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V106 Detail Page Handler - Final Perfect Fix ===")
+        print(f"=== V107 Detail Page Handler - Complete Fixed Version ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -730,8 +730,31 @@ def handler(event):
         route_number = input_data.get('route_number', 0)
         group_number = input_data.get('group_number', route_number)
         
+        print(f"Initial group_number: {group_number}, route_number: {route_number}")
+        
+        # CRITICAL FIX: Handle Make.com's 'image' key format
+        # Make.com sends: {"input": {"image": "URL1;URL2", "route_number": 3}}
+        if 'image' in input_data and input_data['image']:
+            print(f"Found 'image' key with value: {input_data['image'][:100]}...")
+            image_data = input_data['image']
+            
+            # Check if semicolon-separated (multiple URLs)
+            if ';' in image_data:
+                # Multiple URLs for groups 3, 4, 5
+                urls = image_data.split(';')
+                input_data['images'] = []
+                for url in urls:
+                    url = url.strip()
+                    if url:
+                        input_data['images'].append({'url': url})
+                print(f"Converted 'image' to {len(input_data['images'])} images array")
+            else:
+                # Single URL for groups 1, 2, 6
+                input_data['url'] = image_data
+                print(f"Set single URL from 'image' key")
+        
         # Make.com sends data with specific keys, check for them
-        if group_number == 0:
+        elif group_number == 0:
             # Try to detect from Make.com data structure
             if 'image1' in input_data:
                 group_number = 1
@@ -825,7 +848,7 @@ def handler(event):
             "uses_replicate_api": group_number == 6,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V106",
+            "version": "V107",
             "image_spacing": 200,
             "group_info": {
                 "1": "Single image 1",
@@ -868,7 +891,7 @@ def handler(event):
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "status": "error",
-                "version": "V106"
+                "version": "V107"
             }
         }
 
