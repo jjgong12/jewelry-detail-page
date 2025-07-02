@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 
 # Webhook URL - Google Apps Script Web App URL
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyi38xfpk-s66l6MJvfhGBmJjdv-FiYnh7NvtbrO1-IHGgoJ1BQd7NHXEuSvLu9Tggnlw/exec"
+WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pphacVmJg_XKV5sIyOgxjpDykiWsAHN7ecKFHcygGFrYi/exec"
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
