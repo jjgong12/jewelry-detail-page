@@ -35,6 +35,49 @@ def get_text_dimensions(draw, text, font):
 
 def create_md_talk_section(width=FIXED_WIDTH):
     """Create MD'Talk section for group 3 (images 3-4)"""
+    section_height = 400
+    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
+    title_font = None
+    body_font = None
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                title_font = ImageFont.truetype(font_path, 48)
+                body_font = ImageFont.truetype(font_path, 20)
+                break
+            except:
+                continue
+    
+    if title_font is None:
+        title_font = ImageFont.load_default()
+        body_font = ImageFont.load_default()
+    
+    # Draw MD TALK title
+    title = "MD TALK"
+    title_width, _ = get_text_dimensions(draw, title, title_font)
+    draw.text((width//2 - title_width//2, 100), title, font=title_font, fill=(40, 40, 40))
+    
+    # Draw Korean text
+    korean_text = [
+        "고급스러운 텍스처와 균형 잡힌 디테일이",
+        "감성의 깊이를 더하는 커플링입니다.",
+        "'섬세한 연결'을 느끼고 싶은 커플에게 추천드립니다."
+    ]
+    
+    y_pos = 200
+    for line in korean_text:
+        line_width, _ = get_text_dimensions(draw, line, body_font)
+        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+        y_pos += 40
+    
+    return section_img
+
+def create_design_point_section(width=FIXED_WIDTH):
+    """Create DESIGN POINT section for group 4 (images 5-6)"""
     section_height = 500
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -46,60 +89,7 @@ def create_md_talk_section(width=FIXED_WIDTH):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 36)
-                body_font = ImageFont.truetype(font_path, 20)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
-    
-    # Draw title
-    title = "MD'Talk"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 50), title, font=title_font, fill=(60, 60, 60))
-    
-    # Draw subtitle
-    subtitle = "편안함을 선물하는 주얼리"
-    subtitle_width, _ = get_text_dimensions(draw, subtitle, body_font)
-    draw.text((width//2 - subtitle_width//2, 120), subtitle, font=body_font, fill=(100, 100, 100))
-    
-    # Draw main text
-    main_text = [
-        "매일 착용해도 부담스럽지 않은",
-        "가볍고 편안한 착용감",
-        "일상 속에서 빛나는 특별함"
-    ]
-    
-    y_pos = 200
-    for line in main_text:
-        line_width, _ = get_text_dimensions(draw, line, body_font)
-        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
-        y_pos += 50
-    
-    # Draw decorative element
-    draw.rectangle([width//2 - 100, 380, width//2 + 100, 382], fill=(200, 200, 200))
-    
-    return section_img
-
-def create_design_point_section(width=FIXED_WIDTH):
-    """Create DESIGN POINT section for group 4 (images 5-6)"""
-    section_height = 600
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
-    title_font = None
-    subtitle_font = None
-    body_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 42)
-                subtitle_font = ImageFont.truetype(font_path, 24)
+                title_font = ImageFont.truetype(font_path, 48)
                 body_font = ImageFont.truetype(font_path, 18)
                 break
             except:
@@ -107,42 +97,26 @@ def create_design_point_section(width=FIXED_WIDTH):
     
     if title_font is None:
         title_font = ImageFont.load_default()
-        subtitle_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
     
-    # Draw title
+    # Draw DESIGN POINT title
     title = "DESIGN POINT"
     title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 50), title, font=title_font, fill=(40, 40, 40))
+    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(40, 40, 40))
     
-    # Draw design points
-    points = [
-        {
-            "title": "Point 1. 우아한 곡선 디자인",
-            "desc": "자연스러운 곡선이 만들어내는 부드러운 실루엣"
-        },
-        {
-            "title": "Point 2. 섬세한 디테일",
-            "desc": "정교한 세공으로 완성된 고급스러운 마감"
-        },
-        {
-            "title": "Point 3. 편안한 착용감",
-            "desc": "인체공학적 설계로 하루 종일 편안함"
-        }
+    # Draw Korean text
+    korean_text = [
+        "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고,",
+        "여자 단품은 파베 세팅과 섬세한 밀그레인의 디테일",
+        "화려하면서도 고급스러운 반영영을 표현합니다.",
+        "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다."
     ]
     
-    y_pos = 150
-    for point in points:
-        # Draw point title
-        draw.text((80, y_pos), point["title"], font=subtitle_font, fill=(60, 60, 60))
-        y_pos += 40
-        
-        # Draw point description
-        draw.text((100, y_pos), point["desc"], font=body_font, fill=(100, 100, 100))
-        y_pos += 80
-    
-    # Draw bottom line
-    draw.rectangle([80, y_pos - 20, width - 80, y_pos - 18], fill=(220, 220, 220))
+    y_pos = 200
+    for line in korean_text:
+        line_width, _ = get_text_dimensions(draw, line, body_font)
+        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+        y_pos += 45
     
     return section_img
 
@@ -595,24 +569,28 @@ def process_combined_images(images_data, group_number):
     # Calculate heights
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
-    IMAGE_SPACING = 120
+    IMAGE_SPACING = 200  # 200픽셀 간격으로 증가
     
     # Add section heights based on group
     section_height = 0
     if group_number == 3:
-        section_height = 500  # MD'Talk section
+        section_height = 400  # MD'Talk section
     elif group_number == 4:
-        section_height = 600  # DESIGN POINT section
+        section_height = 500  # DESIGN POINT section
     
     # Calculate total height
-    total_height = TOP_MARGIN + BOTTOM_MARGIN + section_height
-    if section_height > 0:
-        total_height += 80  # Extra spacing after section
+    total_height = TOP_MARGIN + BOTTOM_MARGIN
     
-    # Add image heights
+    # First add section height if needed
+    if section_height > 0:
+        total_height += section_height + 100  # Extra spacing after section
+    
+    # Then add all image heights
+    image_heights = []
     for img_data in images_data:
         img = get_image_from_input(img_data)
         img_height = calculate_image_height(img.width, img.height, FIXED_WIDTH)
+        image_heights.append(img_height)
         total_height += img_height
         img.close()
     
@@ -626,28 +604,25 @@ def process_combined_images(images_data, group_number):
     
     current_y = TOP_MARGIN
     
-    # Add section based on group
+    # Add section FIRST (위에 오도록)
     if group_number == 3:
-        print("Adding MD'Talk section")
+        print("Adding MD'Talk section at top")
         md_talk_section = create_md_talk_section()
         detail_page.paste(md_talk_section, (0, current_y))
-        current_y += 500 + 80
+        current_y += 400 + 100  # section height + spacing
     elif group_number == 4:
-        print("Adding DESIGN POINT section")
+        print("Adding DESIGN POINT section at top")
         design_point_section = create_design_point_section()
         detail_page.paste(design_point_section, (0, current_y))
-        current_y += 600 + 80
+        current_y += 500 + 100  # section height + spacing
     
-    # Process each image
-    for idx, img_data in enumerate(images_data):
+    # Process each image AFTER section
+    for idx, (img_data, img_height) in enumerate(zip(images_data, image_heights)):
         if idx > 0:
-            current_y += IMAGE_SPACING
+            current_y += IMAGE_SPACING  # 200픽셀 간격
         
         # Get image
         img = get_image_from_input(img_data)
-        
-        # Calculate proportional height
-        img_height = calculate_image_height(img.width, img.height, FIXED_WIDTH)
         
         # Resize image
         resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
@@ -744,44 +719,34 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V105 Detail Page Handler - Complete Fix ===")
+        print(f"=== V106 Detail Page Handler - Final Perfect Fix ===")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
+        print(f"Full input data: {json.dumps(input_data, indent=2)}")
         
-        # Get route/group number - CRITICAL
+        # Get route/group number - CRITICAL for Make.com
         route_number = input_data.get('route_number', 0)
         group_number = input_data.get('group_number', route_number)
         
-        # If group_number is still 0, try to detect from URL
+        # Make.com sends data with specific keys, check for them
         if group_number == 0:
-            # Check if we have URLs that can help identify the group
-            urls = []
-            if 'images' in input_data and isinstance(input_data['images'], list):
-                for img in input_data['images']:
-                    if isinstance(img, dict) and 'url' in img:
-                        urls.append(img['url'])
-            elif 'combined_urls' in input_data:
-                urls = input_data['combined_urls'].split(';')
-            elif 'url' in input_data:
-                urls = [input_data['url']]
-            
-            # Count URLs to determine group
-            url_count = len(urls)
-            if url_count == 2:
-                # Could be group 3, 4, or 5 - need more info
-                # Check if images key exists
-                if 'images' in input_data:
-                    # Default to group 3 if we can't determine
-                    group_number = 3
-                    print(f"Detected 2 images, defaulting to group {group_number}")
-            elif url_count == 1:
-                # Single image - could be 1, 2, or 6
-                group_number = 1  # Default to 1
-                print(f"Detected 1 image, defaulting to group {group_number}")
+            # Try to detect from Make.com data structure
+            if 'image1' in input_data:
+                group_number = 1
+            elif 'image2' in input_data:
+                group_number = 2
+            elif 'image3' in input_data:
+                group_number = 3
+            elif 'image4' in input_data:
+                group_number = 4
+            elif 'image5' in input_data:
+                group_number = 5
+            elif 'image6' in input_data:
+                group_number = 6
         
-        print(f"Processing group_number: {group_number}")
+        print(f"Final group_number: {group_number}")
         
         # Handle different input formats from Make.com
         if 'combined_urls' in input_data and input_data['combined_urls']:
@@ -793,6 +758,18 @@ def handler(event):
                 if url:
                     input_data['images'].append({'url': url})
             print(f"Converted combined_urls to {len(input_data['images'])} images")
+        
+        # Also check for Make.com specific image keys
+        elif f'image{group_number}' in input_data:
+            # Single URL from Make.com
+            image_url = input_data[f'image{group_number}']
+            if ';' in image_url:
+                # Multiple URLs
+                urls = image_url.split(';')
+                input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
+            else:
+                # Single URL
+                input_data['url'] = image_url
         
         # Handle different group types based on group_number
         if group_number == 6:
@@ -848,12 +825,13 @@ def handler(event):
             "uses_replicate_api": group_number == 6,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V105",
+            "version": "V106",
+            "image_spacing": 200,
             "group_info": {
                 "1": "Single image 1",
                 "2": "Single image 2", 
-                "3": "Images 3-4 with MD'Talk",
-                "4": "Images 5-6 with DESIGN POINT",
+                "3": "Images 3-4 with MD'Talk at top",
+                "4": "Images 5-6 with DESIGN POINT at top",
                 "5": "Images 7-8 ONLY (no 9)",  # CRITICAL
                 "6": "Image 9 ONLY for COLOR section"
             }.get(str(group_number), f"Group {group_number}")
@@ -890,7 +868,7 @@ def handler(event):
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "status": "error",
-                "version": "V105"
+                "version": "V106"
             }
         }
 
