@@ -2,8 +2,7 @@ import runpod
 import base64
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
-import io
+from PIL import Image
 import json
 import os
 import re
@@ -11,215 +10,6 @@ from datetime import datetime
 
 # Webhook URL - Google Apps Script Web App URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyi38xfpk-s66l6MJvfhGBmJjdv-FiYnh7NvtbrO1-IHGgoJ1BQd7NHXEuSvLu9Tggnlw/exec"
-
-def get_text_dimensions(draw, text, font):
-    """Get text dimensions compatible with all PIL versions"""
-    try:
-        bbox = draw.textbbox((0, 0), text, font=font)
-        return bbox[2] - bbox[0], bbox[3] - bbox[1]
-    except AttributeError:
-        return draw.textsize(text, font=font)
-
-def create_html_section(html_content="", width=860, height=400):
-    """Create HTML-like section (MD TALK) - ONLY for combined 3-4"""
-    section_img = Image.new('RGB', (width, height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    if not html_content:
-        html_content = """MD TALK
-
-신부의 부케처럼 풍성하고,
-드레스처럼 우아한 분위기를 담은 커플링이에요.
-결혼이라는 가장 빛나는 순간을
-손끝에 남기고 싶은 분들께 추천드립니다:)"""
-    
-    font_paths = [
-        "/tmp/NanumMyeongjo.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-    ]
-    
-    title_font = None
-    body_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 42)
-                body_font = ImageFont.truetype(font_path, 24)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
-    
-    lines = html_content.strip().split('\n')
-    y_position = 80
-    
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line:
-            y_position += 20
-            continue
-            
-        if i == 0:
-            text_width, text_height = get_text_dimensions(draw, line, title_font)
-            x = (width - text_width) // 2
-            draw.text((x, y_position), line, font=title_font, fill=(40, 40, 40))
-            y_position += text_height + 40
-        else:
-            text_width, text_height = get_text_dimensions(draw, line, body_font)
-            x = (width - text_width) // 2
-            draw.text((x, y_position), line, font=body_font, fill=(60, 60, 60))
-            y_position += text_height + 15
-    
-    return section_img
-
-def create_design_point_section(design_content="", width=860, height=500):
-    """Create DESIGN POINT section - for TOP of 5-6 group"""
-    section_img = Image.new('RGB', (width, height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    if not design_content:
-        design_content = """DESIGN POINT
-
-중앙의 꼬임 텍스처가 따뜻한 연결감을 표현하고,
-여자 단품은 파베 세팅과 메인 스톤의 화려한 반짝임을,
-남자 단품은 하나의 메인 스톤으로 단단한 중심을 상징합니다."""
-    
-    font_paths = [
-        "/tmp/NanumMyeongjo.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-    ]
-    
-    title_font = None
-    body_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 26)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
-    
-    lines = design_content.strip().split('\n')
-    y_position = 120
-    
-    for i, line in enumerate(lines):
-        line = line.strip()
-        if not line:
-            y_position += 30
-            continue
-            
-        if i == 0:
-            text_width, text_height = get_text_dimensions(draw, line, title_font)
-            x = (width - text_width) // 2
-            draw.text((x, y_position), line, font=title_font, fill=(40, 40, 40))
-            y_position += text_height + 60
-        else:
-            words = line.split()
-            current_line = []
-            wrapped_lines = []
-            
-            for word in words:
-                test_line = ' '.join(current_line + [word])
-                text_width, _ = get_text_dimensions(draw, test_line, body_font)
-                
-                if text_width > width - 100:
-                    if current_line:
-                        wrapped_lines.append(' '.join(current_line))
-                        current_line = [word]
-                    else:
-                        wrapped_lines.append(word)
-                else:
-                    current_line.append(word)
-            
-            if current_line:
-                wrapped_lines.append(' '.join(current_line))
-            
-            for wrapped_line in wrapped_lines:
-                text_width, text_height = get_text_dimensions(draw, wrapped_line, body_font)
-                x = (width - text_width) // 2
-                draw.text((x, y_position), wrapped_line, font=body_font, fill=(60, 60, 60))
-                y_position += text_height + 20
-    
-    return section_img
-
-def create_color_options_section(width=860, thumbnail_images=None):
-    """Create color options section with 2x2 layout - ONLY for 7-8-9"""
-    section_height = 400
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
-    title_font = None
-    label_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 36)
-                label_font = ImageFont.truetype(font_path, 18)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        label_font = ImageFont.load_default()
-    
-    # Draw title
-    title = "COLOR"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 40), title, font=title_font, fill=(60, 60, 60))
-    
-    # Color information
-    colors = [
-        ("yellow", "#FFD700", "yellow gold"),
-        ("rose", "#FFC0CB", "rose gold"),
-        ("white", "#E8E8E8", "white gold"),
-        ("antique", "#D2B48C", "antique white")
-    ]
-    
-    # Draw color boxes in 2x2 grid
-    box_size = 120
-    h_spacing = 100
-    v_spacing = 180
-    
-    # Calculate starting positions for centered 2x2 grid
-    grid_width = 2 * box_size + h_spacing
-    grid_height = 2 * v_spacing
-    start_x = (width - grid_width) // 2
-    start_y = 100
-    
-    for i, (name, color, label) in enumerate(colors):
-        row = i // 2
-        col = i % 2
-        
-        x = start_x + col * (box_size + h_spacing)
-        y = start_y + row * v_spacing
-        
-        # Draw ring placeholder
-        draw.ellipse([x+10, y+10, x+box_size-10, y+box_size-10], 
-                    fill=color, outline=(180, 180, 180), width=2)
-        draw.ellipse([x+30, y+30, x+box_size-30, y+box_size-30], 
-                    fill=(255, 255, 255), outline=None)
-        
-        # Draw label
-        label_width, _ = get_text_dimensions(draw, label, label_font)
-        draw.text((x + box_size//2 - label_width//2, y + box_size + 15), 
-                 label, font=label_font, fill=(80, 80, 80))
-    
-    return section_img
 
 def extract_file_id_from_url(url):
     """Extract Google Drive file ID from various URL formats"""
@@ -289,23 +79,25 @@ def download_image_from_google_drive(url):
         print(f"Error downloading from Google Drive: {str(e)}")
         raise
 
-def get_image_from_input(input_data):
-    """Get image from URL or base64"""
+def get_image_url_or_base64(input_data):
+    """Get image URL or convert to base64 data URL"""
     try:
         # Check for URL first
         image_url = (input_data.get('image_url') or 
                     input_data.get('imageUrl') or 
                     input_data.get('url') or 
                     input_data.get('webContentLink') or
-                    input_data.get('image') or '')  # Added 'image' field
+                    input_data.get('image') or '')
         
         if image_url:
             print(f"Found image URL: {image_url}")
+            # For Google Drive URLs, we need to get the direct download link
             if 'drive.google.com' in image_url or 'docs.google.com' in image_url:
-                return download_image_from_google_drive(image_url)
-            else:
-                response = requests.get(image_url, timeout=30)
-                return Image.open(BytesIO(response.content))
+                file_id = extract_file_id_from_url(image_url)
+                if file_id:
+                    # Return the direct download URL
+                    return f'https://drive.google.com/uc?export=download&id={file_id}'
+            return image_url
         
         # Check for base64
         image_base64 = (input_data.get('image_base64') or 
@@ -315,15 +107,10 @@ def get_image_from_input(input_data):
         
         if image_base64:
             print(f"Using base64 data, length: {len(image_base64)}")
-            if image_base64.startswith('data:'):
-                image_base64 = image_base64.split(',')[1]
-            
-            missing_padding = len(image_base64) % 4
-            if missing_padding:
-                image_base64 += '=' * (4 - missing_padding)
-            
-            image_data = base64.b64decode(image_base64)
-            return Image.open(BytesIO(image_data))
+            if not image_base64.startswith('data:'):
+                # Add proper data URL prefix
+                image_base64 = f'data:image/png;base64,{image_base64}'
+            return image_base64
         
         raise ValueError("No image URL or base64 data provided")
         
@@ -331,156 +118,402 @@ def get_image_from_input(input_data):
         print(f"Error getting image: {e}")
         raise
 
-def process_combined_images(images_data, html_section_content="", include_color_options=False, 
-                          include_md_talk=True, include_design_point=False, design_content="",
-                          PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
-    """Process images combined - MD TALK for 3-4, DESIGN POINT for 5-6, COLOR for 7-8-9"""
-    print(f"Processing {len(images_data)} images for combined layout")
-    print(f"MD TALK: {include_md_talk}, COLOR: {include_color_options}, DESIGN POINT: {include_design_point}")
+def create_html_template_individual(image_data, image_number):
+    """Create HTML template for individual images (1-2)"""
     
-    # Debug: Print all image data
-    for i, img_data in enumerate(images_data):
-        print(f"Image {i+1}: {img_data.get('file_name', 'unknown')}")
+    image_url = get_image_url_or_base64(image_data)
     
-    # Calculate total height WITH SPACING between images
-    TOP_MARGIN = 100
-    BOTTOM_MARGIN = 100
-    IMAGE_SPACING = 120  # INCREASED from 80 to 120 for more breathing room
-    MD_TALK_HEIGHT = 400 if include_md_talk else 0
-    MD_TALK_SPACING = 50 if include_md_talk else 0
-    DESIGN_POINT_HEIGHT = 500 if include_design_point else 0
-    DESIGN_POINT_SPACING = 50 if include_design_point else 0  # Consistent with MD_TALK_SPACING
+    if image_number == 1:
+        # Image 1 with twinkring logo
+        html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twinkring Detail Page 1</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Cormorant+Garamond:wght@400;600&family=Nanum+Myeongjo:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: 'Cormorant Garamond', 'Playfair Display', 'Nanum Myeongjo', serif;
+            background: #FFFFFF;
+        }}
+        .detail-container {{
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #FFFFFF;
+        }}
+        .image-section {{
+            position: relative;
+            width: 100%;
+            padding: 50px 0;
+        }}
+        .main-image {{
+            width: 100%;
+            max-width: 1100px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }}
+        .twinkring-logo {{
+            position: absolute;
+            top: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Playfair Display', 'Cormorant Garamond', serif;
+            font-size: 120px;
+            font-weight: 400;
+            color: #141414;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+            letter-spacing: -2px;
+        }}
+        .page-indicator {{
+            text-align: center;
+            color: #C8C8C8;
+            font-size: 16px;
+            padding: 20px 0;
+            font-family: 'Nanum Myeongjo', serif;
+        }}
+        @media (max-width: 768px) {{
+            .twinkring-logo {{
+                font-size: 60px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="detail-container">
+        <div class="image-section">
+            <img src="{image_url}" alt="Twinkring Jewelry" class="main-image">
+            <div class="twinkring-logo">twinkring</div>
+        </div>
+        <div class="page-indicator">- 1 -</div>
+    </div>
+</body>
+</html>"""
+        
+    elif image_number == 2:
+        # Image 2 with HWIYEON section
+        html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twinkring Detail Page 2</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Cormorant+Garamond:wght@400;600&family=Nanum+Myeongjo:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: 'Cormorant Garamond', 'Playfair Display', 'Nanum Myeongjo', serif;
+            background: #FFFFFF;
+        }}
+        .detail-container {{
+            width: 100%;
+            max-width: 1000px;
+            margin: 0 auto;
+            background: #FFFFFF;
+        }}
+        .hwiyeon-section {{
+            background: #F5F5F5;
+            padding: 80px 40px;
+            text-align: center;
+            margin: 50px 0;
+        }}
+        .hwiyeon-title {{
+            font-family: 'Playfair Display', 'Cormorant Garamond', serif;
+            font-size: 72px;
+            font-weight: 400;
+            color: #282828;
+            margin: 0 0 40px 0;
+            letter-spacing: 2px;
+        }}
+        .hwiyeon-subtitle {{
+            font-family: 'Nanum Myeongjo', serif;
+            font-size: 24px;
+            color: #505050;
+            margin: 0 0 60px 0;
+            line-height: 1.6;
+        }}
+        .hwiyeon-body {{
+            font-family: 'Nanum Myeongjo', serif;
+            font-size: 20px;
+            color: #646464;
+            line-height: 2;
+            margin: 0 auto;
+            max-width: 600px;
+        }}
+        .hwiyeon-body p {{
+            margin: 20px 0;
+        }}
+        .image-section {{
+            padding: 0 50px;
+        }}
+        .main-image {{
+            width: 100%;
+            max-width: 900px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }}
+        .page-indicator {{
+            text-align: center;
+            color: #C8C8C8;
+            font-size: 16px;
+            padding: 20px 0;
+            font-family: 'Nanum Myeongjo', serif;
+        }}
+    </style>
+</head>
+<body>
+    <div class="detail-container">
+        <div class="hwiyeon-section">
+            <h1 class="hwiyeon-title">HWIYEON</h1>
+            <p class="hwiyeon-subtitle">당신의 나, 시금 이 빛 위에서 같은 시간에 닿아 있음을</p>
+            <div class="hwiyeon-body">
+                <p>우리는 서로 다른 길 위에서 만났고,<br>
+                다른 속도로 걸어왔지만 결국 같은 종심을 향하고 있죠.</p>
+                <p>곁자리 둣 나란히 이어진 둣,<br>
+                서로를 향한 마음이 교차하는 순간을 다자인으로 담았습니다.</p>
+            </div>
+        </div>
+        <div class="image-section">
+            <img src="{image_url}" alt="Twinkring Jewelry" class="main-image">
+        </div>
+        <div class="page-indicator">- 2 -</div>
+    </div>
+</body>
+</html>"""
     
-    # Calculate total height
-    total_height = TOP_MARGIN + BOTTOM_MARGIN
-    total_height += len(images_data) * IMAGE_HEIGHT
-    total_height += (len(images_data) - 1) * IMAGE_SPACING  # Spacing between images
-    total_height += MD_TALK_HEIGHT + MD_TALK_SPACING
-    total_height += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING
+    return html
+
+def create_html_template_combined(images_data, include_md_talk, include_design_point, include_color_options, 
+                                md_talk_content="", design_content="", route_number=0):
+    """Create HTML template for combined images (3-9)"""
     
-    print(f"Creating combined canvas: {PAGE_WIDTH}x{total_height}")
+    # Get image URLs
+    image_urls = []
+    for img_data in images_data:
+        url = get_image_url_or_base64(img_data)
+        image_urls.append(url)
     
-    # Create canvas
-    detail_page = Image.new('RGB', (PAGE_WIDTH, total_height), '#FFFFFF')
+    # Start HTML
+    html = f"""<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twinkring Detail Page {route_number}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Cormorant+Garamond:wght@400;600&family=Nanum+Myeongjo:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {{
+            margin: 0;
+            padding: 0;
+            font-family: 'Cormorant Garamond', 'Playfair Display', 'Nanum Myeongjo', serif;
+            background: #FFFFFF;
+        }}
+        .detail-container {{
+            width: 100%;
+            max-width: 860px;
+            margin: 0 auto;
+            background: #FFFFFF;
+            padding: 100px 0;
+        }}
+        .content-section {{
+            background: #FFFFFF;
+            padding: 50px 30px;
+            text-align: center;
+            margin-bottom: 50px;
+        }}
+        .section-title {{
+            font-family: 'Playfair Display', 'Cormorant Garamond', serif;
+            font-size: 48px;
+            font-weight: 400;
+            color: #282828;
+            margin: 0 0 40px 0;
+            letter-spacing: 1px;
+        }}
+        .section-body {{
+            font-family: 'Nanum Myeongjo', serif;
+            font-size: 24px;
+            color: #3C3C3C;
+            line-height: 1.8;
+            margin: 0 auto;
+            max-width: 700px;
+        }}
+        .image-wrapper {{
+            margin: 0 0 120px 0;
+        }}
+        .product-image {{
+            width: 100%;
+            max-width: 760px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }}
+        .page-indicator {{
+            text-align: center;
+            color: #C8C8C8;
+            font-size: 16px;
+            margin-top: 50px;
+            font-family: 'Nanum Myeongjo', serif;
+        }}
+        
+        /* COLOR Section Styles */
+        .color-section {{
+            background: #FFFFFF;
+            padding: 80px 30px;
+            text-align: center;
+            position: relative;
+            margin-top: -400px;
+            z-index: 10;
+        }}
+        .color-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 80px 60px;
+            max-width: 600px;
+            margin: 60px auto 0;
+        }}
+        .color-item {{
+            text-align: center;
+        }}
+        .color-image {{
+            width: 100%;
+            max-width: 240px;
+            height: auto;
+            margin: 0 auto 20px;
+            display: block;
+        }}
+        .color-label {{
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 22px;
+            color: #505050;
+            font-weight: 400;
+        }}
+    </style>
+</head>
+<body>
+    <div class="detail-container">"""
     
-    current_y = TOP_MARGIN
-    
-    # Add MD TALK section at the beginning (only for images 3-4)
+    # Add MD TALK section if needed (for images 3-4)
     if include_md_talk:
-        print("Adding MD TALK section at the top")
-        md_talk_section = create_html_section(html_section_content, PAGE_WIDTH, MD_TALK_HEIGHT)
-        detail_page.paste(md_talk_section, (0, current_y))
-        current_y += MD_TALK_HEIGHT + MD_TALK_SPACING
-        print(f"MD TALK added, current_y: {current_y}")
+        md_lines = md_talk_content.strip().split('\n') if md_talk_content else [
+            "MD TALK",
+            "",
+            "신부의 부케처럼 풍성하고,",
+            "드레스처럼 우아한 분위기를 담은 커플링이에요.",
+            "결혼이라는 가장 빛나는 순간을",
+            "손끝에 남기고 싶은 분들께 추천드립니다:)"
+        ]
+        
+        html += f"""
+        <div class="content-section">
+            <h2 class="section-title">{md_lines[0]}</h2>
+            <div class="section-body">
+                <p>{'<br>'.join(md_lines[2:])}</p>
+            </div>
+        </div>"""
     
-    # Add DESIGN POINT section at the beginning (only for images 5-6)
+    # Add DESIGN POINT section if needed (for images 5-6)
     if include_design_point:
-        print("Adding DESIGN POINT section at the top")
-        design_section = create_design_point_section(design_content, PAGE_WIDTH, DESIGN_POINT_HEIGHT)
-        detail_page.paste(design_section, (0, current_y))
-        current_y += DESIGN_POINT_HEIGHT + DESIGN_POINT_SPACING
-        print(f"DESIGN POINT added, current_y: {current_y}")
+        design_lines = design_content.strip().split('\n') if design_content else [
+            "DESIGN POINT",
+            "",
+            "중앙의 꼬임 텍스처가 따뜻한 연결감을 표현하고,",
+            "여자 단품은 파베 세팅과 메인 스톤의 화려한 반짝임을,",
+            "남자 단품은 하나의 메인 스톤으로 단단한 중심을 상징합니다."
+        ]
+        
+        html += f"""
+        <div class="content-section">
+            <h2 class="section-title">{design_lines[0]}</h2>
+            <div class="section-body">
+                <p>{'<br>'.join(design_lines[2:])}</p>
+            </div>
+        </div>"""
     
-    # Process each image
-    for idx, img_data in enumerate(images_data):
-        print(f"Processing image {idx + 1}/{len(images_data)}: {img_data.get('file_name', 'unknown')}")
+    # Add product images
+    for i, url in enumerate(image_urls):
+        html += f"""
+        <div class="image-wrapper">
+            <img src="{url}" alt="Product Image {i+1}" class="product-image">
+        </div>"""
+    
+    # Add COLOR section if needed (for images 7-8-9)
+    if include_color_options:
+        # Get the 9th image URL for color display
+        ninth_image_url = ""
+        if len(images_data) >= 3:
+            # Check if the last image is the 9th one
+            last_img = images_data[-1]
+            if '_009' in last_img.get('file_name', '') or 'thumb' in last_img.get('file_name', '').lower():
+                ninth_image_url = image_urls[-1]
         
-        # Add spacing between images (except before first image)
-        if idx > 0:
-            current_y += IMAGE_SPACING
-            print(f"Added {IMAGE_SPACING}px spacing, current_y: {current_y}")
-        
-        # Get image
-        img = get_image_from_input(img_data)
-        print(f"Original image size: {img.size}")
-        
-        # Resize image
-        height_ratio = IMAGE_HEIGHT / img.height
-        temp_width = int(img.width * height_ratio)
-        
-        try:
-            resample_filter = Image.Resampling.LANCZOS
-        except AttributeError:
-            resample_filter = Image.LANCZOS
-            
-        img_resized = img.resize((temp_width, IMAGE_HEIGHT), resample_filter)
-        
-        # Center crop if needed
-        if temp_width > CONTENT_WIDTH:
-            left = (temp_width - CONTENT_WIDTH) // 2
-            img_cropped = img_resized.crop((left, 0, left + CONTENT_WIDTH, IMAGE_HEIGHT))
-        else:
-            img_cropped = img_resized
-        
-        # Paste image
-        x_position = (PAGE_WIDTH - img_cropped.width) // 2
-        detail_page.paste(img_cropped, (x_position, current_y))
-        print(f"Pasted image at ({x_position}, {current_y})")
-        
-        # If this is the last image and we need color options, add them ON the image
-        if include_color_options and idx == len(images_data) - 1:
-            print("Adding COLOR section on bottom of last image")
-            # Create color section
-            color_section = create_color_options_section(PAGE_WIDTH)
-            # Paste at bottom of current image
-            color_y = current_y + IMAGE_HEIGHT - 400  # 400 is height of color section
-            detail_page.paste(color_section, (0, color_y))
-        
-        current_y += IMAGE_HEIGHT
+        html += f"""
+        <div class="color-section">
+            <h2 class="section-title">COLOR</h2>
+            <div class="color-grid">
+                <div class="color-item">
+                    <img src="{ninth_image_url}" alt="Yellow Gold" class="color-image" 
+                         style="filter: sepia(100%) saturate(200%) hue-rotate(15deg) brightness(1.2);">
+                    <p class="color-label">yellow gold</p>
+                </div>
+                <div class="color-item">
+                    <img src="{ninth_image_url}" alt="Rose Gold" class="color-image"
+                         style="filter: sepia(100%) saturate(150%) hue-rotate(340deg) brightness(1.1);">
+                    <p class="color-label">rose gold</p>
+                </div>
+                <div class="color-item">
+                    <img src="{ninth_image_url}" alt="White Gold" class="color-image"
+                         style="filter: brightness(1.2) contrast(0.9);">
+                    <p class="color-label">white gold</p>
+                </div>
+                <div class="color-item">
+                    <img src="{ninth_image_url}" alt="Antique White" class="color-image"
+                         style="filter: sepia(20%) brightness(1.1);">
+                    <p class="color-label">antique white</p>
+                </div>
+            </div>
+        </div>"""
     
     # Add page indicator
-    draw = ImageDraw.Draw(detail_page)
-    if include_md_talk:
-        page_text = "- Details 3-4 -"
-    elif include_design_point:
-        page_text = "- Details 5-6 -"
-    elif include_color_options:
-        page_text = "- Details 7-8-9 -"
-    else:
-        page_text = "- Details -"
+    page_text = "- Details 3-4 -" if include_md_talk else "- Details 5-6 -" if include_design_point else "- Details 7-8-9 -"
+    html += f"""
+        <div class="page-indicator">{page_text}</div>
+    </div>
+</body>
+</html>"""
     
-    small_font = None
-    for font_path in ["/tmp/NanumMyeongjo.ttf", 
-                     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
-        if os.path.exists(font_path):
-            try:
-                small_font = ImageFont.truetype(font_path, 16)
-                break
-            except:
-                continue
-    
-    if small_font is None:
-        small_font = ImageFont.load_default()
-    
-    text_width, _ = get_text_dimensions(draw, page_text, small_font)
-    draw.text((PAGE_WIDTH//2 - text_width//2, total_height - 50), 
-             page_text, fill=(200, 200, 200), font=small_font)
-    
-    return detail_page
+    return html
 
-def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
+def send_to_webhook(html_content, handler_type, file_name, route_number=0, metadata={}):
     """Send results to Google Apps Script webhook"""
     try:
         if not WEBHOOK_URL:
             print("WARNING: Webhook URL not configured, skipping webhook send")
             return None
             
+        # Convert HTML to base64 for transmission
+        html_base64 = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+        html_base64_no_padding = html_base64.rstrip('=')
+        
         webhook_data = {
             "handler_type": handler_type,
             "file_name": file_name,
             "route_number": route_number,
             "runpod_result": {
                 "output": {
-                    "output": metadata
+                    "output": {
+                        **metadata,
+                        "html_content": html_content,  # Plain HTML
+                        "html_base64": html_base64_no_padding  # Base64 encoded
+                    }
                 }
             }
         }
-        
-        # Add base64 image to the appropriate field
-        if handler_type == "detail":
-            webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
-        else:
-            webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
         
         print(f"Sending to webhook: {handler_type} for {file_name}")
         print(f"Webhook URL: {WEBHOOK_URL}")
@@ -507,16 +540,16 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def handler(event):
-    """Create jewelry detail page - individual for 1,2 and combined for 3-9"""
+    """Create jewelry detail page HTML templates"""
     try:
-        print(f"=== V94 Detail Page Handler with Stable Large Logo Started ===")
+        print(f"=== V96 HTML Template Detail Page Handler Started ===")
         print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         
-        # NEW: Handle semicolon-separated URLs
+        # Handle semicolon-separated URLs
         if 'image' in input_data and isinstance(input_data['image'], str) and ';' in input_data['image']:
             print(f"Processing semicolon-separated URLs")
             urls = input_data['image'].split(';')
@@ -530,11 +563,10 @@ def handler(event):
                     })
             print(f"Created {len(input_data['images'])} images from semicolon-separated URLs")
         
-        # CRITICAL: First check if file_name contains _001 or _002 for individual processing
+        # Check if file_name contains _001 or _002 for individual processing
         file_name = input_data.get('file_name', '')
         if '_001' in file_name or '_002' in file_name:
             print(f"FORCING INDIVIDUAL PROCESSING for {file_name}")
-            # Force individual processing even if 'images' is present
             input_data.pop('images', None)
         
         # Check if this is a combined request
@@ -552,7 +584,6 @@ def handler(event):
             # Check if this is thumbnail group (route 5)
             is_thumbnail_group = False
             if route_number == 5 or len(input_data['images']) == 3:
-                # Additional check for thumbnail filenames
                 for fname in all_files:
                     if 'thumb' in fname.lower() or '_007' in fname or '_008' in fname or '_009' in fname:
                         is_thumbnail_group = True
@@ -562,86 +593,75 @@ def handler(event):
             
             # Set flags based on route number or file analysis
             if route_number == 5 or is_thumbnail_group:
-                # Route 5 (images 7-8-9) - thumbnails
-                print("Detected as route 5 (images 7-8-9) - Will add COLOR section at bottom")
+                print("Detected as route 5 (images 7-8-9) - Will add COLOR section")
                 include_md = False
                 include_colors = True
                 include_design_point = False
             elif route_number == 4:
-                # Route 4 (images 5-6)
-                print("Detected as route 4 (images 5-6) - Will add DESIGN POINT at TOP")
+                print("Detected as route 4 (images 5-6) - Will add DESIGN POINT")
                 include_md = False
-                include_colors = False  # NO COLOR section for route 4
+                include_colors = False
                 include_design_point = True
             elif route_number == 3:
-                # Route 3 (images 3-4) - FIXED: NO COLOR section
-                print("Detected as route 3 (images 3-4) - Will add MD TALK section only")
+                print("Detected as route 3 (images 3-4) - Will add MD TALK section")
                 include_md = True
-                include_colors = False  # FIXED: NO COLOR section for route 3!
+                include_colors = False
                 include_design_point = False
             else:
-                # Default based on explicit parameters
                 include_colors = input_data.get('include_color_options', False)
                 include_md = input_data.get('include_md_talk', True)
                 include_design_point = input_data.get('include_design_point', False)
             
-            html_content = input_data.get('html_section_content', '')
+            md_talk_content = input_data.get('html_section_content', '')
             design_content = input_data.get('design_content', '')
             
-            detail_page = process_combined_images(
-                input_data['images'], 
-                html_section_content=html_content,
-                include_color_options=include_colors,
-                include_md_talk=include_md,
-                include_design_point=include_design_point,
-                design_content=design_content
+            # Create HTML template
+            html_content = create_html_template_combined(
+                input_data['images'],
+                include_md,
+                include_design_point,
+                include_colors,
+                md_talk_content,
+                design_content,
+                route_number
             )
             
-            # Save to base64
-            buffer = io.BytesIO()
-            detail_page.save(buffer, format='PNG', quality=95, optimize=True)
-            buffer.seek(0)
-            result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            
-            # Remove padding for Make.com
-            result_base64_no_padding = result_base64.rstrip('=')
+            # Convert to base64 for Make.com
+            html_base64 = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+            html_base64_no_padding = html_base64.rstrip('=')
             
             # Prepare metadata
             metadata = {
                 "page_type": "combined_" + ("3_4" if include_md else "5_6" if include_design_point else "7_8_9" if include_colors else "unknown"),
                 "page_number": 0,
                 "image_count": len(input_data['images']),
-                "dimensions": {
-                    "width": detail_page.width,
-                    "height": detail_page.height
-                },
                 "has_md_talk": include_md,
                 "has_color_options": include_colors,
                 "has_design_point": include_design_point,
                 "is_thumbnail_group": is_thumbnail_group,
-                "format": "base64_no_padding",
+                "format": "html_template",
                 "status": "success",
-                "version": "V94"
+                "version": "V96"
             }
             
             # Send to webhook if configured
             webhook_result = send_to_webhook(
-                result_base64_no_padding,
+                html_content,
                 "detail",
-                f"combined_{route_number}.png",
+                f"combined_{route_number}.html",
                 route_number,
                 metadata
             )
             
-            # Add webhook result to response if available
             if webhook_result:
                 metadata["webhook_result"] = webhook_result
             
-            print(f"Successfully created combined detail page")
+            print(f"Successfully created combined HTML template")
             
             return {
                 "output": {
-                    "enhanced_image": result_base64_no_padding,
+                    "html_content": html_content,
+                    "html_base64": html_base64_no_padding,
                     **metadata
                 }
             }
@@ -650,7 +670,7 @@ def handler(event):
         image_number = int(input_data.get('image_number', 1))
         file_name = input_data.get('file_name', 'unknown.jpg')
         
-        # Auto-detect image number from filename if not provided
+        # Auto-detect image number from filename
         if '_001' in file_name:
             image_number = 1
         elif '_002' in file_name:
@@ -658,206 +678,49 @@ def handler(event):
         
         print(f"Processing INDIVIDUAL image: {file_name} (Image #{image_number})")
         
-        # NEW: Handle single image URL in 'image' field
+        # Handle single image URL in 'image' field
         if 'image' in input_data and not input_data.get('image_url'):
             input_data['image_url'] = input_data['image']
             print(f"Using 'image' field as image_url: {input_data['image_url']}")
         
-        # Get image
-        img = get_image_from_input(input_data)
+        # Create HTML template
+        html_content = create_html_template_individual(input_data, image_number)
         
-        # Design settings based on image number
-        if image_number == 1:  # Main hero
-            PAGE_WIDTH = 1200
-            IMAGE_HEIGHT = 1600
-            CONTENT_WIDTH = 1100
-        elif image_number == 2:  # Sub hero
-            PAGE_WIDTH = 1000
-            IMAGE_HEIGHT = 1333
-            CONTENT_WIDTH = 900
-        else:  # Should not happen
-            PAGE_WIDTH = 860
-            IMAGE_HEIGHT = 1147
-            CONTENT_WIDTH = 760
-        
-        # Section heights (simplified)
-        TOP_MARGIN = 50
-        BOTTOM_MARGIN = 50
-        
-        # Total height - NO separate logo section for image 1
-        TOTAL_HEIGHT = TOP_MARGIN + IMAGE_HEIGHT + BOTTOM_MARGIN
-        
-        # Create canvas
-        detail_page = Image.new('RGB', (PAGE_WIDTH, TOTAL_HEIGHT), '#FFFFFF')
-        
-        current_y = TOP_MARGIN
-        
-        # Resize image with aspect ratio
-        height_ratio = IMAGE_HEIGHT / img.height
-        temp_width = int(img.width * height_ratio)
-        
-        try:
-            resample_filter = Image.Resampling.LANCZOS
-        except AttributeError:
-            resample_filter = Image.LANCZOS
-            
-        img_resized = img.resize((temp_width, IMAGE_HEIGHT), resample_filter)
-        
-        # Center crop if needed
-        if temp_width > CONTENT_WIDTH:
-            left = (temp_width - CONTENT_WIDTH) // 2
-            img_cropped = img_resized.crop((left, 0, left + CONTENT_WIDTH, IMAGE_HEIGHT))
-        else:
-            img_cropped = img_resized
-        
-        # Paste image
-        x_position = (PAGE_WIDTH - img_cropped.width) // 2
-        detail_page.paste(img_cropped, (x_position, current_y))
-        
-        # Add logo INSIDE image 1 with stable large size
-        if image_number == 1:
-            print("Adding twinkring logo inside image 1 with stable large size")
-            draw = ImageDraw.Draw(detail_page)
-            
-            # V94: Use stable font size based on page width
-            # Target: 50% of page width for the text
-            target_font_size = int(PAGE_WIDTH * 0.5)  # 600px for 1200px width
-            
-            # Font paths - prioritize system fonts
-            font_paths = [
-                "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
-                "/tmp/Playfair_Display.ttf",
-                "/tmp/Cormorant_Garamond.ttf",
-                "/tmp/EB_Garamond.ttf"
-            ]
-            
-            # Start with reasonable sizes and work down
-            font_sizes_to_try = [600, 500, 400, 350, 300, 250, 200]
-            
-            font = None
-            actual_font_size = 200  # Default fallback
-            
-            for size in font_sizes_to_try:
-                for font_path in font_paths:
-                    if os.path.exists(font_path):
-                        try:
-                            test_font = ImageFont.truetype(font_path, size)
-                            # Test if font loads properly
-                            test_text = "twinkring"
-                            test_width, test_height = get_text_dimensions(draw, test_text, test_font)
-                            
-                            # Check if text fits within page width with margin
-                            if test_width <= PAGE_WIDTH - 100:
-                                font = test_font
-                                actual_font_size = size
-                                print(f"Successfully loaded {font_path} at size {size}")
-                                print(f"Text dimensions: {test_width}x{test_height}")
-                                break
-                        except Exception as e:
-                            print(f"Failed to load {font_path} at size {size}: {e}")
-                            continue
-                
-                if font is not None:
-                    break
-            
-            # If all attempts failed, use a guaranteed working size
-            if font is None:
-                print("All font attempts failed, using fallback")
-                try:
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf", 150)
-                    actual_font_size = 150
-                except:
-                    font = ImageFont.load_default()
-                    actual_font_size = 40
-            
-            text = "twinkring"
-            text_width, text_height = get_text_dimensions(draw, text, font)
-            
-            # Position text in upper area of image (like reference image)
-            text_x = (PAGE_WIDTH - text_width) // 2
-            # Place at 20% from top of image area
-            text_y = current_y + int(IMAGE_HEIGHT * 0.2)
-            
-            # Subtle shadow for depth (like reference image)
-            shadow_offset = 3
-            shadow_color = (200, 200, 200)
-            draw.text((text_x + shadow_offset, text_y + shadow_offset), text, font=font, fill=shadow_color)
-            
-            # Main text - black color like reference
-            draw.text((text_x, text_y), text, font=font, fill=(0, 0, 0))
-            
-            print(f"Logo added at ({text_x}, {text_y}) with font size {actual_font_size}")
-            print(f"Final text dimensions: {text_width}x{text_height}")
-            print(f"Text width ratio to page: {text_width/PAGE_WIDTH:.2%}")
-        
-        current_y += IMAGE_HEIGHT
-        
-        # Add page indicator
-        draw = ImageDraw.Draw(detail_page)
-        page_text = f"- {image_number} -"
-        
-        small_font = None
-        for font_path in ["/tmp/NanumMyeongjo.ttf", 
-                         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
-            if os.path.exists(font_path):
-                try:
-                    small_font = ImageFont.truetype(font_path, 16)
-                    break
-                except:
-                    continue
-        
-        if small_font is None:
-            small_font = ImageFont.load_default()
-        
-        text_width, _ = get_text_dimensions(draw, page_text, small_font)
-        draw.text((PAGE_WIDTH//2 - text_width//2, TOTAL_HEIGHT - 30), 
-                 page_text, fill=(200, 200, 200), font=small_font)
-        
-        # Save to base64
-        buffer = io.BytesIO()
-        detail_page.save(buffer, format='PNG', quality=95, optimize=True)
-        buffer.seek(0)
-        result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        
-        # Remove padding for Make.com
-        result_base64_no_padding = result_base64.rstrip('=')
+        # Convert to base64 for Make.com
+        html_base64 = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+        html_base64_no_padding = html_base64.rstrip('=')
         
         # Prepare metadata
         metadata = {
             "page_number": image_number,
             "page_type": "individual",
             "file_name": file_name,
-            "dimensions": {
-                "width": PAGE_WIDTH,
-                "height": TOTAL_HEIGHT
-            },
             "has_logo": image_number == 1,
-            "has_md_talk": False,
-            "format": "base64_no_padding",
+            "has_hwiyeon": image_number == 2,
+            "format": "html_template",
             "status": "success",
-            "version": "V94"
+            "version": "V96"
         }
         
         # Send to webhook if configured
         webhook_result = send_to_webhook(
-            result_base64_no_padding,
+            html_content,
             "detail",
-            file_name,
+            f"page_{image_number}.html",
             image_number,
             metadata
         )
         
-        # Add webhook result to response if available
         if webhook_result:
             metadata["webhook_result"] = webhook_result
         
-        print(f"Successfully created INDIVIDUAL detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
-        print(f"Has logo: {image_number == 1}, Has MD TALK: FALSE")
+        print(f"Successfully created INDIVIDUAL HTML template")
+        print(f"Has logo: {image_number == 1}, Has HWIYEON: {image_number == 2}")
         
         return {
             "output": {
-                "enhanced_image": result_base64_no_padding,
+                "html_content": html_content,
+                "html_base64": html_base64_no_padding,
                 **metadata
             }
         }
@@ -873,7 +736,7 @@ def handler(event):
                 "error_type": type(e).__name__,
                 "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V94"
+                "version": "V96"
             }
         }
 
