@@ -12,6 +12,9 @@ from datetime import datetime
 # Webhook URL - Google Apps Script Web App URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pphacVmJg_XKV5sIyOgxjpDykiWsAHN7ecKFHcygGFrYi/exec"
 
+# FIXED WIDTH FOR ALL IMAGES
+FIXED_WIDTH = 1200
+
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
     try:
@@ -20,8 +23,8 @@ def get_text_dimensions(draw, text, font):
     except AttributeError:
         return draw.textsize(text, font=font)
 
-def create_md_talk_section(width=860):
-    """Create MD'Talk section for route 3 (images 3-4)"""
+def create_md_talk_section(width=FIXED_WIDTH):
+    """Create MD'Talk section for group 3 (images 3-4)"""
     section_height = 500
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -71,8 +74,8 @@ def create_md_talk_section(width=860):
     
     return section_img
 
-def create_design_point_section(width=860):
-    """Create DESIGN POINT section for route 4 (images 5-6)"""
+def create_design_point_section(width=FIXED_WIDTH):
+    """Create DESIGN POINT section for group 4 (images 5-6)"""
     section_height = 600
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -133,9 +136,9 @@ def create_design_point_section(width=860):
     
     return section_img
 
-def create_color_options_only(width=860, thumbnail_image=None):
-    """Create standalone color options section for route 6 (image 9 only)"""
-    section_height = 800
+def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
+    """Create COLOR section for group 6 (image 9) - Figma design style"""
+    section_height = 1000
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -146,8 +149,8 @@ def create_color_options_only(width=860, thumbnail_image=None):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 56)
-                label_font = ImageFont.truetype(font_path, 18)
+                title_font = ImageFont.truetype(font_path, 72)
+                label_font = ImageFont.truetype(font_path, 24)
                 break
             except:
                 continue
@@ -156,113 +159,146 @@ def create_color_options_only(width=860, thumbnail_image=None):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
-    # Draw title - matching Figma design
+    # Draw title - COLOR
     title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(80, 80, 80))
+    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(60, 60, 60))
     
     # Color information
     colors = [
-        ("yellow", "#FFD700", "yellow"),
-        ("rose", "#FFC0CB", "rose"),
-        ("white", "#E8E8E8", "white"),
-        ("antique", "#D2B48C", "antique")
+        ("Yellow Gold", "#FFD700", (1.1, 1.05, 0.9)),
+        ("Rose Gold", "#FFC0CB", (1.1, 0.95, 0.95)),
+        ("White Gold", "#E8E8E8", (0.98, 0.98, 1.02)),
+        ("White", "#F5F5F5", (1.0, 1.0, 1.0))
     ]
     
     # Image settings for 2x2 grid
-    img_size = 280  # Size for each ring image
-    h_spacing = 20   # Horizontal spacing between images
-    v_spacing = 320  # Vertical spacing (includes label space)
+    img_size = 400  # Size for each ring image
+    h_spacing = 80   # Horizontal spacing between images
+    v_spacing = 450  # Vertical spacing (includes label space)
     
     # Calculate starting positions for centered 2x2 grid
     grid_width = 2 * img_size + h_spacing
     start_x = (width - grid_width) // 2
-    start_y = 180
+    start_y = 200
     
-    # If we have the thumbnail image, use it for all 4 colors
-    if thumbnail_image:
+    # Process ring image if provided
+    if ring_image:
         try:
-            # Resize thumbnail to fit
-            resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
-            thumb_resized = thumbnail_image.resize((img_size, img_size), resample_filter)
+            # Extract the ring (remove background)
+            ring_with_bg = extract_ring_from_background(ring_image)
             
-            for i, (name, color, label) in enumerate(colors):
+            for i, (name, color_hex, color_mult) in enumerate(colors):
                 row = i // 2
                 col = i % 2
                 
                 x = start_x + col * (img_size + h_spacing)
                 y = start_y + row * v_spacing
                 
-                # Create a copy of the image for color tinting
-                img_copy = thumb_resized.copy()
+                # Create a copy and resize
+                resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+                ring_resized = ring_with_bg.resize((img_size, img_size), resample_filter)
                 
-                # Apply subtle color tint based on metal type
-                if name == "yellow":
-                    # Warm yellow tint
-                    img_copy = apply_color_filter(img_copy, (1.1, 1.05, 0.9))
-                elif name == "rose":
-                    # Rose gold tint
-                    img_copy = apply_color_filter(img_copy, (1.1, 0.95, 0.95))
-                elif name == "white":
-                    # Cool white/silver tint
-                    img_copy = apply_color_filter(img_copy, (0.98, 0.98, 1.02))
-                else:  # antique
-                    # Antique brass tint
-                    img_copy = apply_color_filter(img_copy, (1.05, 1.0, 0.9))
+                # Apply color tint
+                ring_tinted = apply_metal_color_filter(ring_resized, color_mult)
                 
-                # Paste the tinted image
-                section_img.paste(img_copy, (x, y))
+                # Add subtle shadow
+                shadow_img = Image.new('RGBA', (img_size + 20, img_size + 20), (255, 255, 255, 0))
+                shadow_draw = ImageDraw.Draw(shadow_img)
+                shadow_draw.ellipse([10, 10, img_size + 10, img_size + 10], 
+                                  fill=(200, 200, 200, 80))
+                
+                # Paste shadow first
+                section_img.paste(shadow_img, (x - 10, y - 5), shadow_img)
+                
+                # Paste the ring
+                if ring_tinted.mode == 'RGBA':
+                    section_img.paste(ring_tinted, (x, y), ring_tinted)
+                else:
+                    section_img.paste(ring_tinted, (x, y))
                 
                 # Draw label below image
-                label_width, _ = get_text_dimensions(draw, label, label_font)
-                draw.text((x + img_size//2 - label_width//2, y + img_size + 20), 
-                         label, font=label_font, fill=(100, 100, 100))
+                label_width, _ = get_text_dimensions(draw, name, label_font)
+                draw.text((x + img_size//2 - label_width//2, y + img_size + 30), 
+                         name, font=label_font, fill=(80, 80, 80))
         
         except Exception as e:
-            print(f"Error processing thumbnail image: {e}")
-            # Fall back to color circles if image processing fails
-            create_color_circles_fallback(section_img, draw, colors, start_x, start_y, img_size, h_spacing, v_spacing, label_font)
+            print(f"Error processing ring image: {e}")
+            # Fall back to color circles
+            create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
+                                              img_size, h_spacing, v_spacing, label_font)
     else:
-        # No thumbnail provided, use color circles as fallback
-        create_color_circles_fallback(section_img, draw, colors, start_x, start_y, img_size, h_spacing, v_spacing, label_font)
+        # No image provided, use color circles
+        create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
+                                          img_size, h_spacing, v_spacing, label_font)
     
     return section_img
 
-def apply_color_filter(img, color_multipliers):
-    """Apply color filter to image"""
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
+def extract_ring_from_background(img):
+    """Extract ring from background - simple version"""
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
     
-    # Split into channels
-    r, g, b = img.split()
+    # Simple white background removal
+    data = img.getdata()
+    new_data = []
+    
+    for item in data:
+        # If pixel is close to white, make it transparent
+        if item[0] > 240 and item[1] > 240 and item[2] > 240:
+            new_data.append((255, 255, 255, 0))
+        else:
+            new_data.append(item)
+    
+    img.putdata(new_data)
+    return img
+
+def apply_metal_color_filter(img, color_multipliers):
+    """Apply metal color filter to image"""
+    if img.mode == 'RGBA':
+        r, g, b, a = img.split()
+    else:
+        img = img.convert('RGBA')
+        r, g, b, a = img.split()
     
     # Apply multipliers
     r = r.point(lambda x: min(255, int(x * color_multipliers[0])))
     g = g.point(lambda x: min(255, int(x * color_multipliers[1])))
     b = b.point(lambda x: min(255, int(x * color_multipliers[2])))
     
-    # Merge back
-    return Image.merge('RGB', (r, g, b))
+    return Image.merge('RGBA', (r, g, b, a))
 
-def create_color_circles_fallback(section_img, draw, colors, start_x, start_y, img_size, h_spacing, v_spacing, label_font):
-    """Fallback function to create color circles if no image available"""
-    for i, (name, color, label) in enumerate(colors):
+def create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
+                                       img_size, h_spacing, v_spacing, label_font):
+    """Fallback function to create color circles in Figma style"""
+    for i, (name, color_hex, _) in enumerate(colors):
         row = i // 2
         col = i % 2
         
         x = start_x + col * (img_size + h_spacing)
         y = start_y + row * v_spacing
         
-        # Draw ring shape with color
+        # Draw ring shape with metallic effect
+        # Outer circle
         draw.ellipse([x, y, x+img_size, y+img_size], 
-                    fill=color, outline=(180, 180, 180), width=2)
-        draw.ellipse([x+60, y+60, x+img_size-60, y+img_size-60], 
-                    fill=(255, 255, 255), outline=None)
+                    fill=color_hex, outline=(180, 180, 180), width=2)
+        
+        # Inner circle (hole)
+        inner_margin = img_size // 3
+        draw.ellipse([x+inner_margin, y+inner_margin, 
+                     x+img_size-inner_margin, y+img_size-inner_margin], 
+                    fill=(255, 255, 255), outline=(200, 200, 200), width=1)
+        
+        # Add highlight for metallic effect
+        highlight_size = img_size // 8
+        draw.ellipse([x+highlight_size, y+highlight_size, 
+                     x+highlight_size*3, y+highlight_size*3], 
+                    fill=(255, 255, 255, 180))
         
         # Draw label
-        label_width, _ = get_text_dimensions(draw, label, label_font)
-        draw.text((x + img_size//2 - label_width//2, y + img_size + 20), 
-                 label, font=label_font, fill=(100, 100, 100))
+        label_width, _ = get_text_dimensions(draw, name, label_font)
+        draw.text((x + img_size//2 - label_width//2, y + img_size + 30), 
+                 name, font=label_font, fill=(80, 80, 80))
 
 def extract_file_id_from_url(url):
     """Extract Google Drive file ID from various URL formats"""
@@ -374,98 +410,40 @@ def get_image_from_input(input_data):
         print(f"Error getting image: {e}")
         raise
 
-def process_combined_images(images_data, route_number, PAGE_WIDTH=860, IMAGE_HEIGHT=1147, CONTENT_WIDTH=760):
-    """Process images 3-4, 5-6, 7-8-9 with MD'Talk and DESIGN POINT sections"""
-    print(f"Processing {len(images_data)} images for combined layout, route: {route_number}")
+def calculate_image_height(original_width, original_height, target_width):
+    """Calculate proportional height for target width"""
+    ratio = target_width / original_width
+    return int(original_height * ratio)
+
+def process_single_image(input_data, group_number):
+    """Process single image (groups 1, 2)"""
+    print(f"Processing single image for group {group_number}")
     
-    # Calculate total height WITH sections and spacing
-    TOP_MARGIN = 100
-    BOTTOM_MARGIN = 100
-    IMAGE_SPACING = 120
+    # Get image
+    img = get_image_from_input(input_data)
+    print(f"Original image size: {img.size}")
     
-    # Add section heights based on route
-    section_height = 0
-    if route_number == 3:
-        section_height = 500  # MD'Talk section
-    elif route_number == 4:
-        section_height = 600  # DESIGN POINT section
+    # Calculate proportional height
+    new_height = calculate_image_height(img.width, img.height, FIXED_WIDTH)
     
-    # Calculate total height
-    total_height = TOP_MARGIN + BOTTOM_MARGIN + section_height
-    total_height += len(images_data) * IMAGE_HEIGHT
-    total_height += (len(images_data) - 1) * IMAGE_SPACING
-    
-    print(f"Creating combined canvas: {PAGE_WIDTH}x{total_height}")
+    # Margins
+    TOP_MARGIN = 50
+    BOTTOM_MARGIN = 50
+    TOTAL_HEIGHT = TOP_MARGIN + new_height + BOTTOM_MARGIN
     
     # Create canvas
-    detail_page = Image.new('RGB', (PAGE_WIDTH, total_height), '#FFFFFF')
+    detail_page = Image.new('RGB', (FIXED_WIDTH, TOTAL_HEIGHT), '#FFFFFF')
     
-    current_y = TOP_MARGIN
+    # Resize image
+    resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+    img_resized = img.resize((FIXED_WIDTH, new_height), resample_filter)
     
-    # Add section based on route
-    if route_number == 3:
-        print("Adding MD'Talk section at top")
-        md_talk_section = create_md_talk_section(PAGE_WIDTH)
-        detail_page.paste(md_talk_section, (0, current_y))
-        current_y += 500
-        current_y += 80  # Extra spacing after section
-    elif route_number == 4:
-        print("Adding DESIGN POINT section at top")
-        design_point_section = create_design_point_section(PAGE_WIDTH)
-        detail_page.paste(design_point_section, (0, current_y))
-        current_y += 600
-        current_y += 80  # Extra spacing after section
-    
-    # Process each image
-    for idx, img_data in enumerate(images_data):
-        print(f"Processing image {idx + 1}/{len(images_data)}: {img_data.get('file_name', 'unknown')}")
-        
-        # Add spacing between images (except before first image)
-        if idx > 0:
-            current_y += IMAGE_SPACING
-            print(f"Added {IMAGE_SPACING}px spacing, current_y: {current_y}")
-        
-        # Get image
-        img = get_image_from_input(img_data)
-        print(f"Original image size: {img.size}")
-        
-        # Resize image
-        height_ratio = IMAGE_HEIGHT / img.height
-        temp_width = int(img.width * height_ratio)
-        
-        try:
-            resample_filter = Image.Resampling.LANCZOS
-        except AttributeError:
-            resample_filter = Image.LANCZOS
-            
-        img_resized = img.resize((temp_width, IMAGE_HEIGHT), resample_filter)
-        
-        # Center crop if needed
-        if temp_width > CONTENT_WIDTH:
-            left = (temp_width - CONTENT_WIDTH) // 2
-            img_cropped = img_resized.crop((left, 0, left + CONTENT_WIDTH, IMAGE_HEIGHT))
-        else:
-            img_cropped = img_resized
-        
-        # Paste image
-        x_position = (PAGE_WIDTH - img_cropped.width) // 2
-        detail_page.paste(img_cropped, (x_position, current_y))
-        print(f"Pasted image at ({x_position}, {current_y})")
-        
-        current_y += IMAGE_HEIGHT
+    # Paste image
+    detail_page.paste(img_resized, (0, TOP_MARGIN))
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
-    
-    # Determine page text based on route
-    if route_number == 3:
-        page_text = "- Details 3-4 -"
-    elif route_number == 4:
-        page_text = "- Details 5-6 -"
-    elif route_number == 5:
-        page_text = "- Details 7-8-9 -"
-    else:
-        page_text = "- Details -"
+    page_text = f"- {group_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -481,20 +459,116 @@ def process_combined_images(images_data, route_number, PAGE_WIDTH=860, IMAGE_HEI
         small_font = ImageFont.load_default()
     
     text_width, _ = get_text_dimensions(draw, page_text, small_font)
-    draw.text((PAGE_WIDTH//2 - text_width//2, total_height - 50), 
+    draw.text((FIXED_WIDTH//2 - text_width//2, TOTAL_HEIGHT - 30), 
              page_text, fill=(200, 200, 200), font=small_font)
     
     return detail_page
 
-def process_color_section_only(image_data, PAGE_WIDTH=860):
-    """Process image 9 for standalone color section (route 6)"""
-    print("Creating standalone color section from image 9")
+def process_combined_images(images_data, group_number):
+    """Process combined images (groups 3, 4, 5) with sections"""
+    print(f"Processing {len(images_data)} images for group {group_number}")
     
-    # Get the thumbnail image
-    img = get_image_from_input(image_data)
+    # Calculate heights
+    TOP_MARGIN = 100
+    BOTTOM_MARGIN = 100
+    IMAGE_SPACING = 120
     
-    # Create color section with the actual image
-    color_section = create_color_options_only(PAGE_WIDTH, img)
+    # Add section heights based on group
+    section_height = 0
+    if group_number == 3:
+        section_height = 500  # MD'Talk section
+    elif group_number == 4:
+        section_height = 600  # DESIGN POINT section
+    
+    # Calculate total height
+    total_height = TOP_MARGIN + BOTTOM_MARGIN + section_height
+    if section_height > 0:
+        total_height += 80  # Extra spacing after section
+    
+    # Add image heights
+    for img_data in images_data:
+        img = get_image_from_input(img_data)
+        img_height = calculate_image_height(img.width, img.height, FIXED_WIDTH)
+        total_height += img_height
+        img.close()
+    
+    # Add spacing between images
+    total_height += (len(images_data) - 1) * IMAGE_SPACING
+    
+    print(f"Creating combined canvas: {FIXED_WIDTH}x{total_height}")
+    
+    # Create canvas
+    detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
+    
+    current_y = TOP_MARGIN
+    
+    # Add section based on group
+    if group_number == 3:
+        print("Adding MD'Talk section")
+        md_talk_section = create_md_talk_section()
+        detail_page.paste(md_talk_section, (0, current_y))
+        current_y += 500 + 80
+    elif group_number == 4:
+        print("Adding DESIGN POINT section")
+        design_point_section = create_design_point_section()
+        detail_page.paste(design_point_section, (0, current_y))
+        current_y += 600 + 80
+    
+    # Process each image
+    for idx, img_data in enumerate(images_data):
+        if idx > 0:
+            current_y += IMAGE_SPACING
+        
+        # Get image
+        img = get_image_from_input(img_data)
+        
+        # Calculate proportional height
+        img_height = calculate_image_height(img.width, img.height, FIXED_WIDTH)
+        
+        # Resize image
+        resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+        img_resized = img.resize((FIXED_WIDTH, img_height), resample_filter)
+        
+        # Paste image
+        detail_page.paste(img_resized, (0, current_y))
+        current_y += img_height
+        
+        img.close()
+    
+    # Add page indicator
+    draw = ImageDraw.Draw(detail_page)
+    page_text = f"- Details {group_number} -"
+    
+    small_font = None
+    for font_path in ["/tmp/NanumMyeongjo.ttf", 
+                     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
+        if os.path.exists(font_path):
+            try:
+                small_font = ImageFont.truetype(font_path, 16)
+                break
+            except:
+                continue
+    
+    if small_font is None:
+        small_font = ImageFont.load_default()
+    
+    text_width, _ = get_text_dimensions(draw, page_text, small_font)
+    draw.text((FIXED_WIDTH//2 - text_width//2, total_height - 50), 
+             page_text, fill=(200, 200, 200), font=small_font)
+    
+    return detail_page
+
+def process_color_section(input_data):
+    """Process group 6 - COLOR section with ring image"""
+    print("Processing group 6 - COLOR section")
+    
+    # Get the ring image
+    img = get_image_from_input(input_data)
+    
+    # Create color section with the ring image
+    color_section = create_color_options_section(ring_image=img)
+    
+    img.close()
     
     return color_section
 
@@ -520,7 +594,6 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
         
         print(f"Sending to webhook: {handler_type} for {file_name}")
-        print(f"Webhook URL: {WEBHOOK_URL}")
         
         response = requests.post(
             WEBHOOK_URL,
@@ -539,262 +612,51 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
             
     except Exception as e:
         print(f"Webhook error: {str(e)}")
-        import traceback
-        traceback.print_exc()
         return None
 
 def handler(event):
-    """Create jewelry detail page with text sections"""
+    """Main handler for detail page creation"""
     try:
-        print(f"=== V102 Detail Page Handler - With Text Sections & Color Grid ===")
-        print(f"Webhook URL configured: {WEBHOOK_URL}")
+        print(f"=== V103 Detail Page Handler - Fixed Width 1200px ===")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         
-        # Handle semicolon-separated URLs
-        if 'image' in input_data and isinstance(input_data['image'], str) and ';' in input_data['image']:
-            print(f"Processing semicolon-separated URLs")
-            urls = input_data['image'].split(';')
-            input_data['images'] = []
-            for i, url in enumerate(urls):
-                url = url.strip()
-                if url:
-                    input_data['images'].append({
-                        'url': url,
-                        'file_name': f'image_{i+1}.jpg'
-                    })
-            print(f"Created {len(input_data['images'])} images from semicolon-separated URLs")
-        
-        # Check if file_name contains _001 or _002 for individual processing
-        file_name = input_data.get('file_name', '')
-        if '_001' in file_name or '_002' in file_name:
-            print(f"FORCING INDIVIDUAL PROCESSING for {file_name}")
-            input_data.pop('images', None)
-        
-        # Get route number
+        # Get route/group number
         route_number = input_data.get('route_number', 0)
+        group_number = input_data.get('group_number', route_number)
         
-        # Check if this is route 6 (color section only)
-        if route_number == 6:
-            print("Processing route 6 - Color section only with image 9")
+        # Handle different group types
+        if group_number == 6:
+            # Group 6: COLOR section with image 9
+            detail_page = process_color_section(input_data)
+            page_type = "color_section"
             
-            # Get image 9 data
-            if 'images' in input_data and len(input_data['images']) > 0:
-                image_data = input_data['images'][0]  # Should only have one image
+        elif 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) > 0:
+            # Groups 3, 4, 5: Combined images
+            detail_page = process_combined_images(input_data['images'], group_number)
+            
+            if group_number == 3:
+                page_type = "combined_3_4_mdtalk"
+            elif group_number == 4:
+                page_type = "combined_5_6_design"
+            elif group_number == 5:
+                page_type = "combined_7_8"
             else:
-                image_data = input_data
+                page_type = f"combined_group_{group_number}"
             
-            # Create color section
-            detail_page = process_color_section_only(image_data)
-            
-            # Save to base64
-            buffer = io.BytesIO()
-            detail_page.save(buffer, format='PNG', quality=95, optimize=True)
-            buffer.seek(0)
-            result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            
-            # Remove padding for Make.com
-            result_base64_no_padding = result_base64.rstrip('=')
-            
-            # Prepare metadata
-            metadata = {
-                "page_type": "color_section",
-                "page_number": 6,
-                "route_number": 6,
-                "dimensions": {
-                    "width": detail_page.width,
-                    "height": detail_page.height
-                },
-                "has_text_overlay": True,
-                "description": "Color options with 4 metal types",
-                "format": "base64_no_padding",
-                "status": "success",
-                "version": "V102"
-            }
-            
-            # Send to webhook
-            webhook_result = send_to_webhook(
-                result_base64_no_padding,
-                "detail",
-                "color_section_006.png",
-                6,
-                metadata
-            )
-            
-            if webhook_result:
-                metadata["webhook_result"] = webhook_result
-            
-            print("Successfully created color section with ring images")
-            
-            return {
-                "output": {
-                    "enhanced_image": result_base64_no_padding,
-                    **metadata
-                }
-            }
-        
-        # Check if this is a combined request
-        if 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) > 0:
-            # Combined processing (3-4, 5-6, 7-8-9)
-            print(f"Processing combined images: {len(input_data['images'])} images")
-            
-            # Check ALL file names to determine route
-            all_files = [img.get('file_name', '') for img in input_data['images']]
-            print(f"All file names: {all_files}")
-            
-            # Process combined images WITH text sections
-            detail_page = process_combined_images(input_data['images'], route_number)
-            
-            # Save to base64
-            buffer = io.BytesIO()
-            detail_page.save(buffer, format='PNG', quality=95, optimize=True)
-            buffer.seek(0)
-            result_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-            
-            # Remove padding for Make.com
-            result_base64_no_padding = result_base64.rstrip('=')
-            
-            # Determine page type
-            if any('_003' in f or '_004' in f for f in all_files) or route_number == 3:
-                page_type = "combined_3_4"
-            elif any('_005' in f or '_006' in f for f in all_files) or route_number == 4:
-                page_type = "combined_5_6"
-            elif any('_007' in f or '_008' in f or '_009' in f or 'thumb' in f.lower() for f in all_files) or route_number == 5:
-                page_type = "combined_7_8_9"
-            else:
-                page_type = "combined_unknown"
-            
-            # Prepare metadata
-            metadata = {
-                "page_type": page_type,
-                "page_number": route_number,
-                "image_count": len(input_data['images']),
-                "dimensions": {
-                    "width": detail_page.width,
-                    "height": detail_page.height
-                },
-                "has_text_overlay": route_number in [3, 4],  # MD'Talk and DESIGN POINT
-                "format": "base64_no_padding",
-                "status": "success",
-                "version": "V101"
-            }
-            
-            # Send to webhook
-            webhook_result = send_to_webhook(
-                result_base64_no_padding,
-                "detail",
-                f"combined_{route_number}.png",
-                route_number,
-                metadata
-            )
-            
-            if webhook_result:
-                metadata["webhook_result"] = webhook_result
-            
-            print(f"Successfully created combined detail page")
-            
-            return {
-                "output": {
-                    "enhanced_image": result_base64_no_padding,
-                    **metadata
-                }
-            }
-        
-        # Individual image processing (for images 1 and 2) - NO TEXT OVERLAY
-        image_number = int(input_data.get('image_number', 1))
-        file_name = input_data.get('file_name', 'unknown.jpg')
-        
-        # Auto-detect image number from filename
-        if '_001' in file_name:
-            image_number = 1
-        elif '_002' in file_name:
-            image_number = 2
-        
-        print(f"Processing INDIVIDUAL image: {file_name} (Image #{image_number}) - CLEAN VERSION")
-        
-        # Handle single image URL in 'image' field
-        if 'image' in input_data and not input_data.get('image_url'):
-            input_data['image_url'] = input_data['image']
-            print(f"Using 'image' field as image_url: {input_data['image_url']}")
-        
-        # Get image
-        img = get_image_from_input(input_data)
-        
-        # Design settings based on image number
-        if image_number == 1:  # Main hero
-            PAGE_WIDTH = 1200
-            IMAGE_HEIGHT = 1600
-            CONTENT_WIDTH = 1100
-        elif image_number == 2:  # Sub hero
-            PAGE_WIDTH = 1000
-            IMAGE_HEIGHT = 1333
-            CONTENT_WIDTH = 900
         else:
-            PAGE_WIDTH = 860
-            IMAGE_HEIGHT = 1147
-            CONTENT_WIDTH = 760
-        
-        # Section heights
-        TOP_MARGIN = 50
-        BOTTOM_MARGIN = 50
-        
-        # Total height
-        TOTAL_HEIGHT = TOP_MARGIN + IMAGE_HEIGHT + BOTTOM_MARGIN
-        
-        # Create canvas
-        detail_page = Image.new('RGB', (PAGE_WIDTH, TOTAL_HEIGHT), '#FFFFFF')
-        
-        current_y = TOP_MARGIN
-        
-        # Resize image with aspect ratio
-        height_ratio = IMAGE_HEIGHT / img.height
-        temp_width = int(img.width * height_ratio)
-        
-        try:
-            resample_filter = Image.Resampling.LANCZOS
-        except AttributeError:
-            resample_filter = Image.LANCZOS
+            # Groups 1, 2: Single images
+            # Auto-detect from filename
+            file_name = input_data.get('file_name', '')
+            if '_001' in file_name:
+                group_number = 1
+            elif '_002' in file_name:
+                group_number = 2
             
-        img_resized = img.resize((temp_width, IMAGE_HEIGHT), resample_filter)
-        
-        # Center crop if needed
-        if temp_width > CONTENT_WIDTH:
-            left = (temp_width - CONTENT_WIDTH) // 2
-            img_cropped = img_resized.crop((left, 0, left + CONTENT_WIDTH, IMAGE_HEIGHT))
-        else:
-            img_cropped = img_resized
-        
-        # Paste image
-        x_position = (PAGE_WIDTH - img_cropped.width) // 2
-        detail_page.paste(img_cropped, (x_position, current_y))
-        
-        # NO TEXT OVERLAY FOR IMAGES 1 AND 2
-        print("Clean image created without text overlay")
-        
-        current_y += IMAGE_HEIGHT
-        
-        # Add page indicator
-        draw = ImageDraw.Draw(detail_page)
-        page_text = f"- {image_number} -"
-        
-        small_font = None
-        for font_path in ["/tmp/NanumMyeongjo.ttf", 
-                         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
-            if os.path.exists(font_path):
-                try:
-                    small_font = ImageFont.truetype(font_path, 16)
-                    break
-                except:
-                    continue
-        
-        if small_font is None:
-            small_font = ImageFont.load_default()
-        
-        text_width, _ = get_text_dimensions(draw, page_text, small_font)
-        draw.text((PAGE_WIDTH//2 - text_width//2, TOTAL_HEIGHT - 30), 
-                 page_text, fill=(200, 200, 200), font=small_font)
+            detail_page = process_single_image(input_data, group_number)
+            page_type = f"single_image_{group_number}"
         
         # Save to base64
         buffer = io.BytesIO()
@@ -807,33 +669,32 @@ def handler(event):
         
         # Prepare metadata
         metadata = {
-            "page_number": image_number,
-            "page_type": "individual",
-            "file_name": file_name,
+            "page_type": page_type,
+            "group_number": group_number,
             "dimensions": {
-                "width": PAGE_WIDTH,
-                "height": TOTAL_HEIGHT
+                "width": detail_page.width,
+                "height": detail_page.height
             },
-            "has_text_overlay": False,  # Clean image
+            "fixed_width": FIXED_WIDTH,
+            "has_text_overlay": group_number in [3, 4, 6],
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V101"
+            "version": "V103"
         }
         
         # Send to webhook
         webhook_result = send_to_webhook(
             result_base64_no_padding,
             "detail",
-            file_name,
-            image_number,
+            f"group_{group_number}_{page_type}.png",
+            group_number,
             metadata
         )
         
         if webhook_result:
             metadata["webhook_result"] = webhook_result
         
-        print(f"Successfully created INDIVIDUAL detail page: {PAGE_WIDTH}x{TOTAL_HEIGHT}")
-        print(f"Clean image without text overlay")
+        print(f"Successfully created {page_type} with dimensions: {detail_page.width}x{detail_page.height}")
         
         return {
             "output": {
@@ -851,9 +712,8 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "error_type": type(e).__name__,
-                "file_name": input_data.get('file_name', 'unknown') if 'input_data' in locals() else 'unknown',
                 "status": "error",
-                "version": "V101"
+                "version": "V103"
             }
         }
 
