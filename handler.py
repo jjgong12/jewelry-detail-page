@@ -135,8 +135,8 @@ def create_design_point_section(width=860):
 
 def create_color_options_only(width=860, thumbnail_image=None):
     """Create standalone color options section for route 6 (image 9 only)"""
-    section_height = 600
-    section_img = Image.new('RGB', (width, section_height), '#F8F8F8')
+    section_height = 800
+    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
     font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
@@ -146,8 +146,8 @@ def create_color_options_only(width=860, thumbnail_image=None):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 48)
-                label_font = ImageFont.truetype(font_path, 20)
+                title_font = ImageFont.truetype(font_path, 56)
+                label_font = ImageFont.truetype(font_path, 18)
                 break
             except:
                 continue
@@ -156,58 +156,113 @@ def create_color_options_only(width=860, thumbnail_image=None):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
-    # Draw title
-    title = "COLOR OPTIONS"
+    # Draw title - matching Figma design
+    title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 60), title, font=title_font, fill=(40, 40, 40))
+    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(80, 80, 80))
     
-    # Color information with improved layout
+    # Color information
     colors = [
-        ("yellow", "#FFD700", "Yellow Gold", "옐로우 골드"),
-        ("rose", "#FFC0CB", "Rose Gold", "로즈 골드"),
-        ("white", "#E8E8E8", "White Gold", "화이트 골드"),
-        ("antique", "#D2B48C", "Antique White", "무도금 화이트")
+        ("yellow", "#FFD700", "yellow"),
+        ("rose", "#FFC0CB", "rose"),
+        ("white", "#E8E8E8", "white"),
+        ("antique", "#D2B48C", "antique")
     ]
     
-    # Draw color boxes in 2x2 grid with larger size
-    box_size = 160
-    h_spacing = 140
-    v_spacing = 220
+    # Image settings for 2x2 grid
+    img_size = 280  # Size for each ring image
+    h_spacing = 20   # Horizontal spacing between images
+    v_spacing = 320  # Vertical spacing (includes label space)
     
     # Calculate starting positions for centered 2x2 grid
-    grid_width = 2 * box_size + h_spacing
-    grid_height = 2 * v_spacing
+    grid_width = 2 * img_size + h_spacing
     start_x = (width - grid_width) // 2
-    start_y = 150
+    start_y = 180
     
-    for i, (name, color, label_en, label_kr) in enumerate(colors):
+    # If we have the thumbnail image, use it for all 4 colors
+    if thumbnail_image:
+        try:
+            # Resize thumbnail to fit
+            resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+            thumb_resized = thumbnail_image.resize((img_size, img_size), resample_filter)
+            
+            for i, (name, color, label) in enumerate(colors):
+                row = i // 2
+                col = i % 2
+                
+                x = start_x + col * (img_size + h_spacing)
+                y = start_y + row * v_spacing
+                
+                # Create a copy of the image for color tinting
+                img_copy = thumb_resized.copy()
+                
+                # Apply subtle color tint based on metal type
+                if name == "yellow":
+                    # Warm yellow tint
+                    img_copy = apply_color_filter(img_copy, (1.1, 1.05, 0.9))
+                elif name == "rose":
+                    # Rose gold tint
+                    img_copy = apply_color_filter(img_copy, (1.1, 0.95, 0.95))
+                elif name == "white":
+                    # Cool white/silver tint
+                    img_copy = apply_color_filter(img_copy, (0.98, 0.98, 1.02))
+                else:  # antique
+                    # Antique brass tint
+                    img_copy = apply_color_filter(img_copy, (1.05, 1.0, 0.9))
+                
+                # Paste the tinted image
+                section_img.paste(img_copy, (x, y))
+                
+                # Draw label below image
+                label_width, _ = get_text_dimensions(draw, label, label_font)
+                draw.text((x + img_size//2 - label_width//2, y + img_size + 20), 
+                         label, font=label_font, fill=(100, 100, 100))
+        
+        except Exception as e:
+            print(f"Error processing thumbnail image: {e}")
+            # Fall back to color circles if image processing fails
+            create_color_circles_fallback(section_img, draw, colors, start_x, start_y, img_size, h_spacing, v_spacing, label_font)
+    else:
+        # No thumbnail provided, use color circles as fallback
+        create_color_circles_fallback(section_img, draw, colors, start_x, start_y, img_size, h_spacing, v_spacing, label_font)
+    
+    return section_img
+
+def apply_color_filter(img, color_multipliers):
+    """Apply color filter to image"""
+    if img.mode != 'RGB':
+        img = img.convert('RGB')
+    
+    # Split into channels
+    r, g, b = img.split()
+    
+    # Apply multipliers
+    r = r.point(lambda x: min(255, int(x * color_multipliers[0])))
+    g = g.point(lambda x: min(255, int(x * color_multipliers[1])))
+    b = b.point(lambda x: min(255, int(x * color_multipliers[2])))
+    
+    # Merge back
+    return Image.merge('RGB', (r, g, b))
+
+def create_color_circles_fallback(section_img, draw, colors, start_x, start_y, img_size, h_spacing, v_spacing, label_font):
+    """Fallback function to create color circles if no image available"""
+    for i, (name, color, label) in enumerate(colors):
         row = i // 2
         col = i % 2
         
-        x = start_x + col * (box_size + h_spacing)
+        x = start_x + col * (img_size + h_spacing)
         y = start_y + row * v_spacing
         
-        # Draw shadow
-        shadow_offset = 3
-        draw.ellipse([x+shadow_offset, y+shadow_offset, x+box_size+shadow_offset, y+box_size+shadow_offset], 
-                    fill=(230, 230, 230), outline=None)
+        # Draw ring shape with color
+        draw.ellipse([x, y, x+img_size, y+img_size], 
+                    fill=color, outline=(180, 180, 180), width=2)
+        draw.ellipse([x+60, y+60, x+img_size-60, y+img_size-60], 
+                    fill=(255, 255, 255), outline=None)
         
-        # Draw ring placeholder with gradient effect
-        draw.ellipse([x, y, x+box_size, y+box_size], 
-                    fill=color, outline=(150, 150, 150), width=2)
-        draw.ellipse([x+40, y+40, x+box_size-40, y+box_size-40], 
-                    fill=(255, 255, 255), outline=(200, 200, 200), width=1)
-        
-        # Draw labels (English and Korean)
-        label_width, _ = get_text_dimensions(draw, label_en, label_font)
-        draw.text((x + box_size//2 - label_width//2, y + box_size + 15), 
-                 label_en, font=label_font, fill=(60, 60, 60))
-        
-        label_kr_width, _ = get_text_dimensions(draw, label_kr, label_font)
-        draw.text((x + box_size//2 - label_kr_width//2, y + box_size + 40), 
-                 label_kr, font=label_font, fill=(100, 100, 100))
-    
-    return section_img
+        # Draw label
+        label_width, _ = get_text_dimensions(draw, label, label_font)
+        draw.text((x + img_size//2 - label_width//2, y + img_size + 20), 
+                 label, font=label_font, fill=(100, 100, 100))
 
 def extract_file_id_from_url(url):
     """Extract Google Drive file ID from various URL formats"""
@@ -438,7 +493,7 @@ def process_color_section_only(image_data, PAGE_WIDTH=860):
     # Get the thumbnail image
     img = get_image_from_input(image_data)
     
-    # Create color section
+    # Create color section with the actual image
     color_section = create_color_options_only(PAGE_WIDTH, img)
     
     return color_section
@@ -491,7 +546,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Create jewelry detail page with text sections"""
     try:
-        print(f"=== V101 Detail Page Handler - With Text Sections ===")
+        print(f"=== V102 Detail Page Handler - With Text Sections & Color Grid ===")
         print(f"Webhook URL configured: {WEBHOOK_URL}")
         
         # Find input data
@@ -523,7 +578,7 @@ def handler(event):
         
         # Check if this is route 6 (color section only)
         if route_number == 6:
-            print("Processing route 6 - Color section only")
+            print("Processing route 6 - Color section only with image 9")
             
             # Get image 9 data
             if 'images' in input_data and len(input_data['images']) > 0:
@@ -553,16 +608,17 @@ def handler(event):
                     "height": detail_page.height
                 },
                 "has_text_overlay": True,
+                "description": "Color options with 4 metal types",
                 "format": "base64_no_padding",
                 "status": "success",
-                "version": "V101"
+                "version": "V102"
             }
             
             # Send to webhook
             webhook_result = send_to_webhook(
                 result_base64_no_padding,
                 "detail",
-                "color_section.png",
+                "color_section_006.png",
                 6,
                 metadata
             )
@@ -570,7 +626,7 @@ def handler(event):
             if webhook_result:
                 metadata["webhook_result"] = webhook_result
             
-            print("Successfully created color section")
+            print("Successfully created color section with ring images")
             
             return {
                 "output": {
