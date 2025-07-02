@@ -2,12 +2,24 @@ import runpod
 import base64
 import requests
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 import io
 import json
 import os
 import re
 from datetime import datetime
+import numpy as np
+import math
+
+# Try to import replicate if available
+try:
+    import replicate
+    REPLICATE_AVAILABLE = True
+except ImportError:
+    print("Replicate package not installed. Background removal will use local method.")
+    REPLICATE_AVAILABLE = False
+
+
 
 # Webhook URL - Google Apps Script Web App URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pphacVmJg_XKV5sIyOgxjpDykiWsAHN7ecKFHcygGFrYi/exec"
@@ -136,8 +148,114 @@ def create_design_point_section(width=FIXED_WIDTH):
     
     return section_img
 
+def extract_ring_with_replicate(img):
+    """Extract ring from background using Replicate API"""
+    try:
+        # Check if Replicate is available and API token is set
+        if not REPLICATE_AVAILABLE:
+            print("Replicate not available, using local fallback")
+            return extract_ring_local_fallback(img)
+            
+        if not os.environ.get("REPLICATE_API_TOKEN"):
+            print("Replicate API token not found, using local fallback")
+            return extract_ring_local_fallback(img)
+            
+        print("Starting Replicate background removal...")
+        
+        # Convert image to base64
+        buffered = BytesIO()
+        img.save(buffered, format="PNG")
+        buffered.seek(0)
+        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Call Replicate API for background removal
+        output = replicate.run(
+            "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
+            input={
+                "image": f"data:image/png;base64,{img_base64}"
+            }
+        )
+        
+        # Download the result
+        response = requests.get(output)
+        result_img = Image.open(BytesIO(response.content))
+        
+        # Ensure RGBA mode
+        if result_img.mode != 'RGBA':
+            result_img = result_img.convert('RGBA')
+        
+        print("Replicate background removal completed successfully")
+        return result_img
+        
+    except Exception as e:
+        print(f"Error with Replicate API: {e}")
+        print("Falling back to local method...")
+        
+        # Fallback to local method
+        return extract_ring_local_fallback(img)
+
+def extract_ring_local_fallback(img):
+    """Local fallback method for background removal"""
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
+    
+    width, height = img.size
+    img_array = np.array(img)
+    
+    # Sample corners for background color
+    corner_size = 10
+    corners = []
+    corners.extend(img_array[:corner_size, :corner_size].reshape(-1, 4))
+    corners.extend(img_array[:corner_size, -corner_size:].reshape(-1, 4))
+    corners.extend(img_array[-corner_size:, :corner_size].reshape(-1, 4))
+    corners.extend(img_array[-corner_size:, -corner_size:].reshape(-1, 4))
+    
+    corners_array = np.array(corners)
+    bg_color = np.median(corners_array, axis=0)[:3]
+    
+    # Calculate color distance
+    color_distance = np.sqrt(
+        (img_array[:,:,0] - bg_color[0])**2 +
+        (img_array[:,:,1] - bg_color[1])**2 +
+        (img_array[:,:,2] - bg_color[2])**2
+    )
+    
+    threshold = np.percentile(color_distance, 30)
+    mask = color_distance > threshold
+    
+    # Clean up mask
+    mask = mask.astype(np.uint8) * 255
+    mask_img = Image.fromarray(mask, 'L')
+    
+    # Morphological operations
+    mask_img = mask_img.filter(ImageFilter.MaxFilter(3))
+    mask_img = mask_img.filter(ImageFilter.MinFilter(3))
+    mask_img = mask_img.filter(ImageFilter.SMOOTH_MORE)
+    mask_img = mask_img.filter(ImageFilter.GaussianBlur(radius=1))
+    
+    # Apply mask
+    result = img.copy()
+    result.putalpha(mask_img)
+    
+    return result
+
+def apply_metal_color_filter(img, color_multipliers):
+    """Apply metal color filter to image"""
+    if img.mode == 'RGBA':
+        r, g, b, a = img.split()
+    else:
+        img = img.convert('RGBA')
+        r, g, b, a = img.split()
+    
+    # Apply multipliers
+    r = r.point(lambda x: min(255, int(x * color_multipliers[0])))
+    g = g.point(lambda x: min(255, int(x * color_multipliers[1])))
+    b = b.point(lambda x: min(255, int(x * color_multipliers[2])))
+    
+    return Image.merge('RGBA', (r, g, b, a))
+
 def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
-    """Create COLOR section for group 6 (image 9) - Figma design style"""
+    """Create COLOR section for group 6 (image 9) - Figma design style with perfect background removal"""
     section_height = 1000
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -164,12 +282,12 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(60, 60, 60))
     
-    # Color information
+    # Color information - exactly like Figma
     colors = [
-        ("Yellow Gold", "#FFD700", (1.1, 1.05, 0.9)),
-        ("Rose Gold", "#FFC0CB", (1.1, 0.95, 0.95)),
-        ("White Gold", "#E8E8E8", (0.98, 0.98, 1.02)),
-        ("White", "#F5F5F5", (1.0, 1.0, 1.0))
+        ("Yellow Gold", "#FFD700", (1.15, 1.10, 0.85)),
+        ("Rose Gold", "#F4C2C2", (1.15, 0.95, 0.90)),
+        ("White Gold", "#E5E4E2", (0.95, 0.95, 1.05)),
+        ("White", "#FFFFFF", (1.0, 1.0, 1.0))
     ]
     
     # Image settings for 2x2 grid
@@ -185,8 +303,8 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     # Process ring image if provided
     if ring_image:
         try:
-            # Extract the ring (remove background)
-            ring_with_bg = extract_ring_from_background(ring_image)
+            # Extract the ring with Replicate API
+            ring_extracted = extract_ring_with_replicate(ring_image)
             
             for i, (name, color_hex, color_mult) in enumerate(colors):
                 row = i // 2
@@ -195,27 +313,65 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
                 x = start_x + col * (img_size + h_spacing)
                 y = start_y + row * v_spacing
                 
-                # Create a copy and resize
+                # Create a white background for each ring
+                ring_bg = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 255))
+                
+                # Resize ring maintaining aspect ratio
+                ring_aspect = ring_extracted.width / ring_extracted.height
+                if ring_aspect > 1:
+                    new_width = int(img_size * 0.75)  # Slightly smaller for padding
+                    new_height = int(new_width / ring_aspect)
+                else:
+                    new_height = int(img_size * 0.75)
+                    new_width = int(new_height * ring_aspect)
+                
                 resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
-                ring_resized = ring_with_bg.resize((img_size, img_size), resample_filter)
+                ring_resized = ring_extracted.resize((new_width, new_height), resample_filter)
                 
                 # Apply color tint
                 ring_tinted = apply_metal_color_filter(ring_resized, color_mult)
                 
-                # Add subtle shadow
-                shadow_img = Image.new('RGBA', (img_size + 20, img_size + 20), (255, 255, 255, 0))
+                # Add subtle drop shadow
+                shadow_offset = 5
+                shadow_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
                 shadow_draw = ImageDraw.Draw(shadow_img)
-                shadow_draw.ellipse([10, 10, img_size + 10, img_size + 10], 
-                                  fill=(200, 200, 200, 80))
                 
-                # Paste shadow first
-                section_img.paste(shadow_img, (x - 10, y - 5), shadow_img)
+                # Create soft shadow
+                shadow_x = (img_size - new_width) // 2 + shadow_offset
+                shadow_y = (img_size - new_height) // 2 + shadow_offset
                 
-                # Paste the ring
-                if ring_tinted.mode == 'RGBA':
-                    section_img.paste(ring_tinted, (x, y), ring_tinted)
-                else:
-                    section_img.paste(ring_tinted, (x, y))
+                # Multiple layers for softer shadow
+                for j in range(3):
+                    opacity = 20 - j * 5
+                    shadow_draw.ellipse([
+                        shadow_x - j*2, 
+                        shadow_y - j*2, 
+                        shadow_x + new_width + j*2, 
+                        shadow_y + new_height + j*2
+                    ], fill=(180, 180, 180, opacity))
+                
+                # Combine shadow with background
+                combined = Image.alpha_composite(ring_bg, shadow_img)
+                
+                # Center the ring on background
+                paste_x = (img_size - new_width) // 2
+                paste_y = (img_size - new_height) // 2
+                
+                # Create a temporary image for the ring
+                temp_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
+                temp_img.paste(ring_tinted, (paste_x, paste_y), ring_tinted)
+                
+                # Composite ring onto shadow background
+                final_ring = Image.alpha_composite(combined, temp_img)
+                
+                # Add subtle border
+                border_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
+                border_draw = ImageDraw.Draw(border_img)
+                border_draw.rectangle([0, 0, img_size-1, img_size-1], outline=(230, 230, 230, 255), width=1)
+                final_ring = Image.alpha_composite(final_ring, border_img)
+                
+                # Paste to main image
+                section_img.paste(final_ring, (x, y), final_ring)
                 
                 # Draw label below image
                 label_width, _ = get_text_dimensions(draw, name, label_font)
@@ -233,40 +389,6 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
                                           img_size, h_spacing, v_spacing, label_font)
     
     return section_img
-
-def extract_ring_from_background(img):
-    """Extract ring from background - simple version"""
-    if img.mode != 'RGBA':
-        img = img.convert('RGBA')
-    
-    # Simple white background removal
-    data = img.getdata()
-    new_data = []
-    
-    for item in data:
-        # If pixel is close to white, make it transparent
-        if item[0] > 240 and item[1] > 240 and item[2] > 240:
-            new_data.append((255, 255, 255, 0))
-        else:
-            new_data.append(item)
-    
-    img.putdata(new_data)
-    return img
-
-def apply_metal_color_filter(img, color_multipliers):
-    """Apply metal color filter to image"""
-    if img.mode == 'RGBA':
-        r, g, b, a = img.split()
-    else:
-        img = img.convert('RGBA')
-        r, g, b, a = img.split()
-    
-    # Apply multipliers
-    r = r.point(lambda x: min(255, int(x * color_multipliers[0])))
-    g = g.point(lambda x: min(255, int(x * color_multipliers[1])))
-    b = b.point(lambda x: min(255, int(x * color_multipliers[2])))
-    
-    return Image.merge('RGBA', (r, g, b, a))
 
 def create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
                                        img_size, h_spacing, v_spacing, label_font):
@@ -468,6 +590,10 @@ def process_combined_images(images_data, group_number):
     """Process combined images (groups 3, 4, 5) with sections"""
     print(f"Processing {len(images_data)} images for group {group_number}")
     
+    # IMPORTANT: Group 5 should only have 2 images (7, 8)
+    if group_number == 5 and len(images_data) != 2:
+        print(f"WARNING: Group 5 should have exactly 2 images, got {len(images_data)}")
+    
     # Calculate heights
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
@@ -537,7 +663,10 @@ def process_combined_images(images_data, group_number):
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
-    page_text = f"- Details {group_number} -"
+    if group_number == 5:
+        page_text = f"- Gallery 7-8 -"  # 명확하게 7-8만 표시
+    else:
+        page_text = f"- Details {group_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -559,8 +688,8 @@ def process_combined_images(images_data, group_number):
     return detail_page
 
 def process_color_section(input_data):
-    """Process group 6 - COLOR section with ring image"""
-    print("Processing group 6 - COLOR section")
+    """Process group 6 - COLOR section with ring image (image 9 only)"""
+    print("Processing group 6 - COLOR section with image 9 ONLY")
     
     # Get the ring image
     img = get_image_from_input(input_data)
@@ -617,7 +746,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V103 Detail Page Handler - Fixed Width 1200px ===")
+        print(f"=== V104 Detail Page Handler - With Replicate API ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -629,12 +758,20 @@ def handler(event):
         
         # Handle different group types
         if group_number == 6:
-            # Group 6: COLOR section with image 9
+            # Group 6: COLOR section with image 9 ONLY
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
         elif 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) > 0:
             # Groups 3, 4, 5: Combined images
+            # CRITICAL: Group 5 should only have 2 images (7, 8), NOT 3!
+            if group_number == 5:
+                if len(input_data['images']) > 2:
+                    print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
+                    input_data['images'] = input_data['images'][:2]  # Use only first 2 images
+                elif len(input_data['images']) < 2:
+                    print(f"ERROR: Group 5 has {len(input_data['images'])} images, needs 2.")
+            
             detail_page = process_combined_images(input_data['images'], group_number)
             
             if group_number == 3:
@@ -642,7 +779,7 @@ def handler(event):
             elif group_number == 4:
                 page_type = "combined_5_6_design"
             elif group_number == 5:
-                page_type = "combined_7_8"
+                page_type = "combined_7_8_gallery"  # Only 7-8
             else:
                 page_type = f"combined_group_{group_number}"
             
@@ -677,9 +814,19 @@ def handler(event):
             },
             "fixed_width": FIXED_WIDTH,
             "has_text_overlay": group_number in [3, 4, 6],
+            "has_background_removal": group_number == 6,
+            "uses_replicate_api": group_number == 6,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V103"
+            "version": "V104",
+            "group_info": {
+                "1": "Single image 1",
+                "2": "Single image 2", 
+                "3": "Images 3-4 with MD'Talk",
+                "4": "Images 5-6 with DESIGN POINT",
+                "5": "Images 7-8 ONLY (no 9)",  # CRITICAL
+                "6": "Image 9 ONLY for COLOR section"
+            }[str(group_number)]
         }
         
         # Send to webhook
@@ -713,7 +860,7 @@ def handler(event):
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "status": "error",
-                "version": "V103"
+                "version": "V104"
             }
         }
 
