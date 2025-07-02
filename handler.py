@@ -19,8 +19,6 @@ except ImportError:
     print("Replicate package not installed. Background removal will use local method.")
     REPLICATE_AVAILABLE = False
 
-
-
 # Webhook URL - Google Apps Script Web App URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pphacVmJg_XKV5sIyOgxjpDykiWsAHN7ecKFHcygGFrYi/exec"
 
@@ -746,31 +744,72 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V104 Detail Page Handler - With Replicate API ===")
+        print(f"=== V105 Detail Page Handler - Complete Fix ===")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         
-        # Get route/group number
+        # Get route/group number - CRITICAL
         route_number = input_data.get('route_number', 0)
         group_number = input_data.get('group_number', route_number)
         
-        # Handle different group types
+        # If group_number is still 0, try to detect from URL
+        if group_number == 0:
+            # Check if we have URLs that can help identify the group
+            urls = []
+            if 'images' in input_data and isinstance(input_data['images'], list):
+                for img in input_data['images']:
+                    if isinstance(img, dict) and 'url' in img:
+                        urls.append(img['url'])
+            elif 'combined_urls' in input_data:
+                urls = input_data['combined_urls'].split(';')
+            elif 'url' in input_data:
+                urls = [input_data['url']]
+            
+            # Count URLs to determine group
+            url_count = len(urls)
+            if url_count == 2:
+                # Could be group 3, 4, or 5 - need more info
+                # Check if images key exists
+                if 'images' in input_data:
+                    # Default to group 3 if we can't determine
+                    group_number = 3
+                    print(f"Detected 2 images, defaulting to group {group_number}")
+            elif url_count == 1:
+                # Single image - could be 1, 2, or 6
+                group_number = 1  # Default to 1
+                print(f"Detected 1 image, defaulting to group {group_number}")
+        
+        print(f"Processing group_number: {group_number}")
+        
+        # Handle different input formats from Make.com
+        if 'combined_urls' in input_data and input_data['combined_urls']:
+            # URLs are semicolon-separated
+            urls = input_data['combined_urls'].split(';')
+            input_data['images'] = []
+            for url in urls:
+                url = url.strip()
+                if url:
+                    input_data['images'].append({'url': url})
+            print(f"Converted combined_urls to {len(input_data['images'])} images")
+        
+        # Handle different group types based on group_number
         if group_number == 6:
             # Group 6: COLOR section with image 9 ONLY
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
-        elif 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) > 0:
-            # Groups 3, 4, 5: Combined images
+        elif group_number in [3, 4, 5]:
+            # Groups 3, 4, 5: Combined images with sections
+            if 'images' not in input_data or not isinstance(input_data['images'], list):
+                # Convert single image to images array
+                input_data['images'] = [input_data]
+            
             # CRITICAL: Group 5 should only have 2 images (7, 8), NOT 3!
-            if group_number == 5:
-                if len(input_data['images']) > 2:
-                    print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
-                    input_data['images'] = input_data['images'][:2]  # Use only first 2 images
-                elif len(input_data['images']) < 2:
-                    print(f"ERROR: Group 5 has {len(input_data['images'])} images, needs 2.")
+            if group_number == 5 and len(input_data['images']) > 2:
+                print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
+                input_data['images'] = input_data['images'][:2]  # Use only first 2 images
             
             detail_page = process_combined_images(input_data['images'], group_number)
             
@@ -780,18 +819,9 @@ def handler(event):
                 page_type = "combined_5_6_design"
             elif group_number == 5:
                 page_type = "combined_7_8_gallery"  # Only 7-8
-            else:
-                page_type = f"combined_group_{group_number}"
             
         else:
             # Groups 1, 2: Single images
-            # Auto-detect from filename
-            file_name = input_data.get('file_name', '')
-            if '_001' in file_name:
-                group_number = 1
-            elif '_002' in file_name:
-                group_number = 2
-            
             detail_page = process_single_image(input_data, group_number)
             page_type = f"single_image_{group_number}"
         
@@ -818,7 +848,7 @@ def handler(event):
             "uses_replicate_api": group_number == 6,
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V104",
+            "version": "V105",
             "group_info": {
                 "1": "Single image 1",
                 "2": "Single image 2", 
@@ -826,7 +856,7 @@ def handler(event):
                 "4": "Images 5-6 with DESIGN POINT",
                 "5": "Images 7-8 ONLY (no 9)",  # CRITICAL
                 "6": "Image 9 ONLY for COLOR section"
-            }[str(group_number)]
+            }.get(str(group_number), f"Group {group_number}")
         }
         
         # Send to webhook
@@ -860,7 +890,7 @@ def handler(event):
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "status": "error",
-                "version": "V104"
+                "version": "V105"
             }
         }
 
