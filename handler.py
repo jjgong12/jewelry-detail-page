@@ -35,7 +35,12 @@ def clean_claude_text(text):
     
     # CRITICAL: Remove all escape sequences and control characters FIRST
     # This prevents JSON parsing errors
-    text = text.encode('unicode_escape').decode('unicode_escape')
+    try:
+        # Try to decode unicode escapes
+        text = text.encode('utf-8').decode('unicode_escape')
+    except:
+        # If decode fails, continue with original text
+        pass
     
     # Replace all types of newlines and carriage returns
     text = text.replace('\\n', ' ')
@@ -581,7 +586,9 @@ def process_single_image(input_data, group_number):
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
     draw = ImageDraw.Draw(detail_page)
-    page_text = f"- {group_number} -"
+    # FIXED: 실제 route_number 사용
+    actual_page_number = input_data.get('route_number', group_number)
+    page_text = f"- {actual_page_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -602,7 +609,7 @@ def process_single_image(input_data, group_number):
     
     return detail_page
 
-def process_clean_combined_images(images_data, group_number):
+def process_clean_combined_images(images_data, group_number, input_data=None):
     """Process combined images WITHOUT text sections (groups 3, 4, 5)"""
     print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
@@ -647,10 +654,13 @@ def process_clean_combined_images(images_data, group_number):
         img.close()
     
     draw = ImageDraw.Draw(detail_page)
+    # FIXED: 실제 route_number 사용
+    actual_page_number = input_data.get('route_number', group_number) if input_data else group_number
+    
     if group_number == 5:
         page_text = f"- Gallery 7-8 -"
     else:
-        page_text = f"- Clean Images {group_number} -"
+        page_text = f"- {actual_page_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -689,10 +699,28 @@ def process_text_section(input_data, group_number):
     """Process text-only sections (groups 7, 8) with Claude-generated content"""
     print(f"Processing text section for group {group_number}")
     
-    claude_text = (input_data.get('claude_text') or 
-                  input_data.get('text_content') or 
-                  input_data.get('ai_text') or 
-                  input_data.get('generated_text') or '')
+    # FIXED: First check for base64 encoded text
+    claude_text_base64 = input_data.get('claude_text_base64', '')
+    if claude_text_base64:
+        try:
+            print("Found base64 encoded claude_text")
+            # Add padding if needed
+            missing_padding = len(claude_text_base64) % 4
+            if missing_padding:
+                claude_text_base64 += '=' * (4 - missing_padding)
+            
+            # Decode from base64
+            claude_text = base64.b64decode(claude_text_base64).decode('utf-8')
+            print("Successfully decoded base64 claude_text")
+        except Exception as e:
+            print(f"Error decoding base64: {e}")
+            claude_text = ''
+    else:
+        # Fallback to regular text fields
+        claude_text = (input_data.get('claude_text') or 
+                      input_data.get('text_content') or 
+                      input_data.get('ai_text') or 
+                      input_data.get('generated_text') or '')
     
     if claude_text:
         claude_text = clean_claude_text(claude_text)
@@ -762,7 +790,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 
 def detect_group_number_from_input(input_data):
     """Enhanced group number detection with better group 1/2 differentiation"""
-    print("=== GROUP NUMBER DETECTION ENHANCED V113 ===")
+    print("=== GROUP NUMBER DETECTION ENHANCED V114 ===")
     
     # Method 1: Direct route_number - HIGHEST PRIORITY
     route_number = input_data.get('route_number', 0)
@@ -792,8 +820,8 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type, assuming group 8")
         return 8
     
-    # Method 5: Check for Claude text presence
-    has_claude_text = bool(input_data.get('claude_text'))
+    # Method 5: Check for Claude text presence (base64 or regular)
+    has_claude_text = bool(input_data.get('claude_text') or input_data.get('claude_text_base64'))
     if has_claude_text:
         print("Found claude_text, checking text_type...")
         if text_type == 'md_talk':
@@ -818,47 +846,38 @@ def detect_group_number_from_input(input_data):
             
             if url_count == 2:
                 # Could be groups 3, 4, or 5
-                # Check if it's group 5 (images 7-8)
                 print("2 URLs detected - likely group 3 or 5")
                 return 3  # Default to group 3 for 2 images
             elif url_count == 3:
-                print("3 URLs detected, assuming group 4 or 5")
+                print("3 URLs detected, assuming group 4")
                 return 4  # Default to group 4 for 3 images
         else:
             # Single URL - could be groups 1, 2, 6, 7, 8
             print("Single URL detected")
             
-            # Check for specific patterns or markers that indicate group 2
-            # This is where you might add additional logic based on URL patterns
-            # or other metadata that distinguishes group 1 from group 2
-            
-            # For now, defaulting to group 1 for single images without other indicators
-            print("Single URL, no other indicators - defaulting to group 1")
-            return 1
+            # For single images without other indicators, we can't reliably
+            # distinguish between group 1 and 2 without route_number
+            print("Single URL, no route_number - cannot distinguish group 1 vs 2")
+            return 1  # Default to group 1
     
-    # Last resort - check for any patterns in the input
+    # Last resort
     print("WARNING: Could not reliably detect group number")
     print(f"Available keys in input: {list(input_data.keys())}")
     
-    # Default to 0 (error case)
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V113 ENHANCED"""
+    """Main handler for detail page creation - V114 with Base64 Support"""
     try:
-        print(f"=== V113 Detail Page Handler - ENHANCED TEXT CLEANING & GROUP DETECTION ===")
+        print(f"=== V114 Detail Page Handler - BASE64 SUPPORT ===")
         
-        # Enhanced JSON safety - clean any text fields before processing
+        # Get input data
         input_data = event.get('input', event)
         
-        # Pre-clean any text fields to prevent JSON parsing errors
-        for key in ['claude_text', 'text_content', 'ai_text', 'generated_text']:
-            if key in input_data and input_data[key]:
-                input_data[key] = clean_claude_text(input_data[key])
-                print(f"Pre-cleaned {key} field")
+        # DON'T pre-clean text fields here - let process_text_section handle it
+        # This prevents double-cleaning which can cause issues
         
         print(f"Input keys: {list(input_data.keys())}")
-        print(f"Full input data: {json.dumps(input_data, indent=2)}")
         
         # Enhanced group number detection
         group_number = detect_group_number_from_input(input_data)
@@ -866,14 +885,15 @@ def handler(event):
         
         print(f"FINAL: group_number={group_number}, route_number={route_number}")
         
+        # CRITICAL: Always use route_number as the actual group number
+        # This fixes the group 2 being detected as group 1 issue
+        if route_number > 0 and route_number != group_number:
+            print(f"OVERRIDE: Using route_number {route_number} instead of detected group {group_number}")
+            group_number = route_number
+        
         # Validate group number
         if group_number == 0:
-            # Try one more time with route_number if available
-            if route_number > 0:
-                group_number = route_number
-                print(f"Using route_number as group_number: {group_number}")
-            else:
-                raise ValueError(f"Could not determine group number. Keys: {list(input_data.keys())}")
+            raise ValueError(f"Could not determine group number. Keys: {list(input_data.keys())}")
         
         if group_number < 1 or group_number > 8:
             raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
@@ -939,7 +959,7 @@ def handler(event):
                 print(f"WARNING: Group 5 has {len(input_data['images'])} images, using first 2 only")
                 input_data['images'] = input_data['images'][:2]
             
-            detail_page = process_clean_combined_images(input_data['images'], group_number)
+            detail_page = process_clean_combined_images(input_data['images'], group_number, input_data)
             page_type = "clean_combined"
         
         else:
@@ -956,25 +976,25 @@ def handler(event):
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Prepare metadata
+        # Prepare metadata - use route_number for accurate page numbering
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
             "page_type": page_type,
-            "page_number": group_number,
+            "page_number": route_number if route_number > 0 else group_number,
             "route_number": route_number,
             "dimensions": {
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V113_ENHANCED",
+            "version": "V114_BASE64_SUPPORT",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
-            "detected_group_method": "priority_based_detection"
+            "detected_group_method": "route_number_priority"
         }
         
         # Send to webhook if configured
-        file_name = f"detail_group_{group_number}.png"
+        file_name = f"detail_group_{route_number if route_number > 0 else group_number}.png"
         webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, route_number, metadata)
         
         # Return response (Make.com format)
@@ -993,11 +1013,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V113_ENHANCED"
+                "version": "V114_BASE64_SUPPORT"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V113 - ENHANCED...")
+    print("Starting Detail Page Handler V114 - BASE64 SUPPORT...")
     runpod.serverless.start({"handler": handler})
