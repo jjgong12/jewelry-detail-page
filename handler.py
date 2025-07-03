@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 import numpy as np
 import math
+import subprocess  # 추가!
 
 # Try to import replicate if available
 try:
@@ -24,6 +25,26 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pph
 
 # FIXED WIDTH FOR ALL IMAGES
 FIXED_WIDTH = 1200
+
+def download_korean_font():
+    """Download Korean font for text rendering"""
+    try:
+        # Try to download the font
+        cmd = [
+            'wget', '-q', '-O', '/tmp/NanumMyeongjo.ttf',
+            'https://github.com/naver/nanumfont/raw/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            print("Korean font downloaded successfully")
+            return True
+        else:
+            print(f"Failed to download Korean font: {result.stderr}")
+            return False
+    except Exception as e:
+        print(f"Error downloading Korean font: {str(e)}")
+        return False
 
 def clean_claude_text(text):
     """Enhanced Claude text cleaning to prevent JSON errors"""
@@ -790,7 +811,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 
 def detect_group_number_from_input(input_data):
     """Enhanced group number detection with better group 1/2 differentiation"""
-    print("=== GROUP NUMBER DETECTION ENHANCED V114 ===")
+    print("=== GROUP NUMBER DETECTION ENHANCED V115 ===")
     
     # Method 1: Direct route_number - HIGHEST PRIORITY
     route_number = input_data.get('route_number', 0)
@@ -867,9 +888,16 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V114 with Base64 Support"""
+    """Main handler for detail page creation - V115 with Korean Font Support"""
     try:
-        print(f"=== V114 Detail Page Handler - BASE64 SUPPORT ===")
+        print(f"=== V115 Detail Page Handler - KOREAN FONT SUPPORT ===")
+        
+        # Download Korean font if not exists
+        if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
+            print("Korean font not found, downloading...")
+            download_korean_font()
+        else:
+            print("Korean font already exists")
         
         # Get input data
         input_data = event.get('input', event)
@@ -987,10 +1015,11 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V114_BASE64_SUPPORT",
+            "version": "V115_KOREAN_FONT_SUPPORT",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
-            "detected_group_method": "route_number_priority"
+            "detected_group_method": "route_number_priority",
+            "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
         }
         
         # Send to webhook if configured
@@ -1013,11 +1042,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V114_BASE64_SUPPORT"
+                "version": "V115_KOREAN_FONT_SUPPORT"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V114 - BASE64 SUPPORT...")
+    print("Starting Detail Page Handler V115 - KOREAN FONT SUPPORT...")
     runpod.serverless.start({"handler": handler})
