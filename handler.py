@@ -955,94 +955,6 @@ def detect_group_number_from_input(input_data):
     
     print("WARNING: Could not determine group number")
     return 0
-    
-    # Method 3: group_number
-    group_number = input_data.get('group_number', 0)
-    if group_number > 0:
-        print(f"Found group_number: {group_number}")
-        return group_number
-    
-    # Method 4: Check for specific image keys (image1-image8)
-    for i in range(1, 9):
-        key = f'image{i}'
-        if key in input_data:
-            print(f"Found {key} key")
-            # Special check for image6 - might be COLOR section
-            if i == 6:
-                image_value = str(input_data.get(key, ''))
-                if ';' not in image_value:
-                    print("image6 with single image - treating as GROUP 6 COLOR")
-                    return 6
-            print(f"Assuming group {i}")
-            return i
-    
-    # Method 5: Check for gallery specifically (images 7 and 8)
-    if 'image7' in input_data and 'image8' in input_data:
-        print("Found image7 AND image8 - this is GROUP 5 gallery")
-        return 5
-    
-    # Method 6: Check text_type for groups 7, 8
-    text_type = input_data.get('text_type', '')
-    if text_type == 'md_talk':
-        print("Found md_talk text_type, assuming group 7")
-        return 7
-    elif text_type == 'design_point':
-        print("Found design_point text_type, assuming group 8")
-        return 8
-    
-    # Method 7: Check for Claude text presence (base64 or regular)
-    has_claude_text = bool(input_data.get('claude_text') or input_data.get('claude_text_base64'))
-    if has_claude_text:
-        print("Found claude_text, checking text_type...")
-        if text_type == 'md_talk':
-            return 7
-        elif text_type == 'design_point':
-            return 8
-        else:
-            # Default to MD Talk if text type not specified
-            print("Has claude_text but no text_type, defaulting to group 7 (MD Talk)")
-            return 7
-    
-    # Method 8: Enhanced URL analysis
-    image_data = input_data.get('image', '')
-    if image_data:
-        print(f"Analyzing image URLs: {image_data[:200]}...")
-        
-        if ';' in image_data:
-            # Multiple URLs
-            urls = image_data.split(';')
-            url_count = len([url for url in urls if url.strip()])
-            print(f"Found {url_count} URLs in image data")
-            
-            if url_count == 2:
-                # Could be groups 3, 4, or 5
-                # Check if we have any hints about group 5
-                if 'gallery' in all_values or '갤러리' in all_values:
-                    print("2 URLs with gallery keyword - assuming group 5")
-                    return 5
-                print("2 URLs detected - defaulting to group 3")
-                return 3
-            elif url_count == 3:
-                print("3 URLs detected, assuming group 4")
-                return 4
-        else:
-            # Single URL - could be groups 1, 2, 6, 7, 8
-            print("Single URL detected")
-            
-            # Check if this might be COLOR section
-            if 'ring' in all_values or '반지' in all_values or 'jewelry' in all_values:
-                print("Single URL with ring/jewelry keyword - assuming GROUP 6")
-                return 6
-            
-            # For single images without other indicators
-            print("Single URL, no clear indicators - defaulting to group 1")
-            return 1
-    
-    # Last resort
-    print("WARNING: Could not reliably detect group number")
-    print(f"Available keys in input: {list(input_data.keys())}")
-    
-    return 0
 
 def handler(event):
     """Main handler for detail page creation - V126 CORRECT"""
@@ -1110,12 +1022,8 @@ def handler(event):
                 urls = image_url.split(';')
                 input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
             else:
-                input_data['url'] = image_url's not a misrouted COLOR section
-                if route_number == 5 and 'image7' not in input_data and 'image8' not in input_data:
-                    print("Route 5 without gallery images - forcing GROUP 6")
-                    group_number = 6
-                else:
-                    group_number = route_number
+                input_data['url'] = image_url
+        
         # Process based on group number
         if group_number == 6:
             print("=== Processing GROUP 6: COLOR section ===")
