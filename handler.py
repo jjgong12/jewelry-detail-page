@@ -65,27 +65,35 @@ def download_korean_font():
         return False
 
 def clean_claude_text(text):
-    """Enhanced Claude text cleaning to prevent JSON errors and Korean issues"""
+    """Enhanced Claude text cleaning - FIXED for Korean text"""
     if not text:
         return ""
     
     # Convert to string and handle None
     text = str(text) if text is not None else ""
     
-    # CRITICAL FIX: DO NOT decode unicode_escape for Korean text
-    # This was causing Korean characters to break
+    # ABSOLUTELY DO NOT USE unicode_escape - it breaks Korean!
+    # DO NOT USE: text.encode().decode('unicode_escape')
     
-    # Replace newlines and tabs with spaces
-    text = text.replace('\\n', ' ')
-    text = text.replace('\\r', ' ')
-    text = text.replace('\\t', ' ')
+    # Only replace literal backslash sequences, not actual newlines
+    # This preserves Korean while cleaning escape sequences
+    if '\\n' in text:
+        text = text.replace('\\n', ' ')
+    if '\\r' in text:
+        text = text.replace('\\r', ' ')
+    if '\\t' in text:
+        text = text.replace('\\t', ' ')
+    
+    # Replace actual newlines
     text = text.replace('\n', ' ')
     text = text.replace('\r', ' ')
     text = text.replace('\t', ' ')
     
-    # Clean quotes without breaking Korean
-    text = text.replace('\\"', '"')
-    text = text.replace("\\'", "'")
+    # Clean quotes - only escaped ones
+    if '\\"' in text:
+        text = text.replace('\\"', '"')
+    if "\\'" in text:
+        text = text.replace("\\'", "'")
     
     # Remove markdown formatting
     text = text.replace('#', '')
@@ -100,8 +108,8 @@ def clean_claude_text(text):
     if len(text) > 500:
         text = text[:497] + "..."
     
-    # Keep all printable characters including Korean
-    # Do NOT filter by ord(char) >= 32 as this breaks Korean
+    # DO NOT filter characters by ord() value!
+    # Korean characters have high Unicode values and will be removed
     
     print(f"Cleaned text (first 100 chars): {text[:100]}...")
     return text
@@ -208,9 +216,9 @@ def apply_metal_color_filter(img, color_multipliers):
     return Image.merge('RGBA', (r, g, b, a))
 
 def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
-    """Create COLOR section with CSS-style ring design inspired by HTML"""
+    """Create COLOR section with simple CSS-style rings"""
     section_height = 1000
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
+    section_img = Image.new('RGB', (width, section_height), '#F8F8F8')  # Light gray background like HTML
     draw = ImageDraw.Draw(section_img)
     
     font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
@@ -220,8 +228,8 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 72)
-                label_font = ImageFont.truetype(font_path, 32)
+                title_font = ImageFont.truetype(font_path, 48)  # Smaller like HTML
+                label_font = ImageFont.truetype(font_path, 24)
                 break
             except:
                 continue
@@ -230,144 +238,122 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
-    # Title
+    # Title with letter spacing effect
     title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(60, 60, 60))
+    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(51, 51, 51))
     
-    # Color definitions
+    # Color definitions - matching HTML exactly
     colors = [
-        ("Yellow Gold", "#FFD700", (255, 215, 0)),
-        ("Rose Gold", "#F4C2C2", (244, 194, 194)),
-        ("White Gold", "#E5E4E2", (229, 228, 226)),
-        ("White", "#FFFFFF", (240, 240, 240))  # Slightly gray for visibility
+        ("yellow", (255, 215, 0)),      # #FFD700
+        ("rose", (255, 192, 203)),      # #FFC0CB  
+        ("white", (229, 229, 229)),     # #E5E5E5
+        ("antique", (212, 175, 55))     # #D4AF37
     ]
     
     # Layout settings
-    ring_size = 400
+    container_size = 300  # Size for each ring container
     h_spacing = 100
-    v_spacing = 450
+    v_spacing = 400
     
-    grid_width = 2 * ring_size + h_spacing
+    grid_width = 2 * container_size + h_spacing
     start_x = (width - grid_width) // 2
     start_y = 200
     
-    for i, (name, color_hex, color_rgb) in enumerate(colors):
+    for i, (name, color_rgb) in enumerate(colors):
         row = i // 2
         col = i % 2
         
-        x = start_x + col * (ring_size + h_spacing)
+        x = start_x + col * (container_size + h_spacing)
         y = start_y + row * v_spacing
         
-        # Create ring display area
-        ring_area = Image.new('RGBA', (ring_size, ring_size), (255, 255, 255, 255))
-        ring_draw = ImageDraw.Draw(ring_area)
+        # White container background
+        container = Image.new('RGBA', (container_size, container_size), (255, 255, 255, 255))
+        container_draw = ImageDraw.Draw(container)
         
-        # Draw CSS-style rings (inspired by HTML example)
-        # Large ring (left)
-        large_ring_size = 180
-        large_ring_x = ring_size // 2 - 50
-        large_ring_y = ring_size // 2 - 30
-        ring_thickness = 30
+        # Draw ring pair like HTML - overlapping circles
+        # Left ring (larger)
+        left_ring_center_x = container_size // 2 - 30
+        left_ring_center_y = container_size // 2
+        left_ring_radius = 70
+        left_ring_thickness = 20
         
-        # Outer circle
-        ring_draw.ellipse([
-            large_ring_x - large_ring_size//2,
-            large_ring_y - large_ring_size//2,
-            large_ring_x + large_ring_size//2,
-            large_ring_y + large_ring_size//2
-        ], fill=color_rgb, outline=None)
+        # Draw left ring
+        container_draw.ellipse([
+            left_ring_center_x - left_ring_radius,
+            left_ring_center_y - left_ring_radius,
+            left_ring_center_x + left_ring_radius,
+            left_ring_center_y + left_ring_radius
+        ], fill=color_rgb, outline=(0, 0, 0, 30), width=1)
         
-        # Inner circle (to create ring shape)
-        inner_size = large_ring_size - 2 * ring_thickness
-        ring_draw.ellipse([
-            large_ring_x - inner_size//2,
-            large_ring_y - inner_size//2,
-            large_ring_x + inner_size//2,
-            large_ring_y + inner_size//2
-        ], fill=(255, 255, 255), outline=None)
+        # Inner circle for left ring
+        container_draw.ellipse([
+            left_ring_center_x - (left_ring_radius - left_ring_thickness),
+            left_ring_center_y - (left_ring_radius - left_ring_thickness),
+            left_ring_center_x + (left_ring_radius - left_ring_thickness),
+            left_ring_center_y + (left_ring_radius - left_ring_thickness)
+        ], fill=(255, 255, 255))
         
-        # Small ring (right)
-        small_ring_size = 140
-        small_ring_x = ring_size // 2 + 60
-        small_ring_y = ring_size // 2 + 40
-        small_ring_thickness = 24
+        # Right ring (smaller)
+        right_ring_center_x = container_size // 2 + 40
+        right_ring_center_y = container_size // 2 + 20
+        right_ring_radius = 55
+        right_ring_thickness = 18
         
-        # Outer circle
-        ring_draw.ellipse([
-            small_ring_x - small_ring_size//2,
-            small_ring_y - small_ring_size//2,
-            small_ring_x + small_ring_size//2,
-            small_ring_y + small_ring_size//2
-        ], fill=color_rgb, outline=None)
+        # Draw right ring
+        container_draw.ellipse([
+            right_ring_center_x - right_ring_radius,
+            right_ring_center_y - right_ring_radius,
+            right_ring_center_x + right_ring_radius,
+            right_ring_center_y + right_ring_radius
+        ], fill=color_rgb, outline=(0, 0, 0, 30), width=1)
         
-        # Inner circle
-        inner_size_small = small_ring_size - 2 * small_ring_thickness
-        ring_draw.ellipse([
-            small_ring_x - inner_size_small//2,
-            small_ring_y - inner_size_small//2,
-            small_ring_x + inner_size_small//2,
-            small_ring_y + inner_size_small//2
-        ], fill=(255, 255, 255), outline=None)
+        # Inner circle for right ring
+        container_draw.ellipse([
+            right_ring_center_x - (right_ring_radius - right_ring_thickness),
+            right_ring_center_y - (right_ring_radius - right_ring_thickness),
+            right_ring_center_x + (right_ring_radius - right_ring_thickness),
+            right_ring_center_y + (right_ring_radius - right_ring_thickness)
+        ], fill=(255, 255, 255))
         
-        # Add diamond accents
-        # Large ring diamond
-        diamond_size = 12
-        diamond_x = large_ring_x
-        diamond_y = large_ring_y - large_ring_size//2 + ring_thickness//2
-        ring_draw.polygon([
-            (diamond_x, diamond_y - diamond_size//2),
-            (diamond_x + diamond_size//2, diamond_y),
-            (diamond_x, diamond_y + diamond_size//2),
-            (diamond_x - diamond_size//2, diamond_y)
-        ], fill=(255, 255, 255), outline=(200, 200, 200))
+        # Add simple diamond on top of each ring
+        # Left ring diamond
+        diamond_size = 8
+        diamond_y = left_ring_center_y - left_ring_radius + left_ring_thickness//2
+        container_draw.polygon([
+            (left_ring_center_x, diamond_y - diamond_size),
+            (left_ring_center_x + diamond_size//2, diamond_y - diamond_size//2),
+            (left_ring_center_x, diamond_y),
+            (left_ring_center_x - diamond_size//2, diamond_y - diamond_size//2)
+        ], fill=(255, 255, 255), outline=(180, 180, 180))
         
-        # Small ring diamond
-        small_diamond_size = 8
-        small_diamond_x = small_ring_x
-        small_diamond_y = small_ring_y - small_ring_size//2 + small_ring_thickness//2
-        ring_draw.polygon([
-            (small_diamond_x, small_diamond_y - small_diamond_size//2),
-            (small_diamond_x + small_diamond_size//2, small_diamond_y),
-            (small_diamond_x, small_diamond_y + small_diamond_size//2),
-            (small_diamond_x - small_diamond_size//2, small_diamond_y)
-        ], fill=(255, 255, 255), outline=(200, 200, 200))
+        # Right ring diamond
+        small_diamond_size = 6
+        small_diamond_y = right_ring_center_y - right_ring_radius + right_ring_thickness//2
+        container_draw.polygon([
+            (right_ring_center_x, small_diamond_y - small_diamond_size),
+            (right_ring_center_x + small_diamond_size//2, small_diamond_y - small_diamond_size//2),
+            (right_ring_center_x, small_diamond_y),
+            (right_ring_center_x - small_diamond_size//2, small_diamond_y - small_diamond_size//2)
+        ], fill=(255, 255, 255), outline=(180, 180, 180))
         
-        # Add subtle shadow effect
-        shadow = Image.new('RGBA', (ring_size, ring_size), (255, 255, 255, 0))
-        shadow_draw = ImageDraw.Draw(shadow)
-        shadow_offset = 5
+        # Add subtle shadow
+        shadow_img = Image.new('RGBA', (container_size + 10, container_size + 10), (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow_img)
+        shadow_draw.rectangle([5, 5, container_size + 5, container_size + 5], 
+                            fill=(0, 0, 0, 20))
+        shadow_img = shadow_img.filter(ImageFilter.GaussianBlur(radius=5))
         
-        # Shadow for large ring
-        shadow_draw.ellipse([
-            large_ring_x - large_ring_size//2 + shadow_offset,
-            large_ring_y - large_ring_size//2 + shadow_offset,
-            large_ring_x + large_ring_size//2 + shadow_offset,
-            large_ring_y + large_ring_size//2 + shadow_offset
-        ], fill=(200, 200, 200, 50))
+        # Paste shadow first
+        section_img.paste(shadow_img, (x - 5, y - 5), shadow_img)
         
-        # Shadow for small ring
-        shadow_draw.ellipse([
-            small_ring_x - small_ring_size//2 + shadow_offset,
-            small_ring_y - small_ring_size//2 + shadow_offset,
-            small_ring_x + small_ring_size//2 + shadow_offset,
-            small_ring_y + small_ring_size//2 + shadow_offset
-        ], fill=(200, 200, 200, 50))
-        
-        # Combine shadow and rings
-        combined = Image.alpha_composite(shadow, ring_area)
-        
-        # Draw border
-        border_draw = ImageDraw.Draw(combined)
-        border_draw.rectangle([0, 0, ring_size-1, ring_size-1], outline=(230, 230, 230), width=1)
-        
-        # Paste to main image
-        section_img.paste(combined, (x, y), combined)
+        # Paste container
+        section_img.paste(container, (x, y))
         
         # Draw label
         label_width, _ = get_text_dimensions(draw, name, label_font)
-        draw.text((x + ring_size//2 - label_width//2, y + ring_size + 30), 
-                 name, font=label_font, fill=(80, 80, 80))
+        draw.text((x + container_size//2 - label_width//2, y + container_size + 30), 
+                 name, font=label_font, fill=(102, 102, 102))
     
     return section_img
 
@@ -857,7 +843,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 
 def detect_group_number_from_input(input_data):
     """Enhanced group number detection with better group 1/2 differentiation"""
-    print("=== GROUP NUMBER DETECTION ENHANCED V117 ===")
+    print("=== GROUP NUMBER DETECTION ENHANCED V118 ===")
     
     # Method 1: Direct route_number - HIGHEST PRIORITY
     route_number = input_data.get('route_number', 0)
@@ -934,9 +920,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V117 with Korean Text Fix"""
+    """Main handler for detail page creation - V118 REALLY FIXED"""
     try:
-        print(f"=== V117 Detail Page Handler - KOREAN TEXT FIX ===")
+        print(f"=== V118 Detail Page Handler - REALLY FIXED ===")
         
         # Download Korean font if not exists - Enhanced version
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1064,7 +1050,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V117_KOREAN_TEXT_FIX",
+            "version": "V118_REALLY_FIXED",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "detected_group_method": "route_number_priority",
@@ -1091,11 +1077,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V117_KOREAN_TEXT_FIX"
+                "version": "V118_REALLY_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V117 - KOREAN TEXT FIX...")
+    print("Starting Detail Page Handler V118 - REALLY FIXED...")
     runpod.serverless.start({"handler": handler})
