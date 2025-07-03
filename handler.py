@@ -106,9 +106,9 @@ def clean_claude_text(text):
     # Collapse multiple spaces
     text = ' '.join(text.split())
     
-    # Trim length
-    if len(text) > 500:
-        text = text[:497] + "..."
+    # NO LENGTH LIMIT - Trust Claude!
+    # if len(text) > 500:
+    #     text = text[:497] + "..."
     
     # IMPORTANT: No character filtering by Unicode value!
     # Korean characters (한글) have values > 0xAC00
@@ -361,7 +361,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     """Create MD Talk text section from Claude-generated content"""
-    section_height = 600
+    section_height = 800  # Increased height for more text
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -393,28 +393,28 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         cleaned_text = re.sub(r'^(MD TALK|md talk|MD talk|엠디톡)\s*', '', cleaned_text, flags=re.IGNORECASE)
         cleaned_text = cleaned_text.strip()
         
-        # Force line breaks every 25-30 characters for Korean text (increased)
+        # NO CHARACTER LIMIT - Trust Claude! Break naturally at spaces
         words = cleaned_text.split()
         lines = []
         current_line = ""
-        char_count = 0
         
         for word in words:
-            # Check if adding this word would exceed character limit
-            if char_count + len(word) > 30:  # 25-30 characters per line
+            # Test if adding this word would exceed visual width (not character count)
+            test_line = current_line + " " + word if current_line else word
+            test_width, _ = get_text_dimensions(draw, test_line, body_font)
+            
+            if test_width > width - 100:  # Leave 50px margin on each side
                 if current_line:
                     lines.append(current_line.strip())
-                current_line = word + " "
-                char_count = len(word) + 1
+                current_line = word
             else:
-                current_line += word + " "
-                char_count += len(word) + 1
+                current_line = test_line
         
         if current_line:
             lines.append(current_line.strip())
         
-        # Limit to 3 lines for MD TALK
-        lines = lines[:3]
+        # NO LINE LIMIT - Use all lines Claude provides
+        # lines = lines[:3]  # REMOVED
     else:
         lines = [
             "고급스러운 텍스처와 균형 잡힌 디테일이",
@@ -434,7 +434,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
 
 def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     """Create Design Point text section from Claude-generated content"""
-    section_height = 700
+    section_height = 900  # Increased height for more text
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -466,28 +466,28 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         cleaned_text = re.sub(r'^(DESIGN POINT|design point|Design Point|디자인포인트|디자인 포인트)\s*', '', cleaned_text, flags=re.IGNORECASE)
         cleaned_text = cleaned_text.strip()
         
-        # Force line breaks every 25-30 characters for Korean text (increased)
+        # NO CHARACTER LIMIT - Trust Claude! Break naturally at visual width
         words = cleaned_text.split()
         lines = []
         current_line = ""
-        char_count = 0
         
         for word in words:
-            # Check if adding this word would exceed character limit
-            if char_count + len(word) > 30:  # 25-30 characters per line
+            # Test if adding this word would exceed visual width
+            test_line = current_line + " " + word if current_line else word
+            test_width, _ = get_text_dimensions(draw, test_line, body_font)
+            
+            if test_width > width - 100:  # Leave 50px margin on each side
                 if current_line:
                     lines.append(current_line.strip())
-                current_line = word + " "
-                char_count = len(word) + 1
+                current_line = word
             else:
-                current_line += word + " "
-                char_count += len(word) + 1
+                current_line = test_line
         
         if current_line:
             lines.append(current_line.strip())
         
-        # Limit to 4 lines for DESIGN POINT
-        lines = lines[:4]
+        # NO LINE LIMIT - Use all lines Claude provides
+        # lines = lines[:4]  # REMOVED
     else:
         lines = [
             "리프링 무광 텍스처와 유광 라인의 조화가",
@@ -814,39 +814,48 @@ def process_text_section(input_data, group_number):
     text_type = (input_data.get('text_type') or 
                 input_data.get('section_type') or '')
     
-    print(f"Text type: {text_type}")
+    print(f"Text type from input: {text_type}")
     print(f"Group number: {group_number}")
     print(f"Cleaned Claude text preview: {claude_text[:100] if claude_text else 'No text provided'}...")
     
-    # CRITICAL FIX: Ensure correct text section based on group_number
+    # CRITICAL FIX: Force correct text section based on route_number/group_number
+    # Route 7 = MD TALK, Route 8 = DESIGN POINT
     if group_number == 7:
-        print("Creating MD TALK section for group 7")
+        print("GROUP 7 CONFIRMED - Creating MD TALK section")
+        # Check if the text content looks like DESIGN POINT content
+        if any(keyword in claude_text.lower() for keyword in ['텍스처', '파베', '밀그레인', '리프링']):
+            print("WARNING: Text content seems like DESIGN POINT but group is 7 (MD TALK)")
+            print("Forcing MD TALK creation anyway based on group number")
         text_section = create_ai_generated_md_talk(claude_text)
         section_type = "md_talk"
     elif group_number == 8:
-        print("Creating DESIGN POINT section for group 8")
+        print("GROUP 8 CONFIRMED - Creating DESIGN POINT section")
+        # Check if the text content looks like MD TALK content
+        if any(keyword in claude_text.lower() for keyword in ['엔그레이빙', '감성', '커플링', '세련미']):
+            print("WARNING: Text content seems like MD TALK but group is 8 (DESIGN POINT)")
+            print("Forcing DESIGN POINT creation anyway based on group number")
         text_section = create_ai_generated_design_point(claude_text)
         section_type = "design_point"
     else:
-        # Secondary check using text_type
-        if text_type == 'md_talk':
-            print(f"Creating MD TALK section based on text_type for group {group_number}")
+        # This shouldn't happen if routing is correct
+        print(f"WARNING: Unexpected group number {group_number} for text section")
+        print("Falling back to text_type detection")
+        if text_type == 'md_talk' or 'md' in text_type.lower():
             text_section = create_ai_generated_md_talk(claude_text)
             section_type = "md_talk"
-        elif text_type == 'design_point':
-            print(f"Creating DESIGN POINT section based on text_type for group {group_number}")
+        elif text_type == 'design_point' or 'design' in text_type.lower():
             text_section = create_ai_generated_design_point(claude_text)
             section_type = "design_point"
         else:
-            # Default based on group number
-            if group_number == 7:
-                print(f"Defaulting to MD TALK for group {group_number}")
-                text_section = create_ai_generated_md_talk(claude_text)
-                section_type = "md_talk"
-            else:
-                print(f"Defaulting to DESIGN POINT for group {group_number}")
+            # Ultimate fallback based on content analysis
+            if any(keyword in claude_text.lower() for keyword in ['텍스처', '파베', '밀그레인', '디테일']):
+                print("Content analysis suggests DESIGN POINT")
                 text_section = create_ai_generated_design_point(claude_text)
                 section_type = "design_point"
+            else:
+                print("Content analysis suggests MD TALK")
+                text_section = create_ai_generated_md_talk(claude_text)
+                section_type = "md_talk"
     
     return text_section, section_type
 
@@ -892,14 +901,16 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """CORRECT group number detection - V126 FINAL"""
-    print("=== GROUP NUMBER DETECTION V126 - CORRECT VERSION ===")
+    """CORRECT group number detection - V126 FINAL with FIX for route 2 and 6"""
+    print("=== GROUP NUMBER DETECTION V126 - FIXED FOR ROUTE 2 & 6 ===")
     print(f"Full input_data keys: {sorted(input_data.keys())}")
     
-    # PRIORITY 1: Direct route_number - TRUST IT!
+    # PRIORITY 1: Direct route_number - TRUST IT COMPLETELY!
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
-        print(f"Found route_number: {route_number} - USING IT DIRECTLY")
+        print(f"Found route_number: {route_number} - USING IT DIRECTLY WITHOUT MODIFICATION")
+        # CRITICAL FIX: Never modify route_number!
+        # Route 2 stays as 2, Route 6 stays as 6
         return route_number
     
     # PRIORITY 2: Check for image9 (Google Script Group 6)
@@ -1108,11 +1119,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V126_CORRECT"
+                "version": "V127_TRUST_CLAUDE"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V126 - CORRECT VERSION...")
+    print("Starting Detail Page Handler V127 - TRUST CLAUDE VERSION...")
     runpod.serverless.start({"handler": handler})
