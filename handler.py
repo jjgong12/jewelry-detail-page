@@ -33,93 +33,6 @@ def get_text_dimensions(draw, text, font):
     except AttributeError:
         return draw.textsize(text, font=font)
 
-def create_md_talk_section(width=FIXED_WIDTH):
-    """Create MD'Talk section for group 3 (images 3-4)"""
-    section_height = 400
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
-    title_font = None
-    body_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 20)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
-    
-    # Draw MD TALK title
-    title = "MD TALK"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 100), title, font=title_font, fill=(40, 40, 40))
-    
-    # Draw Korean text
-    korean_text = [
-        "고급스러운 텍스처와 균형 잡힌 디테일이",
-        "감성의 깊이를 더하는 커플링입니다.",
-        "'섬세한 연결'을 느끼고 싶은 커플에게 추천드립니다."
-    ]
-    
-    y_pos = 200
-    for line in korean_text:
-        line_width, _ = get_text_dimensions(draw, line, body_font)
-        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
-        y_pos += 40
-    
-    return section_img
-
-def create_design_point_section(width=FIXED_WIDTH):
-    """Create DESIGN POINT section for group 4 (images 5-6)"""
-    section_height = 500
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
-    title_font = None
-    body_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 18)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
-    
-    # Draw DESIGN POINT title
-    title = "DESIGN POINT"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(40, 40, 40))
-    
-    # Draw Korean text
-    korean_text = [
-        "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고,",
-        "여자 단품은 파베 세팅과 섬세한 밀그레인의 디테일",
-        "화려하면서도 고급스러운 반영영을 표현합니다.",
-        "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다."
-    ]
-    
-    y_pos = 200
-    for line in korean_text:
-        line_width, _ = get_text_dimensions(draw, line, body_font)
-        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
-        y_pos += 45
-    
-    return section_img
-
 def extract_ring_with_replicate(img):
     """Extract ring from background using Replicate API"""
     try:
@@ -670,34 +583,25 @@ def process_single_image(input_data, group_number):
     
     return detail_page
 
-def process_combined_images(images_data, group_number):
-    """Process combined images WITH text sections (groups 3, 4, 5) - RESTORED TEXT SECTIONS"""
-    print(f"Processing {len(images_data)} images for group {group_number} with text sections")
+def process_clean_combined_images(images_data, group_number):
+    """Process combined images WITHOUT text sections (groups 3, 4, 5) - CLEAN VERSION"""
+    print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
     # IMPORTANT: Group 5 should only have 2 images (7, 8)
     if group_number == 5 and len(images_data) != 2:
         print(f"WARNING: Group 5 should have exactly 2 images, got {len(images_data)}")
+        # Use only first 2 images for group 5
+        images_data = images_data[:2]
     
     # Calculate heights
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
-    IMAGE_SPACING = 200  # 200픽셀 간격으로 증가
+    IMAGE_SPACING = 200  # 200픽셀 간격
     
-    # Add section heights based on group
-    section_height = 0
-    if group_number == 3:
-        section_height = 400  # MD'Talk section
-    elif group_number == 4:
-        section_height = 500  # DESIGN POINT section
-    
-    # Calculate total height
+    # Calculate total height - NO TEXT SECTIONS!
     total_height = TOP_MARGIN + BOTTOM_MARGIN
     
-    # First add section height if needed
-    if section_height > 0:
-        total_height += section_height + 100  # Extra spacing after section
-    
-    # Then add all image heights
+    # Add all image heights
     image_heights = []
     for img_data in images_data:
         img = get_image_from_input(img_data)
@@ -709,26 +613,14 @@ def process_combined_images(images_data, group_number):
     # Add spacing between images
     total_height += (len(images_data) - 1) * IMAGE_SPACING
     
-    print(f"Creating combined canvas: {FIXED_WIDTH}x{total_height}")
+    print(f"Creating CLEAN combined canvas: {FIXED_WIDTH}x{total_height}")
     
     # Create canvas
     detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
     
     current_y = TOP_MARGIN
     
-    # Add section FIRST (위에 오도록)
-    if group_number == 3:
-        print("Adding MD'Talk section at top")
-        md_talk_section = create_md_talk_section()
-        detail_page.paste(md_talk_section, (0, current_y))
-        current_y += 400 + 100  # section height + spacing
-    elif group_number == 4:
-        print("Adding DESIGN POINT section at top")
-        design_point_section = create_design_point_section()
-        detail_page.paste(design_point_section, (0, current_y))
-        current_y += 500 + 100  # section height + spacing
-    
-    # Process each image AFTER section
+    # Process each image WITHOUT any text sections
     for idx, (img_data, img_height) in enumerate(zip(images_data, image_heights)):
         if idx > 0:
             current_y += IMAGE_SPACING  # 200픽셀 간격
@@ -751,7 +643,7 @@ def process_combined_images(images_data, group_number):
     if group_number == 5:
         page_text = f"- Gallery 7-8 -"  # 명확하게 7-8만 표시
     else:
-        page_text = f"- Details {group_number} -"
+        page_text = f"- Clean Images {group_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -865,21 +757,82 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         print(f"Webhook error: {str(e)}")
         return None
 
+def detect_group_number_from_input(input_data):
+    """Enhanced group number detection from various input formats"""
+    # Method 1: Direct route_number
+    route_number = input_data.get('route_number', 0)
+    if route_number > 0:
+        print(f"Found route_number: {route_number}")
+        return route_number
+    
+    # Method 2: group_number
+    group_number = input_data.get('group_number', 0)
+    if group_number > 0:
+        print(f"Found group_number: {group_number}")
+        return group_number
+    
+    # Method 3: Check for specific image keys
+    for i in range(1, 9):
+        if f'image{i}' in input_data:
+            print(f"Found image{i} key, assuming group {i}")
+            return i
+    
+    # Method 4: Check text_type for groups 7, 8
+    text_type = input_data.get('text_type', '')
+    if text_type == 'md_talk':
+        print("Found md_talk text_type, assuming group 7")
+        return 7
+    elif text_type == 'design_point':
+        print("Found design_point text_type, assuming group 8")
+        return 8
+    
+    # Method 5: Check for image URLs pattern
+    image_data = input_data.get('image', '')
+    if image_data:
+        if ';' in image_data:
+            # Multiple URLs usually mean groups 3, 4, or 5
+            urls = image_data.split(';')
+            url_count = len([url for url in urls if url.strip()])
+            print(f"Found {url_count} URLs in image data")
+            
+            # Try to guess based on URL count (this is a fallback)
+            if url_count == 2:
+                # Could be group 3, 4, or 5 - default to 3
+                print("2 URLs detected, defaulting to group 3")
+                return 3
+            elif url_count == 3:
+                print("3 URLs detected, defaulting to group 5")
+                return 5
+        else:
+            # Single URL usually means groups 1, 2, 6, 7, 8
+            print("Single URL detected, defaulting to group 1")
+            return 1
+    
+    print("Could not detect group number from input")
+    return 0
+
 def handler(event):
-    """Main handler for detail page creation - V110 FINAL FIX"""
+    """Main handler for detail page creation - V111 CLEAN VERSION"""
     try:
-        print(f"=== V110 Detail Page Handler - FINAL 8 Groups ===")
+        print(f"=== V111 Detail Page Handler - CLEAN VERSION (NO TEXT SECTIONS IN 3,4) ===")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         print(f"Full input data: {json.dumps(input_data, indent=2)}")
         
-        # Get route/group number - CRITICAL for Make.com
-        route_number = input_data.get('route_number', 0)
-        group_number = input_data.get('group_number', route_number)
+        # ENHANCED group number detection
+        group_number = detect_group_number_from_input(input_data)
+        route_number = input_data.get('route_number', group_number)
         
-        print(f"Initial group_number: {group_number}, route_number: {route_number}")
+        print(f"Detected group_number: {group_number}, route_number: {route_number}")
+        
+        # Validate group number
+        if group_number == 0:
+            raise ValueError(f"Could not determine group number from input data. Available keys: {list(input_data.keys())}")
+        
+        if group_number < 1 or group_number > 8:
+            raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
         
         # CRITICAL FIX: Handle Make.com's 'image' key format
         # Make.com sends: {"input": {"image": "URL1;URL2", "route_number": 3}}
@@ -901,28 +854,6 @@ def handler(event):
                 # Single URL for groups 1, 2, 6, 7, 8
                 input_data['url'] = image_data
                 print(f"Set single URL from 'image' key")
-        
-        # Make.com sends data with specific keys, check for them
-        elif group_number == 0:
-            # Try to detect from Make.com data structure
-            if 'image1' in input_data:
-                group_number = 1
-            elif 'image2' in input_data:
-                group_number = 2
-            elif 'image3' in input_data:
-                group_number = 3
-            elif 'image4' in input_data:
-                group_number = 4
-            elif 'image5' in input_data:
-                group_number = 5
-            elif 'image6' in input_data:
-                group_number = 6
-            elif 'image7' in input_data:
-                group_number = 7
-            elif 'image8' in input_data:
-                group_number = 8
-        
-        print(f"Final group_number: {group_number}")
         
         # Handle different input formats from Make.com
         if 'combined_urls' in input_data and input_data['combined_urls']:
@@ -967,8 +898,8 @@ def handler(event):
             page_type = "individual"
             
         elif group_number in [3, 4, 5]:
-            # Groups 3, 4, 5: Combined images with sections
-            print(f"=== Processing Group {group_number}: Combined images ===")
+            # Groups 3, 4, 5: CLEAN Combined images (NO TEXT SECTIONS!)
+            print(f"=== Processing Group {group_number}: CLEAN Combined images (NO TEXT) ===")
             if 'images' not in input_data or not isinstance(input_data['images'], list):
                 # Convert single image to images array
                 input_data['images'] = [input_data]
@@ -978,8 +909,8 @@ def handler(event):
                 print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
                 input_data['images'] = input_data['images'][:2]
             
-            detail_page = process_combined_images(input_data['images'], group_number)
-            page_type = "combined_with_text"
+            detail_page = process_clean_combined_images(input_data['images'], group_number)
+            page_type = "clean_combined"
         
         else:
             raise ValueError(f"Invalid group number: {group_number}")
@@ -1006,7 +937,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V110_FINAL_8_GROUPS",
+            "version": "V111_CLEAN_NO_TEXT_SECTIONS",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later"
         }
@@ -1031,11 +962,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V110_FINAL_8_GROUPS"
+                "version": "V111_CLEAN_NO_TEXT_SECTIONS"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V110 - FINAL 8 Groups...")
+    print("Starting Detail Page Handler V111 - CLEAN VERSION...")
     runpod.serverless.start({"handler": handler})
