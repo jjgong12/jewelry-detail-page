@@ -389,7 +389,11 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Force line breaks every 15-20 characters for Korean text
+        # Remove MD TALK or md talk from the beginning of content
+        cleaned_text = re.sub(r'^(MD TALK|md talk|MD talk|엠디톡)\s*', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = cleaned_text.strip()
+        
+        # Force line breaks every 25-30 characters for Korean text (increased)
         words = cleaned_text.split()
         lines = []
         current_line = ""
@@ -397,7 +401,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         
         for word in words:
             # Check if adding this word would exceed character limit
-            if char_count + len(word) > 20:  # 15-20 characters per line
+            if char_count + len(word) > 30:  # 25-30 characters per line
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word + " "
@@ -458,7 +462,11 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Force line breaks every 15-20 characters for Korean text
+        # Remove DESIGN POINT or design point from the beginning of content
+        cleaned_text = re.sub(r'^(DESIGN POINT|design point|Design Point|디자인포인트|디자인 포인트)\s*', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = cleaned_text.strip()
+        
+        # Force line breaks every 25-30 characters for Korean text (increased)
         words = cleaned_text.split()
         lines = []
         current_line = ""
@@ -466,7 +474,7 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         
         for word in words:
             # Check if adding this word would exceed character limit
-            if char_count + len(word) > 20:  # 15-20 characters per line
+            if char_count + len(word) > 30:  # 25-30 characters per line
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word + " "
@@ -867,11 +875,10 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """Enhanced group number detection with better group differentiation"""
-    print("=== GROUP NUMBER DETECTION V120 ===")
+    """Enhanced group number detection with perfect group 6 handling"""
+    print("=== GROUP NUMBER DETECTION V121 ===")
     
-    # CRITICAL: Check for image9 FIRST before route_number
-    # This is the most reliable indicator for group 6
+    # CRITICAL: Check for image9 FIRST - This is ALWAYS group 6
     if 'image9' in input_data:
         print("Found image9 key - DEFINITIVE GROUP 6 (COLOR section)")
         return 6
@@ -881,16 +888,16 @@ def detect_group_number_from_input(input_data):
         print("Found group6 key - DEFINITIVE GROUP 6")
         return 6
     
-    # Method 2: Direct route_number - HIGH PRIORITY (but after image9 check)
+    # Check if color is mentioned in any field
+    all_values = str(input_data).lower()
+    if 'color' in all_values or '컬러' in all_values:
+        print("Found COLOR keyword - assuming GROUP 6")
+        return 6
+    
+    # Method 2: Direct route_number - HIGH PRIORITY (but after group 6 checks)
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
         print(f"Found route_number: {route_number}")
-        # Special handling: route_number 5 might be group 6 if it's color section
-        if route_number == 5:
-            # Check if this is actually a color section
-            if 'color' in str(input_data).lower():
-                print("route_number is 5 but found 'color' keyword - treating as GROUP 6")
-                return 6
         return route_number
     
     # Method 3: group_number
@@ -950,11 +957,6 @@ def detect_group_number_from_input(input_data):
             # Single URL - could be groups 1, 2, 6, 7, 8
             print("Single URL detected")
             
-            # Check if it's a color section request
-            if 'color' in str(input_data).lower():
-                print("Found 'color' keyword, assuming group 6")
-                return 6
-            
             # For single images without other indicators
             print("Single URL, no clear indicators - defaulting to group 1")
             return 1
@@ -966,9 +968,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V120 PERFECT"""
+    """Main handler for detail page creation - V121 ULTIMATE"""
     try:
-        print(f"=== V120 Detail Page Handler - PERFECT GROUP DETECTION ===")
+        print(f"=== V121 Detail Page Handler - ULTIMATE COLOR FIX ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -983,18 +985,18 @@ def handler(event):
         
         print(f"Input keys: {list(input_data.keys())}")
         
-        # Enhanced group number detection - V120 with image9 priority
+        # Enhanced group number detection - V121 with perfect group 6 handling
         group_number = detect_group_number_from_input(input_data)
         route_number = input_data.get('route_number', group_number)
         
         print(f"DETECTED: group_number={group_number}, route_number={route_number}")
         
-        # SPECIAL HANDLING: If we detected group 6 but route_number is 5, keep it as group 6
-        if group_number == 6 and route_number == 5:
-            print("KEEPING GROUP 6 despite route_number 5 (COLOR section detected)")
-            # Don't override group_number in this case
-        elif route_number > 0 and route_number != group_number and group_number != 6:
-            # Only override if it's not group 6
+        # SPECIAL HANDLING: Group 6 is ALWAYS group 6, regardless of route_number
+        if group_number == 6:
+            print("GROUP 6 LOCKED - This is COLOR section, ignoring route_number")
+            # Keep group_number as 6
+        elif route_number > 0 and route_number != group_number:
+            # Only override for non-group-6 cases
             print(f"OVERRIDE: Using route_number {route_number} instead of detected group {group_number}")
             group_number = route_number
         
@@ -1089,7 +1091,7 @@ def handler(event):
         
         # Prepare metadata - special handling for group 6
         if group_number == 6:
-            # Force page_number to 6 for color section
+            # ALWAYS force page_number to 6 for color section
             display_page_number = 6
             display_route_number = 6
         else:
@@ -1102,12 +1104,13 @@ def handler(event):
             "page_type": page_type,
             "page_number": display_page_number,
             "route_number": display_route_number,
-            "actual_group": group_number,  # Add this for debugging
+            "actual_group": group_number,  # For debugging
+            "original_route": route_number,  # For debugging
             "dimensions": {
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V120_PERFECT",
+            "version": "V121_ULTIMATE",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "detected_group_method": "image9_priority" if 'image9' in input_data else "route_number_priority",
@@ -1134,11 +1137,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V120_PERFECT"
+                "version": "V121_ULTIMATE"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V120 - PERFECT GROUP DETECTION...")
+    print("Starting Detail Page Handler V121 - ULTIMATE COLOR FIX...")
     runpod.serverless.start({"handler": handler})
