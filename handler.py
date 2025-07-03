@@ -33,93 +33,6 @@ def get_text_dimensions(draw, text, font):
     except AttributeError:
         return draw.textsize(text, font=font)
 
-def create_md_talk_section(width=FIXED_WIDTH):
-    """Create MD'Talk section for group 3 (images 3-4)"""
-    section_height = 400
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
-    title_font = None
-    body_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 20)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
-    
-    # Draw MD TALK title
-    title = "MD TALK"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 100), title, font=title_font, fill=(40, 40, 40))
-    
-    # Draw Korean text
-    korean_text = [
-        "고급스러운 텍스처와 균형 잡힌 디테일이",
-        "감성의 깊이를 더하는 커플링입니다.",
-        "'섬세한 연결'을 느끼고 싶은 커플에게 추천드립니다."
-    ]
-    
-    y_pos = 200
-    for line in korean_text:
-        line_width, _ = get_text_dimensions(draw, line, body_font)
-        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
-        y_pos += 40
-    
-    return section_img
-
-def create_design_point_section(width=FIXED_WIDTH):
-    """Create DESIGN POINT section for group 4 (images 5-6)"""
-    section_height = 500
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
-    title_font = None
-    body_font = None
-    
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 18)
-                break
-            except:
-                continue
-    
-    if title_font is None:
-        title_font = ImageFont.load_default()
-        body_font = ImageFont.load_default()
-    
-    # Draw DESIGN POINT title
-    title = "DESIGN POINT"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(40, 40, 40))
-    
-    # Draw Korean text
-    korean_text = [
-        "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고,",
-        "여자 단품은 파베 세팅과 섬세한 밀그레인의 디테일",
-        "화려하면서도 고급스러운 반영영을 표현합니다.",
-        "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다."
-    ]
-    
-    y_pos = 200
-    for line in korean_text:
-        line_width, _ = get_text_dimensions(draw, line, body_font)
-        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
-        y_pos += 45
-    
-    return section_img
-
 def extract_ring_with_replicate(img):
     """Extract ring from background using Replicate API"""
     try:
@@ -394,6 +307,144 @@ def create_color_circles_fallback_figma(section_img, draw, colors, start_x, star
         draw.text((x + img_size//2 - label_width//2, y + img_size + 30), 
                  name, font=label_font, fill=(80, 80, 80))
 
+def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
+    """Create MD Talk text section from Claude-generated content (Group 7)"""
+    section_height = 600
+    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
+    title_font = None
+    body_font = None
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                title_font = ImageFont.truetype(font_path, 48)
+                body_font = ImageFont.truetype(font_path, 20)
+                break
+            except:
+                continue
+    
+    if title_font is None:
+        title_font = ImageFont.load_default()
+        body_font = ImageFont.load_default()
+    
+    print(f"Processing Claude-generated MD Talk text: {claude_text[:100]}...")
+    
+    # Parse Claude text - expect format like:
+    # "MD TALK\n\n감성적인 텍스트\n더 많은 텍스트\n'키워드' 관련 문장"
+    lines = claude_text.split('\n')
+    
+    # Find title (should be "MD TALK")
+    title = "MD TALK"
+    for line in lines:
+        if line.strip().upper() in ["MD TALK", "MD'TALK"]:
+            title = line.strip()
+            break
+    
+    # Draw title
+    title_width, _ = get_text_dimensions(draw, title, title_font)
+    draw.text((width//2 - title_width//2, 100), title, font=title_font, fill=(40, 40, 40))
+    
+    # Extract content lines (skip empty lines and title)
+    content_lines = []
+    for line in lines:
+        line = line.strip()
+        if line and line.upper() not in ["MD TALK", "MD'TALK"]:
+            content_lines.append(line)
+    
+    # If no content found, use default
+    if not content_lines:
+        content_lines = [
+            "고급스러운 텍스처와 균형 잡힌 디테일이",
+            "감성의 깊이를 더하는 커플링입니다.",
+            "'섬세한 연결'을 느끼고 싶은 커플에게 추천드립니다."
+        ]
+    
+    # Draw content lines
+    y_pos = 200
+    line_height = 40
+    
+    for line in content_lines:
+        line_width, _ = get_text_dimensions(draw, line, body_font)
+        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+        y_pos += line_height
+    
+    # Add decorative elements
+    draw.rectangle([80, y_pos + 20, width - 80, y_pos + 22], fill=(220, 220, 220))
+    
+    return section_img
+
+def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
+    """Create Design Point text section from Claude-generated content (Group 8)"""
+    section_height = 700
+    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
+    title_font = None
+    body_font = None
+    
+    for font_path in font_paths:
+        if os.path.exists(font_path):
+            try:
+                title_font = ImageFont.truetype(font_path, 48)
+                body_font = ImageFont.truetype(font_path, 18)
+                break
+            except:
+                continue
+    
+    if title_font is None:
+        title_font = ImageFont.load_default()
+        body_font = ImageFont.load_default()
+    
+    print(f"Processing Claude-generated Design Point text: {claude_text[:100]}...")
+    
+    # Parse Claude text
+    lines = claude_text.split('\n')
+    
+    # Find title (should be "DESIGN POINT")
+    title = "DESIGN POINT"
+    for line in lines:
+        if "DESIGN" in line.upper() and "POINT" in line.upper():
+            title = line.strip()
+            break
+    
+    # Draw title
+    title_width, _ = get_text_dimensions(draw, title, title_font)
+    draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(40, 40, 40))
+    
+    # Extract content lines
+    content_lines = []
+    for line in lines:
+        line = line.strip()
+        if line and "DESIGN" not in line.upper():
+            content_lines.append(line)
+    
+    # If no content found, use default
+    if not content_lines:
+        content_lines = [
+            "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고,",
+            "여자 단품은 파베 세팅과 섬세한 밀그레인의 디테일",
+            "화려하면서도 고급스러운 반짝임을 표현합니다.",
+            "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다."
+        ]
+    
+    # Draw content lines
+    y_pos = 200
+    line_height = 45
+    
+    for line in content_lines:
+        line_width, _ = get_text_dimensions(draw, line, body_font)
+        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+        y_pos += line_height
+    
+    # Add decorative elements
+    draw.rectangle([80, y_pos + 20, width - 80, y_pos + 22], fill=(220, 220, 220))
+    
+    return section_img
+
 def extract_file_id_from_url(url):
     """Extract Google Drive file ID from various URL formats"""
     if not url:
@@ -558,34 +609,23 @@ def process_single_image(input_data, group_number):
     
     return detail_page
 
-def process_combined_images(images_data, group_number):
-    """Process combined images (groups 3, 4, 5) with sections"""
-    print(f"Processing {len(images_data)} images for group {group_number}")
+def process_combined_images_clean(images_data, group_number):
+    """Process combined images WITHOUT text sections (groups 3, 4, 5) - Clean images only"""
+    print(f"Processing {len(images_data)} CLEAN images for group {group_number} (no text overlay)")
     
     # IMPORTANT: Group 5 should only have 2 images (7, 8)
     if group_number == 5 and len(images_data) != 2:
         print(f"WARNING: Group 5 should have exactly 2 images, got {len(images_data)}")
     
-    # Calculate heights
+    # Calculate heights - NO TEXT SECTIONS
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
-    IMAGE_SPACING = 200  # 200픽셀 간격으로 증가
+    IMAGE_SPACING = 200  # 200픽셀 간격
     
-    # Add section heights based on group
-    section_height = 0
-    if group_number == 3:
-        section_height = 400  # MD'Talk section
-    elif group_number == 4:
-        section_height = 500  # DESIGN POINT section
-    
-    # Calculate total height
+    # Calculate total height (only images, no text sections)
     total_height = TOP_MARGIN + BOTTOM_MARGIN
     
-    # First add section height if needed
-    if section_height > 0:
-        total_height += section_height + 100  # Extra spacing after section
-    
-    # Then add all image heights
+    # Add all image heights
     image_heights = []
     for img_data in images_data:
         img = get_image_from_input(img_data)
@@ -597,26 +637,14 @@ def process_combined_images(images_data, group_number):
     # Add spacing between images
     total_height += (len(images_data) - 1) * IMAGE_SPACING
     
-    print(f"Creating combined canvas: {FIXED_WIDTH}x{total_height}")
+    print(f"Creating clean combined canvas: {FIXED_WIDTH}x{total_height}")
     
     # Create canvas
     detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
     
     current_y = TOP_MARGIN
     
-    # Add section FIRST (위에 오도록)
-    if group_number == 3:
-        print("Adding MD'Talk section at top")
-        md_talk_section = create_md_talk_section()
-        detail_page.paste(md_talk_section, (0, current_y))
-        current_y += 400 + 100  # section height + spacing
-    elif group_number == 4:
-        print("Adding DESIGN POINT section at top")
-        design_point_section = create_design_point_section()
-        detail_page.paste(design_point_section, (0, current_y))
-        current_y += 500 + 100  # section height + spacing
-    
-    # Process each image AFTER section
+    # Process each image WITHOUT any text sections
     for idx, (img_data, img_height) in enumerate(zip(images_data, image_heights)):
         if idx > 0:
             current_y += IMAGE_SPACING  # 200픽셀 간격
@@ -636,10 +664,14 @@ def process_combined_images(images_data, group_number):
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
-    if group_number == 5:
-        page_text = f"- Gallery 7-8 -"  # 명확하게 7-8만 표시
+    if group_number == 3:
+        page_text = f"- Clean Images 3-4 -"
+    elif group_number == 4:
+        page_text = f"- Clean Images 5-6 -"
+    elif group_number == 5:
+        page_text = f"- Gallery 7-8 -"
     else:
-        page_text = f"- Details {group_number} -"
+        page_text = f"- Clean Group {group_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -673,6 +705,44 @@ def process_color_section(input_data):
     img.close()
     
     return color_section
+
+def process_text_section(input_data, group_number):
+    """Process text-only sections (groups 7, 8) with Claude-generated content"""
+    print(f"Processing text section for group {group_number}")
+    
+    # Get Claude-generated text
+    claude_text = (input_data.get('claude_text') or 
+                  input_data.get('text_content') or 
+                  input_data.get('ai_text') or 
+                  input_data.get('generated_text') or '')
+    
+    text_type = (input_data.get('text_type') or 
+                input_data.get('section_type') or '')
+    
+    print(f"Text type: {text_type}")
+    print(f"Claude text preview: {claude_text[:200]}...")
+    
+    if not claude_text:
+        print("WARNING: No Claude text provided, using default content")
+    
+    if group_number == 7 or text_type == 'md_talk':
+        # Group 7: MD Talk text section
+        text_section = create_ai_generated_md_talk(claude_text)
+        section_type = "md_talk"
+    elif group_number == 8 or text_type == 'design_point':
+        # Group 8: Design Point text section
+        text_section = create_ai_generated_design_point(claude_text)
+        section_type = "design_point"
+    else:
+        # Fallback - determine by group number
+        if group_number == 7:
+            text_section = create_ai_generated_md_talk(claude_text)
+            section_type = "md_talk"
+        else:
+            text_section = create_ai_generated_design_point(claude_text)
+            section_type = "design_point"
+    
+    return text_section, section_type
 
 def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
     """Send results to Google Apps Script webhook"""
@@ -717,9 +787,9 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def handler(event):
-    """Main handler for detail page creation"""
+    """Main handler for detail page creation - V109 with 8 groups support"""
     try:
-        print(f"=== V107 Detail Page Handler - Complete Fixed Version ===")
+        print(f"=== V109 Detail Page Handler - 8 Groups with Text Separation ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -768,6 +838,10 @@ def handler(event):
                 group_number = 5
             elif 'image6' in input_data:
                 group_number = 6
+            elif 'image7' in input_data:
+                group_number = 7
+            elif 'image8' in input_data:
+                group_number = 8
         
         print(f"Final group_number: {group_number}")
         
@@ -793,15 +867,23 @@ def handler(event):
             else:
                 # Single URL
                 input_data['url'] = image_url
-        
-        # Handle different group types based on group_number
-        if group_number == 6:
+
+        # NEW: Handle different group types based on group_number (8 groups total)
+        if group_number in [7, 8]:
+            # NEW: Groups 7, 8: Text-only sections
+            print(f"=== PROCESSING GROUP {group_number} TEXT SECTION ===")
+            detail_page, section_type = process_text_section(input_data, group_number)
+            page_type = f"text_section_{section_type}"
+            
+        elif group_number == 6:
             # Group 6: COLOR section with image 9 ONLY
+            print("=== PROCESSING GROUP 6 COLOR SECTION ===")
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
         elif group_number in [3, 4, 5]:
-            # Groups 3, 4, 5: Combined images with sections
+            # Groups 3, 4, 5: Combined images WITHOUT text sections (clean)
+            print(f"=== PROCESSING GROUP {group_number} CLEAN COMBINED IMAGES ===")
             if 'images' not in input_data or not isinstance(input_data['images'], list):
                 # Convert single image to images array
                 input_data['images'] = [input_data]
@@ -811,17 +893,18 @@ def handler(event):
                 print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
                 input_data['images'] = input_data['images'][:2]  # Use only first 2 images
             
-            detail_page = process_combined_images(input_data['images'], group_number)
+            detail_page = process_combined_images_clean(input_data['images'], group_number)
             
             if group_number == 3:
-                page_type = "combined_3_4_mdtalk"
+                page_type = "combined_clean_3_4"
             elif group_number == 4:
-                page_type = "combined_5_6_design"
+                page_type = "combined_clean_5_6"
             elif group_number == 5:
-                page_type = "combined_7_8_gallery"  # Only 7-8
-            
+                page_type = "combined_gallery_7_8"
+        
         else:
             # Groups 1, 2: Single images
+            print(f"=== PROCESSING GROUP {group_number} SINGLE IMAGE ===")
             detail_page = process_single_image(input_data, group_number)
             page_type = f"single_image_{group_number}"
         
@@ -843,22 +926,31 @@ def handler(event):
                 "height": detail_page.height
             },
             "fixed_width": FIXED_WIDTH,
-            "has_text_overlay": group_number in [3, 4, 6],
+            "has_text_overlay": group_number in [6, 7, 8],  # Only COLOR and text sections
             "has_background_removal": group_number == 6,
             "uses_replicate_api": group_number == 6,
+            "is_text_only": group_number in [7, 8],
+            "is_clean_images": group_number in [3, 4, 5],
             "format": "base64_no_padding",
             "status": "success",
-            "version": "V107",
+            "version": "V109",
             "image_spacing": 200,
             "group_info": {
                 "1": "Single image 1",
                 "2": "Single image 2", 
-                "3": "Images 3-4 with MD'Talk at top",
-                "4": "Images 5-6 with DESIGN POINT at top",
-                "5": "Images 7-8 ONLY (no 9)",  # CRITICAL
-                "6": "Image 9 ONLY for COLOR section"
+                "3": "Clean images 3-4 (no text)",
+                "4": "Clean images 5-6 (no text)",
+                "5": "Gallery images 7-8",
+                "6": "Color section image 9",
+                "7": "MD Talk text (AI generated)",
+                "8": "Design Point text (AI generated)"
             }.get(str(group_number), f"Group {group_number}")
         }
+        
+        # Add text-specific metadata
+        if group_number in [7, 8]:
+            metadata["text_type"] = section_type if 'section_type' in locals() else 'unknown'
+            metadata["claude_generated"] = True
         
         # Send to webhook
         webhook_result = send_to_webhook(
@@ -891,7 +983,7 @@ def handler(event):
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "status": "error",
-                "version": "V107"
+                "version": "V109"
             }
         }
 
