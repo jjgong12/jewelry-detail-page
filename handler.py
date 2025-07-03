@@ -26,93 +26,96 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pph
 FIXED_WIDTH = 1200
 
 def download_korean_font():
-    """Download Korean font for text rendering - Enhanced version"""
+    """Download Korean font for text rendering - More robust version"""
     try:
         font_path = '/tmp/NanumMyeongjo.ttf'
         
-        # Check if already exists
+        # Check if already exists and valid
         if os.path.exists(font_path):
-            print("Korean font already exists")
-            return True
-        
-        # Try to download using requests instead of wget
-        font_url = 'https://github.com/naver/nanumfont/raw/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
-        print(f"Downloading Korean font from: {font_url}")
-        
-        response = requests.get(font_url, timeout=30)
-        if response.status_code == 200:
-            with open(font_path, 'wb') as f:
-                f.write(response.content)
-            print("Korean font downloaded successfully using requests")
-            return True
-        else:
-            print(f"Failed to download Korean font: HTTP {response.status_code}")
-            
-            # Fallback: try alternative URL
-            alt_url = 'https://cdn.jsdelivr.net/gh/naver/nanumfont@master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
-            print(f"Trying alternative URL: {alt_url}")
-            response = requests.get(alt_url, timeout=30)
-            if response.status_code == 200:
-                with open(font_path, 'wb') as f:
-                    f.write(response.content)
-                print("Korean font downloaded successfully from CDN")
+            try:
+                # Try to load it to verify it's valid
+                test_font = ImageFont.truetype(font_path, 20)
+                print("Korean font already exists and is valid")
                 return True
+            except:
+                print("Korean font exists but is corrupted, re-downloading...")
+                os.remove(font_path)
+        
+        # List of URLs to try
+        font_urls = [
+            'https://github.com/naver/nanumfont/raw/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf',
+            'https://cdn.jsdelivr.net/gh/naver/nanumfont@master/fonts/NanumMyeongjo/NanumMyeongjo.ttf',
+            'https://raw.githubusercontent.com/naver/nanumfont/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
+        ]
+        
+        for url in font_urls:
+            try:
+                print(f"Downloading Korean font from: {url}")
+                response = requests.get(url, timeout=30, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
                 
+                if response.status_code == 200 and len(response.content) > 100000:  # Font should be > 100KB
+                    with open(font_path, 'wb') as f:
+                        f.write(response.content)
+                    
+                    # Verify the font works
+                    test_font = ImageFont.truetype(font_path, 20)
+                    print(f"Korean font downloaded successfully from {url}")
+                    return True
+            except Exception as e:
+                print(f"Failed to download from {url}: {str(e)}")
+                continue
+        
+        print("Failed to download Korean font from all sources")
         return False
         
     except Exception as e:
-        print(f"Error downloading Korean font: {str(e)}")
+        print(f"Error in font download process: {str(e)}")
         return False
 
 def clean_claude_text(text):
-    """Enhanced Claude text cleaning - FIXED for Korean text"""
+    """Clean text for safe JSON encoding while preserving Korean characters"""
     if not text:
         return ""
     
-    # Convert to string and handle None
+    # Convert to string if needed
     text = str(text) if text is not None else ""
     
-    # ABSOLUTELY DO NOT USE unicode_escape - it breaks Korean!
-    # DO NOT USE: text.encode().decode('unicode_escape')
+    # CRITICAL: Never use decode('unicode_escape') - it destroys Korean text!
+    # Just handle the text as-is
     
-    # Only replace literal backslash sequences, not actual newlines
-    # This preserves Korean while cleaning escape sequences
-    if '\\n' in text:
-        text = text.replace('\\n', ' ')
-    if '\\r' in text:
-        text = text.replace('\\r', ' ')
-    if '\\t' in text:
-        text = text.replace('\\t', ' ')
+    # Replace escape sequences (backslash + character)
+    text = text.replace('\\n', ' ')
+    text = text.replace('\\r', ' ')
+    text = text.replace('\\t', ' ')
+    text = text.replace('\\\\', '\\')  # Handle double backslashes
     
-    # Replace actual newlines
+    # Replace actual control characters
     text = text.replace('\n', ' ')
     text = text.replace('\r', ' ')
     text = text.replace('\t', ' ')
     
-    # Clean quotes - only escaped ones
-    if '\\"' in text:
-        text = text.replace('\\"', '"')
-    if "\\'" in text:
-        text = text.replace("\\'", "'")
+    # Fix quotes if they're escaped
+    text = text.replace('\\"', '"')
+    text = text.replace("\\'", "'")
     
-    # Remove markdown formatting
-    text = text.replace('#', '')
-    text = text.replace('*', '')
-    text = text.replace('_', '')
-    text = text.replace('`', '')
+    # Remove markdown symbols
+    for char in ['#', '*', '_', '`', '[', ']', '(', ')']:
+        text = text.replace(char, '')
     
-    # Replace multiple spaces with single space
+    # Collapse multiple spaces
     text = ' '.join(text.split())
     
-    # Trim to safe length
+    # Trim length
     if len(text) > 500:
         text = text[:497] + "..."
     
-    # DO NOT filter characters by ord() value!
-    # Korean characters have high Unicode values and will be removed
+    # IMPORTANT: No character filtering by Unicode value!
+    # Korean characters (한글) have values > 0xAC00
     
-    print(f"Cleaned text (first 100 chars): {text[:100]}...")
-    return text
+    print(f"Cleaned text preview: {text[:100]}...")
+    return text.strip()
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
@@ -387,24 +390,28 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Split text into lines more naturally
+        # Force line breaks every 10-12 characters for Korean text
         words = cleaned_text.split()
         lines = []
-        current_line = []
-        max_width = width - 200  # Margin
+        current_line = ""
+        char_count = 0
         
         for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = get_text_dimensions(draw, test_line, body_font)
-            
-            if test_width > max_width and current_line:
-                lines.append(' '.join(current_line))
-                current_line = [word]
+            # Check if adding this word would exceed character limit
+            if char_count + len(word) > 12:  # 10-12 characters per line
+                if current_line:
+                    lines.append(current_line.strip())
+                current_line = word + " "
+                char_count = len(word) + 1
             else:
-                current_line.append(word)
+                current_line += word + " "
+                char_count += len(word) + 1
         
         if current_line:
-            lines.append(' '.join(current_line))
+            lines.append(current_line.strip())
+        
+        # Limit to 3 lines for MD TALK
+        lines = lines[:3]
     else:
         lines = [
             "고급스러운 텍스처와 균형 잡힌 디테일이",
@@ -412,10 +419,10 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
             "섬세한 연결을 느끼고 싶은 커플에게 추천드립니다."
         ]
     
-    y_pos = 200
-    line_height = 45
+    y_pos = 250  # Start lower for better centering
+    line_height = 50
     
-    for line in lines[:8]:  # Limit to 8 lines
+    for line in lines:
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -452,36 +459,40 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Split text into lines more naturally
+        # Force line breaks every 10-12 characters for Korean text
         words = cleaned_text.split()
         lines = []
-        current_line = []
-        max_width = width - 200  # Margin
+        current_line = ""
+        char_count = 0
         
         for word in words:
-            test_line = ' '.join(current_line + [word])
-            test_width, _ = get_text_dimensions(draw, test_line, body_font)
-            
-            if test_width > max_width and current_line:
-                lines.append(' '.join(current_line))
-                current_line = [word]
+            # Check if adding this word would exceed character limit
+            if char_count + len(word) > 12:  # 10-12 characters per line
+                if current_line:
+                    lines.append(current_line.strip())
+                current_line = word + " "
+                char_count = len(word) + 1
             else:
-                current_line.append(word)
+                current_line += word + " "
+                char_count += len(word) + 1
         
         if current_line:
-            lines.append(' '.join(current_line))
+            lines.append(current_line.strip())
+        
+        # Limit to 4 lines for DESIGN POINT
+        lines = lines[:4]
     else:
         lines = [
-            "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고",
-            "여자 단품은 파베 세팅과 섬세한 밀그레인의 디테일",
-            "화려하면서도 고급스러운 반영영을 표현합니다",
-            "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다"
+            "리프링 무광 텍스처와 유광 라인의 조화가",
+            "견고한 감성을 전하고 여자 단품은",
+            "파베 세팅과 섬세한 밀그레인의 디테일",
+            "화려하면서도 고급스러운 반영을 표현합니다"
         ]
     
-    y_pos = 200
-    line_height = 50
+    y_pos = 250  # Start lower for better centering
+    line_height = 55
     
-    for line in lines[:10]:  # Limit to 10 lines
+    for line in lines:
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -728,22 +739,37 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
     return detail_page
 
 def process_color_section(input_data):
-    """Process group 6 - COLOR section with ring image (image 9 only)"""
+    """Process group 6 - COLOR section with ring image"""
     print("=== PROCESSING GROUP 6 COLOR SECTION ===")
     
-    # CRITICAL FIX: For group 6, we need image 9
+    # Multiple ways to find the image for color section
+    img = None
+    
+    # Method 1: Check for image9 key
     if 'image9' in input_data:
         print("Found image9 key for COLOR section")
         img_data = {'url': input_data['image9']}
         img = get_image_from_input(img_data)
+    # Method 2: Check for group6 key
+    elif 'group6' in input_data:
+        print("Found group6 key for COLOR section")
+        img_data = {'url': input_data['group6']}
+        img = get_image_from_input(img_data)
+    # Method 3: Check if it's a single image input
     else:
+        print("Using standard image input for COLOR section")
         img = get_image_from_input(input_data)
     
-    print(f"Ring image for color section: {img.size}, mode: {img.mode}")
+    if img:
+        print(f"Ring image for color section: {img.size}, mode: {img.mode}")
+    else:
+        print("WARNING: No ring image found, creating without ring image")
     
+    # Create color section (with or without ring image)
     color_section = create_color_options_section(ring_image=img)
     
-    img.close()
+    if img:
+        img.close()
     
     print("Color section created successfully")
     return color_section
@@ -842,8 +868,8 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """Enhanced group number detection with better group 1/2 differentiation"""
-    print("=== GROUP NUMBER DETECTION ENHANCED V118 ===")
+    """Enhanced group number detection with better group differentiation"""
+    print("=== GROUP NUMBER DETECTION ENHANCED V119 ===")
     
     # Method 1: Direct route_number - HIGHEST PRIORITY
     route_number = input_data.get('route_number', 0)
@@ -857,14 +883,24 @@ def detect_group_number_from_input(input_data):
         print(f"Found group_number: {group_number}")
         return group_number
     
-    # Method 3: Check for specific image keys (image1, image2, etc.)
-    for i in range(1, 9):
+    # Method 3: Check for specific image keys (image1-image9)
+    for i in range(1, 10):  # Extended to 9 for color section
         key = f'image{i}'
         if key in input_data:
-            print(f"Found {key} key, assuming group {i}")
-            return i
+            print(f"Found {key} key")
+            if i == 9:
+                print("image9 indicates GROUP 6 (COLOR section)")
+                return 6
+            else:
+                print(f"Assuming group {i}")
+                return i
     
-    # Method 4: Check text_type for groups 7, 8
+    # Method 4: Check for group6 key specifically
+    if 'group6' in input_data:
+        print("Found group6 key, returning group 6")
+        return 6
+    
+    # Method 5: Check text_type for groups 7, 8
     text_type = input_data.get('text_type', '')
     if text_type == 'md_talk':
         print("Found md_talk text_type, assuming group 7")
@@ -873,7 +909,7 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type, assuming group 8")
         return 8
     
-    # Method 5: Check for Claude text presence (base64 or regular)
+    # Method 6: Check for Claude text presence (base64 or regular)
     has_claude_text = bool(input_data.get('claude_text') or input_data.get('claude_text_base64'))
     if has_claude_text:
         print("Found claude_text, checking text_type...")
@@ -886,7 +922,7 @@ def detect_group_number_from_input(input_data):
             print("Has claude_text but no text_type, defaulting to group 7 (MD Talk)")
             return 7
     
-    # Method 6: Enhanced URL analysis
+    # Method 7: Enhanced URL analysis
     image_data = input_data.get('image', '')
     if image_data:
         print(f"Analyzing image URLs: {image_data[:200]}...")
@@ -908,10 +944,14 @@ def detect_group_number_from_input(input_data):
             # Single URL - could be groups 1, 2, 6, 7, 8
             print("Single URL detected")
             
-            # For single images without other indicators, we can't reliably
-            # distinguish between group 1 and 2 without route_number
-            print("Single URL, no route_number - cannot distinguish group 1 vs 2")
-            return 1  # Default to group 1
+            # Check if it's a color section request
+            if 'color' in str(input_data).lower():
+                print("Found 'color' keyword, assuming group 6")
+                return 6
+            
+            # For single images without other indicators
+            print("Single URL, no route_number - defaulting to group 1")
+            return 1
     
     # Last resort
     print("WARNING: Could not reliably detect group number")
@@ -920,11 +960,11 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V118 REALLY FIXED"""
+    """Main handler for detail page creation - V119 FIXED TEXT & COLOR"""
     try:
-        print(f"=== V118 Detail Page Handler - REALLY FIXED ===")
+        print(f"=== V119 Detail Page Handler - FIXED TEXT & COLOR ===")
         
-        # Download Korean font if not exists - Enhanced version
+        # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
             print("Korean font not found, downloading...")
             if not download_korean_font():
@@ -935,19 +975,15 @@ def handler(event):
         # Get input data
         input_data = event.get('input', event)
         
-        # DON'T pre-clean text fields here - let process_text_section handle it
-        # This prevents double-cleaning which can cause issues
-        
         print(f"Input keys: {list(input_data.keys())}")
         
         # Enhanced group number detection
         group_number = detect_group_number_from_input(input_data)
         route_number = input_data.get('route_number', group_number)
         
-        print(f"FINAL: group_number={group_number}, route_number={route_number}")
+        print(f"DETECTED: group_number={group_number}, route_number={route_number}")
         
         # CRITICAL: Always use route_number as the actual group number
-        # This fixes the group 2 being detected as group 1 issue
         if route_number > 0 and route_number != group_number:
             print(f"OVERRIDE: Using route_number {route_number} instead of detected group {group_number}")
             group_number = route_number
@@ -958,6 +994,8 @@ def handler(event):
         
         if group_number < 1 or group_number > 8:
             raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
+        
+        print(f"FINAL GROUP NUMBER: {group_number}")
         
         # Handle Make.com's 'image' key format
         if 'image' in input_data and input_data['image']:
@@ -997,22 +1035,22 @@ def handler(event):
         
         # Process based on group number
         if group_number == 6:
-            print("=== Processing Group 6: COLOR section (image 9) ===")
+            print("=== GROUP 6 CONFIRMED: Processing COLOR section ===")
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
         elif group_number in [7, 8]:
-            print(f"=== Processing Group {group_number}: Text-only section ===")
+            print(f"=== GROUP {group_number} CONFIRMED: Processing Text-only section ===")
             detail_page, section_type = process_text_section(input_data, group_number)
             page_type = f"text_section_{section_type}"
             
         elif group_number in [1, 2]:
-            print(f"=== Processing Group {group_number}: Individual image ===")
+            print(f"=== GROUP {group_number} CONFIRMED: Processing Individual image ===")
             detail_page = process_single_image(input_data, group_number)
             page_type = "individual"
             
         elif group_number in [3, 4, 5]:
-            print(f"=== Processing Group {group_number}: CLEAN Combined images ===")
+            print(f"=== GROUP {group_number} CONFIRMED: Processing CLEAN Combined images ===")
             if 'images' not in input_data or not isinstance(input_data['images'], list):
                 input_data['images'] = [input_data]
             
@@ -1039,7 +1077,7 @@ def handler(event):
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Prepare metadata - use route_number for accurate page numbering
+        # Prepare metadata
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
@@ -1050,7 +1088,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V118_REALLY_FIXED",
+            "version": "V119_FIXED_TEXT_COLOR",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "detected_group_method": "route_number_priority",
@@ -1077,11 +1115,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V118_REALLY_FIXED"
+                "version": "V119_FIXED_TEXT_COLOR"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V118 - REALLY FIXED...")
+    print("Starting Detail Page Handler V119 - FIXED TEXT & COLOR...")
     runpod.serverless.start({"handler": handler})
