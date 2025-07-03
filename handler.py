@@ -83,7 +83,6 @@ def clean_claude_text(text):
     text = str(text) if text is not None else ""
     
     # CRITICAL: Never use decode('unicode_escape') - it destroys Korean text!
-    # Just handle the text as-is
     
     # Replace escape sequences (backslash + character)
     text = text.replace('\\n', ' ')
@@ -390,7 +389,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Force line breaks every 10-12 characters for Korean text
+        # Force line breaks every 15-20 characters for Korean text
         words = cleaned_text.split()
         lines = []
         current_line = ""
@@ -398,7 +397,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         
         for word in words:
             # Check if adding this word would exceed character limit
-            if char_count + len(word) > 12:  # 10-12 characters per line
+            if char_count + len(word) > 20:  # 15-20 characters per line
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word + " "
@@ -459,7 +458,7 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Force line breaks every 10-12 characters for Korean text
+        # Force line breaks every 15-20 characters for Korean text
         words = cleaned_text.split()
         lines = []
         current_line = ""
@@ -467,7 +466,7 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         
         for word in words:
             # Check if adding this word would exceed character limit
-            if char_count + len(word) > 12:  # 10-12 characters per line
+            if char_count + len(word) > 20:  # 15-20 characters per line
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word + " "
@@ -869,36 +868,43 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 
 def detect_group_number_from_input(input_data):
     """Enhanced group number detection with better group differentiation"""
-    print("=== GROUP NUMBER DETECTION ENHANCED V119 ===")
+    print("=== GROUP NUMBER DETECTION V120 ===")
     
-    # Method 1: Direct route_number - HIGHEST PRIORITY
+    # CRITICAL: Check for image9 FIRST before route_number
+    # This is the most reliable indicator for group 6
+    if 'image9' in input_data:
+        print("Found image9 key - DEFINITIVE GROUP 6 (COLOR section)")
+        return 6
+    
+    # Check for group6 key specifically
+    if 'group6' in input_data:
+        print("Found group6 key - DEFINITIVE GROUP 6")
+        return 6
+    
+    # Method 2: Direct route_number - HIGH PRIORITY (but after image9 check)
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
-        print(f"Found route_number: {route_number} - USING THIS AS DEFINITIVE")
+        print(f"Found route_number: {route_number}")
+        # Special handling: route_number 5 might be group 6 if it's color section
+        if route_number == 5:
+            # Check if this is actually a color section
+            if 'color' in str(input_data).lower():
+                print("route_number is 5 but found 'color' keyword - treating as GROUP 6")
+                return 6
         return route_number
     
-    # Method 2: group_number - SECOND PRIORITY
+    # Method 3: group_number
     group_number = input_data.get('group_number', 0)
     if group_number > 0:
         print(f"Found group_number: {group_number}")
         return group_number
     
-    # Method 3: Check for specific image keys (image1-image9)
-    for i in range(1, 10):  # Extended to 9 for color section
+    # Method 4: Check for specific image keys (image1-image8)
+    for i in range(1, 9):
         key = f'image{i}'
         if key in input_data:
-            print(f"Found {key} key")
-            if i == 9:
-                print("image9 indicates GROUP 6 (COLOR section)")
-                return 6
-            else:
-                print(f"Assuming group {i}")
-                return i
-    
-    # Method 4: Check for group6 key specifically
-    if 'group6' in input_data:
-        print("Found group6 key, returning group 6")
-        return 6
+            print(f"Found {key} key, assuming group {i}")
+            return i
     
     # Method 5: Check text_type for groups 7, 8
     text_type = input_data.get('text_type', '')
@@ -950,7 +956,7 @@ def detect_group_number_from_input(input_data):
                 return 6
             
             # For single images without other indicators
-            print("Single URL, no route_number - defaulting to group 1")
+            print("Single URL, no clear indicators - defaulting to group 1")
             return 1
     
     # Last resort
@@ -960,9 +966,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V119 FIXED TEXT & COLOR"""
+    """Main handler for detail page creation - V120 PERFECT"""
     try:
-        print(f"=== V119 Detail Page Handler - FIXED TEXT & COLOR ===")
+        print(f"=== V120 Detail Page Handler - PERFECT GROUP DETECTION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -977,14 +983,18 @@ def handler(event):
         
         print(f"Input keys: {list(input_data.keys())}")
         
-        # Enhanced group number detection
+        # Enhanced group number detection - V120 with image9 priority
         group_number = detect_group_number_from_input(input_data)
         route_number = input_data.get('route_number', group_number)
         
         print(f"DETECTED: group_number={group_number}, route_number={route_number}")
         
-        # CRITICAL: Always use route_number as the actual group number
-        if route_number > 0 and route_number != group_number:
+        # SPECIAL HANDLING: If we detected group 6 but route_number is 5, keep it as group 6
+        if group_number == 6 and route_number == 5:
+            print("KEEPING GROUP 6 despite route_number 5 (COLOR section detected)")
+            # Don't override group_number in this case
+        elif route_number > 0 and route_number != group_number and group_number != 6:
+            # Only override if it's not group 6
             print(f"OVERRIDE: Using route_number {route_number} instead of detected group {group_number}")
             group_number = route_number
         
@@ -1077,27 +1087,36 @@ def handler(event):
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Prepare metadata
+        # Prepare metadata - special handling for group 6
+        if group_number == 6:
+            # Force page_number to 6 for color section
+            display_page_number = 6
+            display_route_number = 6
+        else:
+            display_page_number = route_number if route_number > 0 else group_number
+            display_route_number = route_number
+        
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
             "page_type": page_type,
-            "page_number": route_number if route_number > 0 else group_number,
-            "route_number": route_number,
+            "page_number": display_page_number,
+            "route_number": display_route_number,
+            "actual_group": group_number,  # Add this for debugging
             "dimensions": {
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V119_FIXED_TEXT_COLOR",
+            "version": "V120_PERFECT",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
-            "detected_group_method": "route_number_priority",
+            "detected_group_method": "image9_priority" if 'image9' in input_data else "route_number_priority",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
         }
         
         # Send to webhook if configured
-        file_name = f"detail_group_{route_number if route_number > 0 else group_number}.png"
-        webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, route_number, metadata)
+        file_name = f"detail_group_{display_page_number}.png"
+        webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, display_route_number, metadata)
         
         # Return response (Make.com format)
         return {
@@ -1115,11 +1134,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V119_FIXED_TEXT_COLOR"
+                "version": "V120_PERFECT"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V119 - FIXED TEXT & COLOR...")
+    print("Starting Detail Page Handler V120 - PERFECT GROUP DETECTION...")
     runpod.serverless.start({"handler": handler})
