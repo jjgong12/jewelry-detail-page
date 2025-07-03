@@ -1,4 +1,51 @@
-import runpod
+# Handle Make.com's 'image' key format FIRST
+        if 'image' in input_data and input_data['image']:
+            print(f"Found 'image' key with value: {input_data['image'][:100]}...")
+            image_data = input_data['image']
+            
+            if ';' in image_data:
+                urls = image_data.split(';')
+                input_data['images'] = []
+                for url in urls:
+                    url = url.strip()
+                    if url:
+                        input_data['images'].append({'url': url})
+                print(f"Converted 'image' to {len(input_data['images'])} images array")
+            else:
+                input_data['url'] = image_data
+                print(f"Set single URL from 'image' key")
+        
+        # Handle combined_urls format
+        elif 'combined_urls' in input_data and input_data['combined_urls']:
+            urls = input_data['combined_urls'].split(';')
+            input_data['images'] = []
+            for url in urls:
+                url = url.strip()
+                if url:
+                    input_data['images'].append({'url': url})
+            print(f"Converted combined_urls to {len(input_data['images'])} images")
+        
+        # CRITICAL FIX: Check ALL possible image keys, not just the group_number one
+        else:
+            # Try to find any image key
+            image_found = False
+            
+            # First try exact match
+            if f'image{group_number}' in input_data:
+                image_url = input_data[f'image{group_number}']
+                if ';' in image_url:
+                    urls = image_url.split(';')
+                    input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
+                else:
+                    input_data['url'] = image_url
+                image_found = True
+                print(f"Found image{group_number} key")
+            
+            # If not found, look for ANY image key
+            if not image_found:
+                for i in range(1, 10):
+                    key = f'image{i}'
+                    if keyimport runpod
 import base64
 import requests
 from io import BytesIO
@@ -640,8 +687,8 @@ def process_single_image(input_data, group_number):
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
     draw = ImageDraw.Draw(detail_page)
-    actual_page_number = input_data.get('route_number', group_number)
-    page_text = f"- {actual_page_number} -"
+    # FIXED: Use group_number directly, not route_number
+    page_text = f"- {group_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -669,18 +716,20 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
     # CRITICAL FIX: For group 5, we need images 7 and 8
     if group_number == 5:
         print("=== GROUP 5 SPECIAL HANDLING ===")
-        print(f"Need to get images 7 and 8 from input_data")
         
-        # Check if we have the correct image keys
-        if 'image7' in input_data and 'image8' in input_data:
-            print("Found image7 and image8 keys")
-            images_data = []
-            for key in ['image7', 'image8']:
-                images_data.append({'url': input_data[key]})
-            print(f"Created images_data with 2 entries for group 5")
-        elif len(images_data) > 2:
-            print(f"WARNING: Group 5 has {len(images_data)} images, using first 2 only")
+        # Check if images_data already has 2 images (from 'images' array)
+        if len(images_data) >= 2:
+            print(f"Using first 2 images from images_data (total: {len(images_data)})")
             images_data = images_data[:2]
+        # Otherwise, try to find image7 and image8
+        elif input_data and 'image7' in input_data and 'image8' in input_data:
+            print("Found image7 and image8 keys")
+            images_data = [
+                {'url': input_data['image7']},
+                {'url': input_data['image8']}
+            ]
+        else:
+            print(f"WARNING: Group 5 with insufficient images. Have: {len(images_data)}")
     
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
@@ -719,12 +768,12 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
         img.close()
     
     draw = ImageDraw.Draw(detail_page)
-    actual_page_number = input_data.get('route_number', group_number) if input_data else group_number
     
+    # FIXED: Use group_number directly for page text
     if group_number == 5:
         page_text = f"- Gallery 7-8 -"
     else:
-        page_text = f"- {actual_page_number} -"
+        page_text = f"- {group_number} -"
     
     small_font = None
     for font_path in ["/tmp/NanumMyeongjo.ttf", 
@@ -901,16 +950,14 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """CORRECT group number detection - V126 FINAL with FIX for route 2 and 6"""
-    print("=== GROUP NUMBER DETECTION V126 - FIXED FOR ROUTE 2 & 6 ===")
+    """CORRECT group number detection - V128 FINAL PERFECT"""
+    print("=== GROUP NUMBER DETECTION V128 - FINAL PERFECT VERSION ===")
     print(f"Full input_data keys: {sorted(input_data.keys())}")
     
-    # PRIORITY 1: Direct route_number - TRUST IT COMPLETELY!
+    # PRIORITY 1: Direct route_number - ABSOLUTE HIGHEST PRIORITY!
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
-        print(f"Found route_number: {route_number} - USING IT DIRECTLY WITHOUT MODIFICATION")
-        # CRITICAL FIX: Never modify route_number!
-        # Route 2 stays as 2, Route 6 stays as 6
+        print(f"Found route_number: {route_number} - USING IT DIRECTLY WITHOUT ANY FURTHER CHECKS")
         return route_number
     
     # PRIORITY 2: Check for image9 (Google Script Group 6)
@@ -923,12 +970,8 @@ def detect_group_number_from_input(input_data):
         print("Found group6 key - GROUP 6")
         return 6
     
-    # PRIORITY 4: Check for specific image keys
-    for i in range(1, 10):
-        key = f'image{i}'
-        if key in input_data:
-            print(f"Found {key} key - assuming group {i}")
-            return i
+    # PRIORITY 4: DO NOT check image keys if they might conflict!
+    # This was causing issues when image5 exists but route_number=6
     
     # PRIORITY 5: group_number field
     group_number = input_data.get('group_number', 0)
@@ -945,8 +988,8 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type - GROUP 8")
         return 8
     
-    # PRIORITY 7: Analyze URLs
-    if 'image' in input_data:
+    # PRIORITY 7: Analyze URLs in 'image' field ONLY
+    if 'image' in input_data and not any(f'image{i}' in input_data for i in range(1, 10)):
         image_value = str(input_data.get('image', ''))
         if ';' in image_value:
             urls = [u.strip() for u in image_value.split(';') if u.strip()]
@@ -954,17 +997,29 @@ def detect_group_number_from_input(input_data):
             print(f"Found {url_count} URLs in 'image' field")
             
             if url_count == 2:
-                # Could be groups 3 or 5
-                print("2 URLs - could be group 3 or 5")
-                return 3  # Default
+                print("2 URLs - defaulting to group 3")
+                return 3
             elif url_count >= 3:
                 print("3+ URLs - likely group 4")
                 return 4
         else:
-            print("Single URL - could be group 1, 2, or 6")
-            return 1  # Default
+            print("Single URL in 'image' field")
+            # Check for COLOR indicators
+            if any(word in str(input_data).lower() for word in ['color', 'colour', '컬러', '색상']):
+                print("Found color keyword - GROUP 6")
+                return 6
+            return 1
     
-    print("WARNING: Could not determine group number")
+    # LAST RESORT: Check specific image keys ONLY if no route_number
+    for i in range(1, 10):
+        key = f'image{i}'
+        if key in input_data:
+            print(f"WARNING: Found {key} key without route_number - assuming group {i}")
+            print("This might be incorrect! Make.com should send route_number!")
+            return i
+    
+    print("ERROR: Could not determine group number")
+    print("Make.com should always send route_number!")
     return 0
 
 def handler(event):
@@ -999,7 +1054,10 @@ def handler(event):
         if group_number < 1 or group_number > 8:
             raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
         
-        # Handle Make.com's 'image' key format
+        # Handle various image input formats
+        # IMPORTANT: Check all formats, not using elif!
+        
+        # Format 1: 'image' key with semicolon-separated URLs
         if 'image' in input_data and input_data['image']:
             print(f"Found 'image' key with value: {input_data['image'][:100]}...")
             image_data = input_data['image']
@@ -1016,7 +1074,7 @@ def handler(event):
                 input_data['url'] = image_data
                 print(f"Set single URL from 'image' key")
         
-        # Handle combined_urls format
+        # Format 2: 'combined_urls' key
         if 'combined_urls' in input_data and input_data['combined_urls']:
             urls = input_data['combined_urls'].split(';')
             input_data['images'] = []
@@ -1026,14 +1084,42 @@ def handler(event):
                     input_data['images'].append({'url': url})
             print(f"Converted combined_urls to {len(input_data['images'])} images")
         
-        # Handle Make.com specific image keys
-        elif f'image{group_number}' in input_data:
-            image_url = input_data[f'image{group_number}']
-            if ';' in image_url:
-                urls = image_url.split(';')
-                input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
+        # Format 3: Specific image keys (image1, image2, etc.)
+        # Only process if we don't already have images/url
+        if not input_data.get('images') and not input_data.get('url'):
+            # First try exact match for current group
+            if f'image{group_number}' in input_data:
+                image_url = input_data[f'image{group_number}']
+                if ';' in image_url:
+                    urls = image_url.split(';')
+                    input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
+                else:
+                    input_data['url'] = image_url
+                print(f"Found and processed image{group_number}")
+            
+            # Special handling for GROUP 5 - need image7 and image8
+            elif group_number == 5:
+                if 'image7' in input_data and 'image8' in input_data:
+                    input_data['images'] = [
+                        {'url': input_data['image7']},
+                        {'url': input_data['image8']}
+                    ]
+                    print("GROUP 5: Found image7 and image8")
+                else:
+                    print("WARNING: GROUP 5 but missing image7/image8")
+            
+            # Last resort: look for any image key
             else:
-                input_data['url'] = image_url
+                for i in range(1, 10):
+                    if f'image{i}' in input_data:
+                        print(f"WARNING: Using image{i} for group {group_number}")
+                        image_url = input_data[f'image{i}']
+                        if ';' in image_url:
+                            urls = image_url.split(';')
+                            input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
+                        else:
+                            input_data['url'] = image_url
+                        break
         
         # Process based on group number
         if group_number == 6:
@@ -1119,11 +1205,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V127_TRUST_CLAUDE"
+                "version": "V128_FINAL_PERFECT"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V127 - TRUST CLAUDE VERSION...")
+    print("Starting Detail Page Handler V128 - FINAL PERFECT VERSION...")
     runpod.serverless.start({"handler": handler})
