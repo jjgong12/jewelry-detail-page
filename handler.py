@@ -65,23 +65,17 @@ def download_korean_font():
         return False
 
 def clean_claude_text(text):
-    """Enhanced Claude text cleaning to prevent JSON errors"""
+    """Enhanced Claude text cleaning to prevent JSON errors and Korean issues"""
     if not text:
         return ""
     
     # Convert to string and handle None
     text = str(text) if text is not None else ""
     
-    # CRITICAL: Remove all escape sequences and control characters FIRST
-    # This prevents JSON parsing errors
-    try:
-        # Try to decode unicode escapes
-        text = text.encode('utf-8').decode('unicode_escape')
-    except:
-        # If decode fails, continue with original text
-        pass
+    # CRITICAL FIX: DO NOT decode unicode_escape for Korean text
+    # This was causing Korean characters to break
     
-    # Replace all types of newlines and carriage returns
+    # Replace newlines and tabs with spaces
     text = text.replace('\\n', ' ')
     text = text.replace('\\r', ' ')
     text = text.replace('\\t', ' ')
@@ -89,19 +83,11 @@ def clean_claude_text(text):
     text = text.replace('\r', ' ')
     text = text.replace('\t', ' ')
     
-    # Remove backslashes that might cause issues
-    text = text.replace('\\', '')
+    # Clean quotes without breaking Korean
+    text = text.replace('\\"', '"')
+    text = text.replace("\\'", "'")
     
-    # Clean quotes
-    text = text.replace('\"', '"')
-    text = text.replace("\'", "'")
-    text = text.replace('\\\"', '"')
-    text = text.replace('\\\'', "'")
-    
-    # Remove any remaining control characters
-    text = ''.join(char for char in text if ord(char) >= 32 or char in '\t\n\r')
-    
-    # Remove markdown and other formatting
+    # Remove markdown formatting
     text = text.replace('#', '')
     text = text.replace('*', '')
     text = text.replace('_', '')
@@ -114,11 +100,11 @@ def clean_claude_text(text):
     if len(text) > 500:
         text = text[:497] + "..."
     
-    # Final safety check - remove any remaining problematic characters
-    safe_text = ''.join(char for char in text if char.isprintable() or char == ' ')
+    # Keep all printable characters including Korean
+    # Do NOT filter by ord(char) >= 32 as this breaks Korean
     
-    print(f"Cleaned text (first 100 chars): {safe_text[:100]}...")
-    return safe_text
+    print(f"Cleaned text (first 100 chars): {text[:100]}...")
+    return text
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
@@ -222,7 +208,7 @@ def apply_metal_color_filter(img, color_multipliers):
     return Image.merge('RGBA', (r, g, b, a))
 
 def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
-    """Create COLOR section for group 6 (image 9)"""
+    """Create COLOR section with CSS-style ring design inspired by HTML"""
     section_height = 1000
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -235,7 +221,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         if os.path.exists(font_path):
             try:
                 title_font = ImageFont.truetype(font_path, 72)
-                label_font = ImageFont.truetype(font_path, 24)
+                label_font = ImageFont.truetype(font_path, 32)
                 break
             except:
                 continue
@@ -244,135 +230,146 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
+    # Title
     title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(60, 60, 60))
     
+    # Color definitions
     colors = [
-        ("Yellow Gold", "#FFD700", (1.15, 1.10, 0.85)),
-        ("Rose Gold", "#F4C2C2", (1.15, 0.95, 0.90)),
-        ("White Gold", "#E5E4E2", (0.95, 0.95, 1.05)),
-        ("White", "#FFFFFF", (1.0, 1.0, 1.0))
+        ("Yellow Gold", "#FFD700", (255, 215, 0)),
+        ("Rose Gold", "#F4C2C2", (244, 194, 194)),
+        ("White Gold", "#E5E4E2", (229, 228, 226)),
+        ("White", "#FFFFFF", (240, 240, 240))  # Slightly gray for visibility
     ]
     
-    img_size = 400
-    h_spacing = 80
+    # Layout settings
+    ring_size = 400
+    h_spacing = 100
     v_spacing = 450
     
-    grid_width = 2 * img_size + h_spacing
+    grid_width = 2 * ring_size + h_spacing
     start_x = (width - grid_width) // 2
     start_y = 200
     
-    if ring_image:
-        try:
-            print(f"Processing ring image for COLOR section: {ring_image.size}")
-            
-            try:
-                ring_extracted = extract_ring_with_replicate(ring_image)
-                print("Successfully extracted ring with Replicate")
-            except Exception as e:
-                print(f"Replicate failed: {e}, using original image")
-                ring_extracted = ring_image.convert('RGBA')
-            
-            for i, (name, color_hex, color_mult) in enumerate(colors):
-                row = i // 2
-                col = i % 2
-                
-                x = start_x + col * (img_size + h_spacing)
-                y = start_y + row * v_spacing
-                
-                ring_bg = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 255))
-                
-                ring_aspect = ring_extracted.width / ring_extracted.height
-                if ring_aspect > 1:
-                    new_width = int(img_size * 0.75)
-                    new_height = int(new_width / ring_aspect)
-                else:
-                    new_height = int(img_size * 0.75)
-                    new_width = int(new_height * ring_aspect)
-                
-                resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
-                ring_resized = ring_extracted.resize((new_width, new_height), resample_filter)
-                
-                ring_tinted = apply_metal_color_filter(ring_resized, color_mult)
-                
-                shadow_offset = 5
-                shadow_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
-                shadow_draw = ImageDraw.Draw(shadow_img)
-                
-                shadow_x = (img_size - new_width) // 2 + shadow_offset
-                shadow_y = (img_size - new_height) // 2 + shadow_offset
-                
-                for j in range(3):
-                    opacity = 20 - j * 5
-                    shadow_draw.ellipse([
-                        shadow_x - j*2, 
-                        shadow_y - j*2, 
-                        shadow_x + new_width + j*2, 
-                        shadow_y + new_height + j*2
-                    ], fill=(180, 180, 180, opacity))
-                
-                combined = Image.alpha_composite(ring_bg, shadow_img)
-                
-                paste_x = (img_size - new_width) // 2
-                paste_y = (img_size - new_height) // 2
-                
-                temp_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
-                temp_img.paste(ring_tinted, (paste_x, paste_y), ring_tinted)
-                
-                final_ring = Image.alpha_composite(combined, temp_img)
-                
-                border_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
-                border_draw = ImageDraw.Draw(border_img)
-                border_draw.rectangle([0, 0, img_size-1, img_size-1], outline=(230, 230, 230, 255), width=1)
-                final_ring = Image.alpha_composite(final_ring, border_img)
-                
-                section_img.paste(final_ring, (x, y), final_ring)
-                
-                label_width, _ = get_text_dimensions(draw, name, label_font)
-                draw.text((x + img_size//2 - label_width//2, y + img_size + 30), 
-                         name, font=label_font, fill=(80, 80, 80))
-                
-                print(f"Successfully created {name} color option")
-        
-        except Exception as e:
-            print(f"Error processing ring image: {e}")
-            create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
-                                              img_size, h_spacing, v_spacing, label_font)
-    else:
-        print("No ring image provided, using fallback color circles")
-        create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
-                                          img_size, h_spacing, v_spacing, label_font)
-    
-    return section_img
-
-def create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
-                                       img_size, h_spacing, v_spacing, label_font):
-    """Fallback function to create color circles in Figma style"""
-    print("Creating fallback color circles")
-    for i, (name, color_hex, _) in enumerate(colors):
+    for i, (name, color_hex, color_rgb) in enumerate(colors):
         row = i // 2
         col = i % 2
         
-        x = start_x + col * (img_size + h_spacing)
+        x = start_x + col * (ring_size + h_spacing)
         y = start_y + row * v_spacing
         
-        draw.ellipse([x, y, x+img_size, y+img_size], 
-                    fill=color_hex, outline=(180, 180, 180), width=2)
+        # Create ring display area
+        ring_area = Image.new('RGBA', (ring_size, ring_size), (255, 255, 255, 255))
+        ring_draw = ImageDraw.Draw(ring_area)
         
-        inner_margin = img_size // 3
-        draw.ellipse([x+inner_margin, y+inner_margin, 
-                     x+img_size-inner_margin, y+img_size-inner_margin], 
-                    fill=(255, 255, 255), outline=(200, 200, 200), width=1)
+        # Draw CSS-style rings (inspired by HTML example)
+        # Large ring (left)
+        large_ring_size = 180
+        large_ring_x = ring_size // 2 - 50
+        large_ring_y = ring_size // 2 - 30
+        ring_thickness = 30
         
-        highlight_size = img_size // 8
-        draw.ellipse([x+highlight_size, y+highlight_size, 
-                     x+highlight_size*3, y+highlight_size*3], 
-                    fill=(255, 255, 255, 180))
+        # Outer circle
+        ring_draw.ellipse([
+            large_ring_x - large_ring_size//2,
+            large_ring_y - large_ring_size//2,
+            large_ring_x + large_ring_size//2,
+            large_ring_y + large_ring_size//2
+        ], fill=color_rgb, outline=None)
         
+        # Inner circle (to create ring shape)
+        inner_size = large_ring_size - 2 * ring_thickness
+        ring_draw.ellipse([
+            large_ring_x - inner_size//2,
+            large_ring_y - inner_size//2,
+            large_ring_x + inner_size//2,
+            large_ring_y + inner_size//2
+        ], fill=(255, 255, 255), outline=None)
+        
+        # Small ring (right)
+        small_ring_size = 140
+        small_ring_x = ring_size // 2 + 60
+        small_ring_y = ring_size // 2 + 40
+        small_ring_thickness = 24
+        
+        # Outer circle
+        ring_draw.ellipse([
+            small_ring_x - small_ring_size//2,
+            small_ring_y - small_ring_size//2,
+            small_ring_x + small_ring_size//2,
+            small_ring_y + small_ring_size//2
+        ], fill=color_rgb, outline=None)
+        
+        # Inner circle
+        inner_size_small = small_ring_size - 2 * small_ring_thickness
+        ring_draw.ellipse([
+            small_ring_x - inner_size_small//2,
+            small_ring_y - inner_size_small//2,
+            small_ring_x + inner_size_small//2,
+            small_ring_y + inner_size_small//2
+        ], fill=(255, 255, 255), outline=None)
+        
+        # Add diamond accents
+        # Large ring diamond
+        diamond_size = 12
+        diamond_x = large_ring_x
+        diamond_y = large_ring_y - large_ring_size//2 + ring_thickness//2
+        ring_draw.polygon([
+            (diamond_x, diamond_y - diamond_size//2),
+            (diamond_x + diamond_size//2, diamond_y),
+            (diamond_x, diamond_y + diamond_size//2),
+            (diamond_x - diamond_size//2, diamond_y)
+        ], fill=(255, 255, 255), outline=(200, 200, 200))
+        
+        # Small ring diamond
+        small_diamond_size = 8
+        small_diamond_x = small_ring_x
+        small_diamond_y = small_ring_y - small_ring_size//2 + small_ring_thickness//2
+        ring_draw.polygon([
+            (small_diamond_x, small_diamond_y - small_diamond_size//2),
+            (small_diamond_x + small_diamond_size//2, small_diamond_y),
+            (small_diamond_x, small_diamond_y + small_diamond_size//2),
+            (small_diamond_x - small_diamond_size//2, small_diamond_y)
+        ], fill=(255, 255, 255), outline=(200, 200, 200))
+        
+        # Add subtle shadow effect
+        shadow = Image.new('RGBA', (ring_size, ring_size), (255, 255, 255, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+        shadow_offset = 5
+        
+        # Shadow for large ring
+        shadow_draw.ellipse([
+            large_ring_x - large_ring_size//2 + shadow_offset,
+            large_ring_y - large_ring_size//2 + shadow_offset,
+            large_ring_x + large_ring_size//2 + shadow_offset,
+            large_ring_y + large_ring_size//2 + shadow_offset
+        ], fill=(200, 200, 200, 50))
+        
+        # Shadow for small ring
+        shadow_draw.ellipse([
+            small_ring_x - small_ring_size//2 + shadow_offset,
+            small_ring_y - small_ring_size//2 + shadow_offset,
+            small_ring_x + small_ring_size//2 + shadow_offset,
+            small_ring_y + small_ring_size//2 + shadow_offset
+        ], fill=(200, 200, 200, 50))
+        
+        # Combine shadow and rings
+        combined = Image.alpha_composite(shadow, ring_area)
+        
+        # Draw border
+        border_draw = ImageDraw.Draw(combined)
+        border_draw.rectangle([0, 0, ring_size-1, ring_size-1], outline=(230, 230, 230), width=1)
+        
+        # Paste to main image
+        section_img.paste(combined, (x, y), combined)
+        
+        # Draw label
         label_width, _ = get_text_dimensions(draw, name, label_font)
-        draw.text((x + img_size//2 - label_width//2, y + img_size + 30), 
+        draw.text((x + ring_size//2 - label_width//2, y + ring_size + 30), 
                  name, font=label_font, fill=(80, 80, 80))
+    
+    return section_img
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     """Create MD Talk text section from Claude-generated content"""
@@ -388,7 +385,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         if os.path.exists(font_path):
             try:
                 title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 20)
+                body_font = ImageFont.truetype(font_path, 24)
                 break
             except:
                 continue
@@ -403,29 +400,36 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
-        lines = cleaned_text.split(' ')
         
-        content_lines = []
+        # Split text into lines more naturally
+        words = cleaned_text.split()
+        lines = []
         current_line = []
-        for word in lines:
-            if word.strip():
+        max_width = width - 200  # Margin
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_width, _ = get_text_dimensions(draw, test_line, body_font)
+            
+            if test_width > max_width and current_line:
+                lines.append(' '.join(current_line))
+                current_line = [word]
+            else:
                 current_line.append(word)
-                if len(current_line) >= 10:
-                    content_lines.append(' '.join(current_line))
-                    current_line = []
+        
         if current_line:
-            content_lines.append(' '.join(current_line))
+            lines.append(' '.join(current_line))
     else:
-        content_lines = [
+        lines = [
             "고급스러운 텍스처와 균형 잡힌 디테일이",
             "감성의 깊이를 더하는 커플링입니다.",
             "섬세한 연결을 느끼고 싶은 커플에게 추천드립니다."
         ]
     
     y_pos = 200
-    line_height = 40
+    line_height = 45
     
-    for line in content_lines[:5]:
+    for line in lines[:8]:  # Limit to 8 lines
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -446,7 +450,7 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         if os.path.exists(font_path):
             try:
                 title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 18)
+                body_font = ImageFont.truetype(font_path, 20)
                 break
             except:
                 continue
@@ -461,20 +465,27 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
-        lines = cleaned_text.split(' ')
         
-        content_lines = []
+        # Split text into lines more naturally
+        words = cleaned_text.split()
+        lines = []
         current_line = []
-        for word in lines:
-            if word.strip():
+        max_width = width - 200  # Margin
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            test_width, _ = get_text_dimensions(draw, test_line, body_font)
+            
+            if test_width > max_width and current_line:
+                lines.append(' '.join(current_line))
+                current_line = [word]
+            else:
                 current_line.append(word)
-                if len(current_line) >= 12:
-                    content_lines.append(' '.join(current_line))
-                    current_line = []
+        
         if current_line:
-            content_lines.append(' '.join(current_line))
+            lines.append(' '.join(current_line))
     else:
-        content_lines = [
+        lines = [
             "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고",
             "여자 단품은 파베 세팅과 섬세한 밀그레인의 디테일",
             "화려하면서도 고급스러운 반영영을 표현합니다",
@@ -482,9 +493,9 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         ]
     
     y_pos = 200
-    line_height = 45
+    line_height = 50
     
-    for line in content_lines[:6]:
+    for line in lines[:10]:  # Limit to 10 lines
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -625,7 +636,6 @@ def process_single_image(input_data, group_number):
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
     draw = ImageDraw.Draw(detail_page)
-    # FIXED: 실제 route_number 사용
     actual_page_number = input_data.get('route_number', group_number)
     page_text = f"- {actual_page_number} -"
     
@@ -705,7 +715,6 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
         img.close()
     
     draw = ImageDraw.Draw(detail_page)
-    # FIXED: 실제 route_number 사용
     actual_page_number = input_data.get('route_number', group_number) if input_data else group_number
     
     if group_number == 5:
@@ -757,7 +766,7 @@ def process_text_section(input_data, group_number):
     """Process text-only sections (groups 7, 8) with Claude-generated content"""
     print(f"Processing text section for group {group_number}")
     
-    # FIXED: First check for base64 encoded text
+    # Check for base64 encoded text first
     claude_text_base64 = input_data.get('claude_text_base64', '')
     if claude_text_base64:
         try:
@@ -848,7 +857,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 
 def detect_group_number_from_input(input_data):
     """Enhanced group number detection with better group 1/2 differentiation"""
-    print("=== GROUP NUMBER DETECTION ENHANCED V116 ===")
+    print("=== GROUP NUMBER DETECTION ENHANCED V117 ===")
     
     # Method 1: Direct route_number - HIGHEST PRIORITY
     route_number = input_data.get('route_number', 0)
@@ -925,9 +934,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V116 with Complete Fix"""
+    """Main handler for detail page creation - V117 with Korean Text Fix"""
     try:
-        print(f"=== V116 Detail Page Handler - COMPLETE FIX ===")
+        print(f"=== V117 Detail Page Handler - KOREAN TEXT FIX ===")
         
         # Download Korean font if not exists - Enhanced version
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1055,7 +1064,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V116_COMPLETE_FIX",
+            "version": "V117_KOREAN_TEXT_FIX",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "detected_group_method": "route_number_priority",
@@ -1082,11 +1091,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V116_COMPLETE_FIX"
+                "version": "V117_KOREAN_TEXT_FIX"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V116 - COMPLETE FIX...")
+    print("Starting Detail Page Handler V117 - KOREAN TEXT FIX...")
     runpod.serverless.start({"handler": handler})
