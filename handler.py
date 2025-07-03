@@ -815,21 +815,38 @@ def process_text_section(input_data, group_number):
                 input_data.get('section_type') or '')
     
     print(f"Text type: {text_type}")
+    print(f"Group number: {group_number}")
     print(f"Cleaned Claude text preview: {claude_text[:100] if claude_text else 'No text provided'}...")
     
-    if group_number == 7 or text_type == 'md_talk':
+    # CRITICAL FIX: Ensure correct text section based on group_number
+    if group_number == 7:
+        print("Creating MD TALK section for group 7")
         text_section = create_ai_generated_md_talk(claude_text)
         section_type = "md_talk"
-    elif group_number == 8 or text_type == 'design_point':
+    elif group_number == 8:
+        print("Creating DESIGN POINT section for group 8")
         text_section = create_ai_generated_design_point(claude_text)
         section_type = "design_point"
     else:
-        if group_number == 7:
+        # Secondary check using text_type
+        if text_type == 'md_talk':
+            print(f"Creating MD TALK section based on text_type for group {group_number}")
             text_section = create_ai_generated_md_talk(claude_text)
             section_type = "md_talk"
-        else:
+        elif text_type == 'design_point':
+            print(f"Creating DESIGN POINT section based on text_type for group {group_number}")
             text_section = create_ai_generated_design_point(claude_text)
             section_type = "design_point"
+        else:
+            # Default based on group number
+            if group_number == 7:
+                print(f"Defaulting to MD TALK for group {group_number}")
+                text_section = create_ai_generated_md_talk(claude_text)
+                section_type = "md_talk"
+            else:
+                print(f"Defaulting to DESIGN POINT for group {group_number}")
+                text_section = create_ai_generated_design_point(claude_text)
+                section_type = "design_point"
     
     return text_section, section_type
 
@@ -875,8 +892,8 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """Enhanced group number detection with perfect group 6 handling"""
-    print("=== GROUP NUMBER DETECTION V121 ===")
+    """Enhanced group number detection with perfect group 6 handling and group 5 fix"""
+    print("=== GROUP NUMBER DETECTION V122 ===")
     
     # CRITICAL: Check for image9 FIRST - This is ALWAYS group 6
     if 'image9' in input_data:
@@ -898,6 +915,16 @@ def detect_group_number_from_input(input_data):
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
         print(f"Found route_number: {route_number}")
+        # FIX: Special handling for route 5 with images
+        if route_number == 5:
+            # Check if this is really a gallery (has images 7 and 8)
+            if 'image7' in input_data and 'image8' in input_data:
+                print("Route 5 with image7 and image8 - confirming as GROUP 5 gallery")
+                return 5
+            # Check if it has multiple images
+            elif 'image' in input_data and ';' in str(input_data.get('image', '')):
+                print("Route 5 with multiple images - confirming as GROUP 5 gallery")
+                return 5
         return route_number
     
     # Method 3: group_number
@@ -913,7 +940,12 @@ def detect_group_number_from_input(input_data):
             print(f"Found {key} key, assuming group {i}")
             return i
     
-    # Method 5: Check text_type for groups 7, 8
+    # Method 5: Check for gallery specifically (images 7 and 8)
+    if 'image7' in input_data and 'image8' in input_data:
+        print("Found image7 AND image8 - this is GROUP 5 gallery")
+        return 5
+    
+    # Method 6: Check text_type for groups 7, 8
     text_type = input_data.get('text_type', '')
     if text_type == 'md_talk':
         print("Found md_talk text_type, assuming group 7")
@@ -922,7 +954,7 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type, assuming group 8")
         return 8
     
-    # Method 6: Check for Claude text presence (base64 or regular)
+    # Method 7: Check for Claude text presence (base64 or regular)
     has_claude_text = bool(input_data.get('claude_text') or input_data.get('claude_text_base64'))
     if has_claude_text:
         print("Found claude_text, checking text_type...")
@@ -935,7 +967,7 @@ def detect_group_number_from_input(input_data):
             print("Has claude_text but no text_type, defaulting to group 7 (MD Talk)")
             return 7
     
-    # Method 7: Enhanced URL analysis
+    # Method 8: Enhanced URL analysis
     image_data = input_data.get('image', '')
     if image_data:
         print(f"Analyzing image URLs: {image_data[:200]}...")
@@ -948,11 +980,15 @@ def detect_group_number_from_input(input_data):
             
             if url_count == 2:
                 # Could be groups 3, 4, or 5
-                print("2 URLs detected - likely group 3 or 5")
-                return 3  # Default to group 3 for 2 images
+                # Check if we have any hints about group 5
+                if 'gallery' in all_values or '갤러리' in all_values:
+                    print("2 URLs with gallery keyword - assuming group 5")
+                    return 5
+                print("2 URLs detected - defaulting to group 3")
+                return 3
             elif url_count == 3:
                 print("3 URLs detected, assuming group 4")
-                return 4  # Default to group 4 for 3 images
+                return 4
         else:
             # Single URL - could be groups 1, 2, 6, 7, 8
             print("Single URL detected")
@@ -968,9 +1004,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V121 ULTIMATE"""
+    """Main handler for detail page creation - V122 with all fixes"""
     try:
-        print(f"=== V121 Detail Page Handler - ULTIMATE COLOR FIX ===")
+        print(f"=== V122 Detail Page Handler - COMPLETE FIX ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -985,7 +1021,7 @@ def handler(event):
         
         print(f"Input keys: {list(input_data.keys())}")
         
-        # Enhanced group number detection - V121 with perfect group 6 handling
+        # Enhanced group number detection - V122 with all fixes
         group_number = detect_group_number_from_input(input_data)
         route_number = input_data.get('route_number', group_number)
         
@@ -1110,7 +1146,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V121_ULTIMATE",
+            "version": "V122_COMPLETE_FIX",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "detected_group_method": "image9_priority" if 'image9' in input_data else "route_number_priority",
@@ -1137,11 +1173,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V121_ULTIMATE"
+                "version": "V122_COMPLETE_FIX"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V121 - ULTIMATE COLOR FIX...")
+    print("Starting Detail Page Handler V122 - COMPLETE FIX...")
     runpod.serverless.start({"handler": handler})
