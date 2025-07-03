@@ -868,4 +868,174 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation - V110 FINAL FIX"""
     try:
-        print(f"=== V110 Detail Page Handler -
+        print(f"=== V110 Detail Page Handler - FINAL 8 Groups ===")
+        
+        # Find input data
+        input_data = event.get('input', event)
+        print(f"Input keys: {list(input_data.keys())}")
+        print(f"Full input data: {json.dumps(input_data, indent=2)}")
+        
+        # Get route/group number - CRITICAL for Make.com
+        route_number = input_data.get('route_number', 0)
+        group_number = input_data.get('group_number', route_number)
+        
+        print(f"Initial group_number: {group_number}, route_number: {route_number}")
+        
+        # CRITICAL FIX: Handle Make.com's 'image' key format
+        # Make.com sends: {"input": {"image": "URL1;URL2", "route_number": 3}}
+        if 'image' in input_data and input_data['image']:
+            print(f"Found 'image' key with value: {input_data['image'][:100]}...")
+            image_data = input_data['image']
+            
+            # Check if semicolon-separated (multiple URLs)
+            if ';' in image_data:
+                # Multiple URLs for groups 3, 4, 5
+                urls = image_data.split(';')
+                input_data['images'] = []
+                for url in urls:
+                    url = url.strip()
+                    if url:
+                        input_data['images'].append({'url': url})
+                print(f"Converted 'image' to {len(input_data['images'])} images array")
+            else:
+                # Single URL for groups 1, 2, 6, 7, 8
+                input_data['url'] = image_data
+                print(f"Set single URL from 'image' key")
+        
+        # Make.com sends data with specific keys, check for them
+        elif group_number == 0:
+            # Try to detect from Make.com data structure
+            if 'image1' in input_data:
+                group_number = 1
+            elif 'image2' in input_data:
+                group_number = 2
+            elif 'image3' in input_data:
+                group_number = 3
+            elif 'image4' in input_data:
+                group_number = 4
+            elif 'image5' in input_data:
+                group_number = 5
+            elif 'image6' in input_data:
+                group_number = 6
+            elif 'image7' in input_data:
+                group_number = 7
+            elif 'image8' in input_data:
+                group_number = 8
+        
+        print(f"Final group_number: {group_number}")
+        
+        # Handle different input formats from Make.com
+        if 'combined_urls' in input_data and input_data['combined_urls']:
+            # URLs are semicolon-separated
+            urls = input_data['combined_urls'].split(';')
+            input_data['images'] = []
+            for url in urls:
+                url = url.strip()
+                if url:
+                    input_data['images'].append({'url': url})
+            print(f"Converted combined_urls to {len(input_data['images'])} images")
+        
+        # Also check for Make.com specific image keys
+        elif f'image{group_number}' in input_data:
+            # Single URL from Make.com
+            image_url = input_data[f'image{group_number}']
+            if ';' in image_url:
+                # Multiple URLs
+                urls = image_url.split(';')
+                input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
+            else:
+                # Single URL
+                input_data['url'] = image_url
+        
+        # ===== CRITICAL ORDER FIX: Check Group 6 FIRST! =====
+        if group_number == 6:
+            # Group 6: COLOR section ONLY (using image 9)
+            print("=== Processing Group 6: COLOR section (image 9) ===")
+            detail_page = process_color_section(input_data)
+            page_type = "color_section"
+            
+        elif group_number in [7, 8]:
+            # Groups 7, 8: Text-only sections
+            print(f"=== Processing Group {group_number}: Text-only section ===")
+            detail_page, section_type = process_text_section(input_data, group_number)
+            page_type = f"text_section_{section_type}"
+            
+        elif group_number in [1, 2]:
+            # Groups 1, 2: Individual images
+            print(f"=== Processing Group {group_number}: Individual image ===")
+            detail_page = process_single_image(input_data, group_number)
+            page_type = "individual"
+            
+        elif group_number in [3, 4, 5]:
+            # Groups 3, 4, 5: Combined images with sections
+            print(f"=== Processing Group {group_number}: Combined images ===")
+            if 'images' not in input_data or not isinstance(input_data['images'], list):
+                # Convert single image to images array
+                input_data['images'] = [input_data]
+            
+            # CRITICAL: Group 5 should only have 2 images (7, 8), NOT 3!
+            if group_number == 5 and len(input_data['images']) > 2:
+                print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
+                input_data['images'] = input_data['images'][:2]
+            
+            detail_page = process_combined_images(input_data['images'], group_number)
+            page_type = "combined_with_text"
+        
+        else:
+            raise ValueError(f"Invalid group number: {group_number}")
+        
+        # Convert to base64
+        buffered = BytesIO()
+        detail_page.save(buffered, format="PNG", optimize=True)
+        detail_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        
+        # Remove padding for Make.com
+        detail_base64_no_padding = detail_base64.rstrip('=')
+        
+        print(f"Detail page created: {detail_page.size}")
+        print(f"Base64 length: {len(detail_base64_no_padding)} chars")
+        
+        # Prepare metadata
+        metadata = {
+            "enhanced_image": detail_base64_no_padding,
+            "status": "success",
+            "page_type": page_type,
+            "page_number": group_number,
+            "route_number": route_number,
+            "dimensions": {
+                "width": detail_page.width,
+                "height": detail_page.height
+            },
+            "version": "V110_FINAL_8_GROUPS",
+            "image_count": len(input_data.get('images', [input_data])),
+            "processing_time": "calculated_later"
+        }
+        
+        # Send to webhook if configured
+        file_name = f"detail_group_{group_number}.png"
+        webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, route_number, metadata)
+        
+        # Return response (Make.com format)
+        return {
+            "output": metadata
+        }
+        
+    except Exception as e:
+        error_msg = f"Detail page creation failed: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        
+        return {
+            "output": {
+                "error": error_msg,
+                "status": "error",
+                "traceback": traceback.format_exc(),
+                "version": "V110_FINAL_8_GROUPS"
+            }
+        }
+
+# RunPod handler
+if __name__ == "__main__":
+    print("Starting Detail Page Handler V110 - FINAL 8 Groups...")
+    runpod.serverless.start({"handler": handler})
