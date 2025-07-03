@@ -25,6 +25,40 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pph
 # FIXED WIDTH FOR ALL IMAGES
 FIXED_WIDTH = 1200
 
+def clean_claude_text(text):
+    """Clean Claude text to prevent JSON errors"""
+    if not text:
+        return ""
+    
+    # Remove all problematic characters that cause JSON errors
+    text = str(text)
+    
+    # Step 1: Remove backslashes (주요 문제 원인)
+    text = text.replace('\\', '')
+    
+    # Step 2: Fix quotes - replace escaped quotes with normal quotes
+    text = text.replace("\\'", "'")
+    text = text.replace('\\"', '"')
+    
+    # Step 3: Remove or replace other problematic characters
+    text = text.replace('\t', ' ')  # tabs to spaces
+    text = text.replace('\r', ' ')  # carriage returns
+    text = text.replace('\n', ' ')  # newlines to spaces
+    
+    # Step 4: Remove markdown headers and extra symbols
+    text = text.replace('#', '')
+    text = text.replace('*', '')
+    
+    # Step 5: Clean up multiple spaces
+    text = ' '.join(text.split())
+    
+    # Step 6: Ensure safe length
+    if len(text) > 500:
+        text = text[:500] + "..."
+    
+    print(f"Cleaned text: {text[:100]}...")
+    return text
+
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
     try:
@@ -346,22 +380,34 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 100), title, font=title_font, fill=(40, 40, 40))
     
-    # Process Claude text
+    # Process Claude text - CLEAN VERSION
     if claude_text:
-        lines = claude_text.split('\n')
-        content_lines = [line.strip() for line in lines if line.strip() and 'MD TALK' not in line.upper()]
+        cleaned_text = clean_claude_text(claude_text)
+        lines = cleaned_text.split(' ')
+        
+        # Group words into lines (max 10 words per line)
+        content_lines = []
+        current_line = []
+        for word in lines:
+            if word.strip():
+                current_line.append(word)
+                if len(current_line) >= 10:
+                    content_lines.append(' '.join(current_line))
+                    current_line = []
+        if current_line:
+            content_lines.append(' '.join(current_line))
     else:
         content_lines = [
             "고급스러운 텍스처와 균형 잡힌 디테일이",
             "감성의 깊이를 더하는 커플링입니다.",
-            "'섬세한 연결'을 느끼고 싶은 커플에게 추천드립니다."
+            "섬세한 연결을 느끼고 싶은 커플에게 추천드립니다."
         ]
     
     # Draw content lines
     y_pos = 200
     line_height = 40
     
-    for line in content_lines:
+    for line in content_lines[:5]:  # Max 5 lines to prevent overflow
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -396,23 +442,35 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(40, 40, 40))
     
-    # Process Claude text
+    # Process Claude text - CLEAN VERSION
     if claude_text:
-        lines = claude_text.split('\n')
-        content_lines = [line.strip() for line in lines if line.strip() and 'DESIGN' not in line.upper()]
+        cleaned_text = clean_claude_text(claude_text)
+        lines = cleaned_text.split(' ')
+        
+        # Group words into lines (max 12 words per line)
+        content_lines = []
+        current_line = []
+        for word in lines:
+            if word.strip():
+                current_line.append(word)
+                if len(current_line) >= 12:
+                    content_lines.append(' '.join(current_line))
+                    current_line = []
+        if current_line:
+            content_lines.append(' '.join(current_line))
     else:
         content_lines = [
-            "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고,",
+            "리프링 무광 텍스처와 유광 라인의 조화가 견고한 감성을 전하고",
             "여자 단품은 파베 세팅과 섬세한 밀그레인의 디테일",
-            "화려하면서도 고급스러운 반영영을 표현합니다.",
-            "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다."
+            "화려하면서도 고급스러운 반영영을 표현합니다",
+            "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다"
         ]
     
     # Draw content lines
     y_pos = 200
     line_height = 45
     
-    for line in content_lines:
+    for line in content_lines[:6]:  # Max 6 lines to prevent overflow
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -684,17 +742,21 @@ def process_text_section(input_data, group_number):
     """Process text-only sections (groups 7, 8) with Claude-generated content"""
     print(f"Processing text section for group {group_number}")
     
-    # Get Claude-generated text
+    # Get Claude-generated text and CLEAN IT
     claude_text = (input_data.get('claude_text') or 
                   input_data.get('text_content') or 
                   input_data.get('ai_text') or 
                   input_data.get('generated_text') or '')
     
+    # CRITICAL: Clean the text first to prevent JSON errors
+    if claude_text:
+        claude_text = clean_claude_text(claude_text)
+    
     text_type = (input_data.get('text_type') or 
                 input_data.get('section_type') or '')
     
     print(f"Text type: {text_type}")
-    print(f"Claude text preview: {claude_text[:200] if claude_text else 'No text provided'}...")
+    print(f"Cleaned Claude text preview: {claude_text[:100] if claude_text else 'No text provided'}...")
     
     if group_number == 7 or text_type == 'md_talk':
         # Group 7: MD Talk text section
@@ -758,7 +820,9 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """Enhanced group number detection from various input formats"""
+    """Enhanced group number detection from various input formats with URL analysis"""
+    print("=== GROUP NUMBER DETECTION ENHANCED ===")
+    
     # Method 1: Direct route_number
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
@@ -786,42 +850,72 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type, assuming group 8")
         return 8
     
-    # Method 5: Check for image URLs pattern
+    # Method 5: ENHANCED URL analysis
     image_data = input_data.get('image', '')
     if image_data:
+        print(f"Analyzing image URLs: {image_data[:200]}...")
+        
         if ';' in image_data:
-            # Multiple URLs usually mean groups 3, 4, or 5
+            # Multiple URLs - analyze the file IDs to determine group
             urls = image_data.split(';')
             url_count = len([url for url in urls if url.strip()])
             print(f"Found {url_count} URLs in image data")
             
-            # Try to guess based on URL count (this is a fallback)
+            # Extract file IDs and try to match patterns
+            file_ids = []
+            for url in urls:
+                file_id = extract_file_id_from_url(url.strip())
+                if file_id:
+                    file_ids.append(file_id)
+            
+            print(f"Extracted file IDs: {file_ids}")
+            
+            # If we have 2 URLs, could be groups 3, 4, or 5
             if url_count == 2:
-                # Could be group 3, 4, or 5 - default to 3
-                print("2 URLs detected, defaulting to group 3")
-                return 3
+                # Check if there's text_type to help determine
+                if text_type == 'md_talk':
+                    return 7  # MD Talk group
+                elif text_type == 'design_point':
+                    return 8  # Design Point group
+                else:
+                    # Default to group 3 for 2 images
+                    print("2 URLs detected, defaulting to group 3")
+                    return 3
             elif url_count == 3:
-                print("3 URLs detected, defaulting to group 5")
+                print("3 URLs detected, assuming group 5")
                 return 5
         else:
-            # Single URL usually means groups 1, 2, 6, 7, 8
-            print("Single URL detected, defaulting to group 1")
-            return 1
+            # Single URL - could be groups 1, 2, 6, 7, 8
+            print("Single URL detected")
+            
+            # Check if there's Claude text to determine if it's text section
+            if input_data.get('claude_text') or text_type:
+                if text_type == 'md_talk':
+                    return 7
+                elif text_type == 'design_point':
+                    return 8
+                else:
+                    # Has text but no type - default to MD Talk
+                    return 7
+            else:
+                # No text, could be image groups 1, 2, or 6
+                print("Single URL, no text - defaulting to group 1")
+                return 1
     
     print("Could not detect group number from input")
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V111 CLEAN VERSION"""
+    """Main handler for detail page creation - V112 PERFECT TEXT CLEANING + GROUP MAPPING"""
     try:
-        print(f"=== V111 Detail Page Handler - CLEAN VERSION (NO TEXT SECTIONS IN 3,4) ===")
+        print(f"=== V112 Detail Page Handler - PERFECT TEXT CLEANING + GROUP MAPPING ===")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         print(f"Full input data: {json.dumps(input_data, indent=2)}")
         
-        # ENHANCED group number detection
+        # ENHANCED group number detection with URL analysis
         group_number = detect_group_number_from_input(input_data)
         route_number = input_data.get('route_number', group_number)
         
@@ -835,7 +929,6 @@ def handler(event):
             raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
         
         # CRITICAL FIX: Handle Make.com's 'image' key format
-        # Make.com sends: {"input": {"image": "URL1;URL2", "route_number": 3}}
         if 'image' in input_data and input_data['image']:
             print(f"Found 'image' key with value: {input_data['image'][:100]}...")
             image_data = input_data['image']
@@ -886,8 +979,8 @@ def handler(event):
             page_type = "color_section"
             
         elif group_number in [7, 8]:
-            # Groups 7, 8: Text-only sections
-            print(f"=== Processing Group {group_number}: Text-only section ===")
+            # Groups 7, 8: Text-only sections with CLEANED TEXT
+            print(f"=== Processing Group {group_number}: Text-only section with CLEANED TEXT ===")
             detail_page, section_type = process_text_section(input_data, group_number)
             page_type = f"text_section_{section_type}"
             
@@ -937,9 +1030,10 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V111_CLEAN_NO_TEXT_SECTIONS",
+            "version": "V112_PERFECT_TEXT_CLEANING",
             "image_count": len(input_data.get('images', [input_data])),
-            "processing_time": "calculated_later"
+            "processing_time": "calculated_later",
+            "detected_group_method": "enhanced_url_analysis"
         }
         
         # Send to webhook if configured
@@ -962,11 +1056,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V111_CLEAN_NO_TEXT_SECTIONS"
+                "version": "V112_PERFECT_TEXT_CLEANING"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V111 - CLEAN VERSION...")
+    print("Starting Detail Page Handler V112 - PERFECT TEXT CLEANING...")
     runpod.serverless.start({"handler": handler})
