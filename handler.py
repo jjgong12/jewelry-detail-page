@@ -892,40 +892,69 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """Enhanced group number detection with perfect group 6 handling and group 5 fix"""
-    print("=== GROUP NUMBER DETECTION V122 ===")
+    """CORRECT group number detection - V126 FINAL"""
+    print("=== GROUP NUMBER DETECTION V126 - CORRECT VERSION ===")
+    print(f"Full input_data keys: {sorted(input_data.keys())}")
     
-    # CRITICAL: Check for image9 FIRST - This is ALWAYS group 6
-    if 'image9' in input_data:
-        print("Found image9 key - DEFINITIVE GROUP 6 (COLOR section)")
-        return 6
-    
-    # Check for group6 key specifically
-    if 'group6' in input_data:
-        print("Found group6 key - DEFINITIVE GROUP 6")
-        return 6
-    
-    # Check if color is mentioned in any field
-    all_values = str(input_data).lower()
-    if 'color' in all_values or '컬러' in all_values:
-        print("Found COLOR keyword - assuming GROUP 6")
-        return 6
-    
-    # Method 2: Direct route_number - HIGH PRIORITY (but after group 6 checks)
+    # PRIORITY 1: Direct route_number - TRUST IT!
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
-        print(f"Found route_number: {route_number}")
-        # FIX: Special handling for route 5 with images
-        if route_number == 5:
-            # Check if this is really a gallery (has images 7 and 8)
-            if 'image7' in input_data and 'image8' in input_data:
-                print("Route 5 with image7 and image8 - confirming as GROUP 5 gallery")
-                return 5
-            # Check if it has multiple images
-            elif 'image' in input_data and ';' in str(input_data.get('image', '')):
-                print("Route 5 with multiple images - confirming as GROUP 5 gallery")
-                return 5
+        print(f"Found route_number: {route_number} - USING IT DIRECTLY")
         return route_number
+    
+    # PRIORITY 2: Check for image9 (Google Script Group 6)
+    if 'image9' in input_data:
+        print("Found image9 - GROUP 6 (COLOR)")
+        return 6
+    
+    # PRIORITY 3: Check for group keys
+    if 'group6' in input_data or 'group_6' in input_data:
+        print("Found group6 key - GROUP 6")
+        return 6
+    
+    # PRIORITY 4: Check for specific image keys
+    for i in range(1, 10):
+        key = f'image{i}'
+        if key in input_data:
+            print(f"Found {key} key - assuming group {i}")
+            return i
+    
+    # PRIORITY 5: group_number field
+    group_number = input_data.get('group_number', 0)
+    if group_number > 0:
+        print(f"Found group_number: {group_number}")
+        return group_number
+    
+    # PRIORITY 6: Check text_type for groups 7, 8
+    text_type = input_data.get('text_type', '')
+    if text_type == 'md_talk':
+        print("Found md_talk text_type - GROUP 7")
+        return 7
+    elif text_type == 'design_point':
+        print("Found design_point text_type - GROUP 8")
+        return 8
+    
+    # PRIORITY 7: Analyze URLs
+    if 'image' in input_data:
+        image_value = str(input_data.get('image', ''))
+        if ';' in image_value:
+            urls = [u.strip() for u in image_value.split(';') if u.strip()]
+            url_count = len(urls)
+            print(f"Found {url_count} URLs in 'image' field")
+            
+            if url_count == 2:
+                # Could be groups 3 or 5
+                print("2 URLs - could be group 3 or 5")
+                return 3  # Default
+            elif url_count >= 3:
+                print("3+ URLs - likely group 4")
+                return 4
+        else:
+            print("Single URL - could be group 1, 2, or 6")
+            return 1  # Default
+    
+    print("WARNING: Could not determine group number")
+    return 0
     
     # Method 3: group_number
     group_number = input_data.get('group_number', 0)
@@ -937,7 +966,14 @@ def detect_group_number_from_input(input_data):
     for i in range(1, 9):
         key = f'image{i}'
         if key in input_data:
-            print(f"Found {key} key, assuming group {i}")
+            print(f"Found {key} key")
+            # Special check for image6 - might be COLOR section
+            if i == 6:
+                image_value = str(input_data.get(key, ''))
+                if ';' not in image_value:
+                    print("image6 with single image - treating as GROUP 6 COLOR")
+                    return 6
+            print(f"Assuming group {i}")
             return i
     
     # Method 5: Check for gallery specifically (images 7 and 8)
@@ -993,6 +1029,11 @@ def detect_group_number_from_input(input_data):
             # Single URL - could be groups 1, 2, 6, 7, 8
             print("Single URL detected")
             
+            # Check if this might be COLOR section
+            if 'ring' in all_values or '반지' in all_values or 'jewelry' in all_values:
+                print("Single URL with ring/jewelry keyword - assuming GROUP 6")
+                return 6
+            
             # For single images without other indicators
             print("Single URL, no clear indicators - defaulting to group 1")
             return 1
@@ -1004,9 +1045,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V122 with all fixes"""
+    """Main handler for detail page creation - V126 CORRECT"""
     try:
-        print(f"=== V122 Detail Page Handler - COMPLETE FIX ===")
+        print(f"=== V126 Detail Page Handler - CORRECT VERSION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1019,22 +1060,14 @@ def handler(event):
         # Get input data
         input_data = event.get('input', event)
         
-        print(f"Input keys: {list(input_data.keys())}")
+        print(f"=== INCOMING DATA ===")
+        print(f"Keys: {sorted(input_data.keys())}")
+        print(f"route_number: {input_data.get('route_number', 'NOT FOUND')}")
         
-        # Enhanced group number detection - V122 with all fixes
+        # Simple group detection - TRUST THE ROUTE NUMBER!
         group_number = detect_group_number_from_input(input_data)
-        route_number = input_data.get('route_number', group_number)
         
-        print(f"DETECTED: group_number={group_number}, route_number={route_number}")
-        
-        # SPECIAL HANDLING: Group 6 is ALWAYS group 6, regardless of route_number
-        if group_number == 6:
-            print("GROUP 6 LOCKED - This is COLOR section, ignoring route_number")
-            # Keep group_number as 6
-        elif route_number > 0 and route_number != group_number:
-            # Only override for non-group-6 cases
-            print(f"OVERRIDE: Using route_number {route_number} instead of detected group {group_number}")
-            group_number = route_number
+        print(f"\n=== FINAL GROUP: {group_number} ===")
         
         # Validate group number
         if group_number == 0:
@@ -1042,8 +1075,6 @@ def handler(event):
         
         if group_number < 1 or group_number > 8:
             raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
-        
-        print(f"FINAL GROUP NUMBER: {group_number}")
         
         # Handle Make.com's 'image' key format
         if 'image' in input_data and input_data['image']:
@@ -1079,32 +1110,36 @@ def handler(event):
                 urls = image_url.split(';')
                 input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
             else:
-                input_data['url'] = image_url
-        
+                input_data['url'] = image_url's not a misrouted COLOR section
+                if route_number == 5 and 'image7' not in input_data and 'image8' not in input_data:
+                    print("Route 5 without gallery images - forcing GROUP 6")
+                    group_number = 6
+                else:
+                    group_number = route_number
         # Process based on group number
         if group_number == 6:
-            print("=== GROUP 6 CONFIRMED: Processing COLOR section ===")
+            print("=== Processing GROUP 6: COLOR section ===")
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
         elif group_number in [7, 8]:
-            print(f"=== GROUP {group_number} CONFIRMED: Processing Text-only section ===")
+            print(f"=== Processing GROUP {group_number}: Text-only section ===")
             detail_page, section_type = process_text_section(input_data, group_number)
             page_type = f"text_section_{section_type}"
             
         elif group_number in [1, 2]:
-            print(f"=== GROUP {group_number} CONFIRMED: Processing Individual image ===")
+            print(f"=== Processing GROUP {group_number}: Individual image ===")
             detail_page = process_single_image(input_data, group_number)
             page_type = "individual"
             
         elif group_number in [3, 4, 5]:
-            print(f"=== GROUP {group_number} CONFIRMED: Processing CLEAN Combined images ===")
+            print(f"=== Processing GROUP {group_number}: Combined images ===")
             if 'images' not in input_data or not isinstance(input_data['images'], list):
                 input_data['images'] = [input_data]
             
-            # CRITICAL FIX FOR GROUP 5
+            # Special handling for GROUP 5
             if group_number == 5:
-                # Always pass the full input_data to handle image7 and image8
+                # Pass full input_data to handle image7 and image8
                 detail_page = process_clean_combined_images(input_data.get('images', []), group_number, input_data)
             else:
                 detail_page = process_clean_combined_images(input_data['images'], group_number, input_data)
@@ -1125,37 +1160,29 @@ def handler(event):
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Prepare metadata - special handling for group 6
-        if group_number == 6:
-            # ALWAYS force page_number to 6 for color section
-            display_page_number = 6
-            display_route_number = 6
-        else:
-            display_page_number = route_number if route_number > 0 else group_number
-            display_route_number = route_number
+        # Simple metadata
+        route_number = input_data.get('route_number', group_number)
         
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
             "page_type": page_type,
-            "page_number": display_page_number,
-            "route_number": display_route_number,
-            "actual_group": group_number,  # For debugging
-            "original_route": route_number,  # For debugging
+            "page_number": group_number,
+            "route_number": route_number,
+            "actual_group": group_number,
             "dimensions": {
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V122_COMPLETE_FIX",
+            "version": "V126_CORRECT",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
-            "detected_group_method": "image9_priority" if 'image9' in input_data else "route_number_priority",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
         }
         
         # Send to webhook if configured
-        file_name = f"detail_group_{display_page_number}.png"
-        webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, display_route_number, metadata)
+        file_name = f"detail_group_{group_number}.png"
+        webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, route_number, metadata)
         
         # Return response (Make.com format)
         return {
@@ -1173,11 +1200,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V122_COMPLETE_FIX"
+                "version": "V126_CORRECT"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V122 - COMPLETE FIX...")
+    print("Starting Detail Page Handler V126 - CORRECT VERSION...")
     runpod.serverless.start({"handler": handler})
