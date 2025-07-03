@@ -10,7 +10,6 @@ import re
 from datetime import datetime
 import numpy as np
 import math
-import subprocess  # 추가!
 
 # Try to import replicate if available
 try:
@@ -27,21 +26,40 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pph
 FIXED_WIDTH = 1200
 
 def download_korean_font():
-    """Download Korean font for text rendering"""
+    """Download Korean font for text rendering - Enhanced version"""
     try:
-        # Try to download the font
-        cmd = [
-            'wget', '-q', '-O', '/tmp/NanumMyeongjo.ttf',
-            'https://github.com/naver/nanumfont/raw/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        font_path = '/tmp/NanumMyeongjo.ttf'
         
-        if result.returncode == 0:
-            print("Korean font downloaded successfully")
+        # Check if already exists
+        if os.path.exists(font_path):
+            print("Korean font already exists")
+            return True
+        
+        # Try to download using requests instead of wget
+        font_url = 'https://github.com/naver/nanumfont/raw/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
+        print(f"Downloading Korean font from: {font_url}")
+        
+        response = requests.get(font_url, timeout=30)
+        if response.status_code == 200:
+            with open(font_path, 'wb') as f:
+                f.write(response.content)
+            print("Korean font downloaded successfully using requests")
             return True
         else:
-            print(f"Failed to download Korean font: {result.stderr}")
-            return False
+            print(f"Failed to download Korean font: HTTP {response.status_code}")
+            
+            # Fallback: try alternative URL
+            alt_url = 'https://cdn.jsdelivr.net/gh/naver/nanumfont@master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
+            print(f"Trying alternative URL: {alt_url}")
+            response = requests.get(alt_url, timeout=30)
+            if response.status_code == 200:
+                with open(font_path, 'wb') as f:
+                    f.write(response.content)
+                print("Korean font downloaded successfully from CDN")
+                return True
+                
+        return False
+        
     except Exception as e:
         print(f"Error downloading Korean font: {str(e)}")
         return False
@@ -634,9 +652,21 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
     """Process combined images WITHOUT text sections (groups 3, 4, 5)"""
     print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
-    if group_number == 5 and len(images_data) != 2:
-        print(f"WARNING: Group 5 should have exactly 2 images, got {len(images_data)}")
-        images_data = images_data[:2]
+    # CRITICAL FIX: For group 5, we need images 7 and 8
+    if group_number == 5:
+        print("=== GROUP 5 SPECIAL HANDLING ===")
+        print(f"Need to get images 7 and 8 from input_data")
+        
+        # Check if we have the correct image keys
+        if 'image7' in input_data and 'image8' in input_data:
+            print("Found image7 and image8 keys")
+            images_data = []
+            for key in ['image7', 'image8']:
+                images_data.append({'url': input_data[key]})
+            print(f"Created images_data with 2 entries for group 5")
+        elif len(images_data) > 2:
+            print(f"WARNING: Group 5 has {len(images_data)} images, using first 2 only")
+            images_data = images_data[:2]
     
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
@@ -706,7 +736,14 @@ def process_color_section(input_data):
     """Process group 6 - COLOR section with ring image (image 9 only)"""
     print("=== PROCESSING GROUP 6 COLOR SECTION ===")
     
-    img = get_image_from_input(input_data)
+    # CRITICAL FIX: For group 6, we need image 9
+    if 'image9' in input_data:
+        print("Found image9 key for COLOR section")
+        img_data = {'url': input_data['image9']}
+        img = get_image_from_input(img_data)
+    else:
+        img = get_image_from_input(input_data)
+    
     print(f"Ring image for color section: {img.size}, mode: {img.mode}")
     
     color_section = create_color_options_section(ring_image=img)
@@ -811,7 +848,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 
 def detect_group_number_from_input(input_data):
     """Enhanced group number detection with better group 1/2 differentiation"""
-    print("=== GROUP NUMBER DETECTION ENHANCED V115 ===")
+    print("=== GROUP NUMBER DETECTION ENHANCED V116 ===")
     
     # Method 1: Direct route_number - HIGHEST PRIORITY
     route_number = input_data.get('route_number', 0)
@@ -888,14 +925,15 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V115 with Korean Font Support"""
+    """Main handler for detail page creation - V116 with Complete Fix"""
     try:
-        print(f"=== V115 Detail Page Handler - KOREAN FONT SUPPORT ===")
+        print(f"=== V116 Detail Page Handler - COMPLETE FIX ===")
         
-        # Download Korean font if not exists
+        # Download Korean font if not exists - Enhanced version
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
             print("Korean font not found, downloading...")
-            download_korean_font()
+            if not download_korean_font():
+                print("WARNING: Failed to download Korean font, text may appear corrupted")
         else:
             print("Korean font already exists")
         
@@ -983,11 +1021,13 @@ def handler(event):
             if 'images' not in input_data or not isinstance(input_data['images'], list):
                 input_data['images'] = [input_data]
             
-            if group_number == 5 and len(input_data['images']) > 2:
-                print(f"WARNING: Group 5 has {len(input_data['images'])} images, using first 2 only")
-                input_data['images'] = input_data['images'][:2]
+            # CRITICAL FIX FOR GROUP 5
+            if group_number == 5:
+                # Always pass the full input_data to handle image7 and image8
+                detail_page = process_clean_combined_images(input_data.get('images', []), group_number, input_data)
+            else:
+                detail_page = process_clean_combined_images(input_data['images'], group_number, input_data)
             
-            detail_page = process_clean_combined_images(input_data['images'], group_number, input_data)
             page_type = "clean_combined"
         
         else:
@@ -1015,7 +1055,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V115_KOREAN_FONT_SUPPORT",
+            "version": "V116_COMPLETE_FIX",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "detected_group_method": "route_number_priority",
@@ -1042,11 +1082,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V115_KOREAN_FONT_SUPPORT"
+                "version": "V116_COMPLETE_FIX"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V115 - KOREAN FONT SUPPORT...")
+    print("Starting Detail Page Handler V116 - COMPLETE FIX...")
     runpod.serverless.start({"handler": handler})
