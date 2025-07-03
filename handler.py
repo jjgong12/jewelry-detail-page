@@ -26,38 +26,55 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pph
 FIXED_WIDTH = 1200
 
 def clean_claude_text(text):
-    """Clean Claude text to prevent JSON errors"""
+    """Enhanced Claude text cleaning to prevent JSON errors"""
     if not text:
         return ""
     
-    # Remove all problematic characters that cause JSON errors
-    text = str(text)
+    # Convert to string and handle None
+    text = str(text) if text is not None else ""
     
-    # Step 1: Remove backslashes (주요 문제 원인)
+    # CRITICAL: Remove all escape sequences and control characters FIRST
+    # This prevents JSON parsing errors
+    text = text.encode('unicode_escape').decode('unicode_escape')
+    
+    # Replace all types of newlines and carriage returns
+    text = text.replace('\\n', ' ')
+    text = text.replace('\\r', ' ')
+    text = text.replace('\\t', ' ')
+    text = text.replace('\n', ' ')
+    text = text.replace('\r', ' ')
+    text = text.replace('\t', ' ')
+    
+    # Remove backslashes that might cause issues
     text = text.replace('\\', '')
     
-    # Step 2: Fix quotes - replace escaped quotes with normal quotes
-    text = text.replace("\\'", "'")
-    text = text.replace('\\"', '"')
+    # Clean quotes
+    text = text.replace('\"', '"')
+    text = text.replace("\'", "'")
+    text = text.replace('\\\"', '"')
+    text = text.replace('\\\'', "'")
     
-    # Step 3: Remove or replace other problematic characters
-    text = text.replace('\t', ' ')  # tabs to spaces
-    text = text.replace('\r', ' ')  # carriage returns
-    text = text.replace('\n', ' ')  # newlines to spaces
+    # Remove any remaining control characters
+    text = ''.join(char for char in text if ord(char) >= 32 or char in '\t\n\r')
     
-    # Step 4: Remove markdown headers and extra symbols
+    # Remove markdown and other formatting
     text = text.replace('#', '')
     text = text.replace('*', '')
+    text = text.replace('_', '')
+    text = text.replace('`', '')
     
-    # Step 5: Clean up multiple spaces
+    # Replace multiple spaces with single space
     text = ' '.join(text.split())
     
-    # Step 6: Ensure safe length
+    # Trim to safe length
     if len(text) > 500:
-        text = text[:500] + "..."
+        text = text[:497] + "..."
     
-    print(f"Cleaned text: {text[:100]}...")
-    return text
+    # Final safety check - remove any remaining problematic characters
+    safe_text = ''.join(char for char in text if char.isprintable() or char == ' ')
+    
+    print(f"Cleaned text (first 100 chars): {safe_text[:100]}...")
+    return safe_text
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
@@ -70,7 +87,6 @@ def get_text_dimensions(draw, text, font):
 def extract_ring_with_replicate(img):
     """Extract ring from background using Replicate API"""
     try:
-        # Check if Replicate is available and API token is set
         if not REPLICATE_AVAILABLE:
             print("Replicate not available, using local fallback")
             return extract_ring_local_fallback(img)
@@ -81,13 +97,11 @@ def extract_ring_with_replicate(img):
             
         print("Starting Replicate background removal...")
         
-        # Convert image to base64
         buffered = BytesIO()
         img.save(buffered, format="PNG")
         buffered.seek(0)
         img_base64 = base64.b64encode(buffered.getvalue()).decode()
         
-        # Call Replicate API for background removal
         output = replicate.run(
             "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
             input={
@@ -95,11 +109,9 @@ def extract_ring_with_replicate(img):
             }
         )
         
-        # Download the result
         response = requests.get(output)
         result_img = Image.open(BytesIO(response.content))
         
-        # Ensure RGBA mode
         if result_img.mode != 'RGBA':
             result_img = result_img.convert('RGBA')
         
@@ -109,8 +121,6 @@ def extract_ring_with_replicate(img):
     except Exception as e:
         print(f"Error with Replicate API: {e}")
         print("Falling back to local method...")
-        
-        # Fallback to local method
         return extract_ring_local_fallback(img)
 
 def extract_ring_local_fallback(img):
@@ -121,7 +131,6 @@ def extract_ring_local_fallback(img):
     width, height = img.size
     img_array = np.array(img)
     
-    # Sample corners for background color
     corner_size = 10
     corners = []
     corners.extend(img_array[:corner_size, :corner_size].reshape(-1, 4))
@@ -132,7 +141,6 @@ def extract_ring_local_fallback(img):
     corners_array = np.array(corners)
     bg_color = np.median(corners_array, axis=0)[:3]
     
-    # Calculate color distance
     color_distance = np.sqrt(
         (img_array[:,:,0] - bg_color[0])**2 +
         (img_array[:,:,1] - bg_color[1])**2 +
@@ -142,17 +150,14 @@ def extract_ring_local_fallback(img):
     threshold = np.percentile(color_distance, 30)
     mask = color_distance > threshold
     
-    # Clean up mask
     mask = mask.astype(np.uint8) * 255
     mask_img = Image.fromarray(mask, 'L')
     
-    # Morphological operations
     mask_img = mask_img.filter(ImageFilter.MaxFilter(3))
     mask_img = mask_img.filter(ImageFilter.MinFilter(3))
     mask_img = mask_img.filter(ImageFilter.SMOOTH_MORE)
     mask_img = mask_img.filter(ImageFilter.GaussianBlur(radius=1))
     
-    # Apply mask
     result = img.copy()
     result.putalpha(mask_img)
     
@@ -166,7 +171,6 @@ def apply_metal_color_filter(img, color_multipliers):
         img = img.convert('RGBA')
         r, g, b, a = img.split()
     
-    # Apply multipliers
     r = r.point(lambda x: min(255, int(x * color_multipliers[0])))
     g = g.point(lambda x: min(255, int(x * color_multipliers[1])))
     b = b.point(lambda x: min(255, int(x * color_multipliers[2])))
@@ -174,7 +178,7 @@ def apply_metal_color_filter(img, color_multipliers):
     return Image.merge('RGBA', (r, g, b, a))
 
 def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
-    """Create COLOR section for group 6 (image 9) - FIXED VERSION"""
+    """Create COLOR section for group 6 (image 9)"""
     section_height = 1000
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -196,12 +200,10 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
-    # Draw title - COLOR
     title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(60, 60, 60))
     
-    # Color information - exactly like Figma
     colors = [
         ("Yellow Gold", "#FFD700", (1.15, 1.10, 0.85)),
         ("Rose Gold", "#F4C2C2", (1.15, 0.95, 0.90)),
@@ -209,22 +211,18 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         ("White", "#FFFFFF", (1.0, 1.0, 1.0))
     ]
     
-    # Image settings for 2x2 grid
-    img_size = 400  # Size for each ring image
-    h_spacing = 80   # Horizontal spacing between images
-    v_spacing = 450  # Vertical spacing (includes label space)
+    img_size = 400
+    h_spacing = 80
+    v_spacing = 450
     
-    # Calculate starting positions for centered 2x2 grid
     grid_width = 2 * img_size + h_spacing
     start_x = (width - grid_width) // 2
     start_y = 200
     
-    # CRITICAL FIX: Always try to process ring image, even if Replicate fails
     if ring_image:
         try:
             print(f"Processing ring image for COLOR section: {ring_image.size}")
             
-            # Try Replicate first, but don't fail if it doesn't work
             try:
                 ring_extracted = extract_ring_with_replicate(ring_image)
                 print("Successfully extracted ring with Replicate")
@@ -239,13 +237,11 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
                 x = start_x + col * (img_size + h_spacing)
                 y = start_y + row * v_spacing
                 
-                # Create a white background for each ring
                 ring_bg = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 255))
                 
-                # Resize ring maintaining aspect ratio
                 ring_aspect = ring_extracted.width / ring_extracted.height
                 if ring_aspect > 1:
-                    new_width = int(img_size * 0.75)  # Slightly smaller for padding
+                    new_width = int(img_size * 0.75)
                     new_height = int(new_width / ring_aspect)
                 else:
                     new_height = int(img_size * 0.75)
@@ -254,19 +250,15 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
                 resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
                 ring_resized = ring_extracted.resize((new_width, new_height), resample_filter)
                 
-                # Apply color tint
                 ring_tinted = apply_metal_color_filter(ring_resized, color_mult)
                 
-                # Add subtle drop shadow
                 shadow_offset = 5
                 shadow_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
                 shadow_draw = ImageDraw.Draw(shadow_img)
                 
-                # Create soft shadow
                 shadow_x = (img_size - new_width) // 2 + shadow_offset
                 shadow_y = (img_size - new_height) // 2 + shadow_offset
                 
-                # Multiple layers for softer shadow
                 for j in range(3):
                     opacity = 20 - j * 5
                     shadow_draw.ellipse([
@@ -276,30 +268,23 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
                         shadow_y + new_height + j*2
                     ], fill=(180, 180, 180, opacity))
                 
-                # Combine shadow with background
                 combined = Image.alpha_composite(ring_bg, shadow_img)
                 
-                # Center the ring on background
                 paste_x = (img_size - new_width) // 2
                 paste_y = (img_size - new_height) // 2
                 
-                # Create a temporary image for the ring
                 temp_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
                 temp_img.paste(ring_tinted, (paste_x, paste_y), ring_tinted)
                 
-                # Composite ring onto shadow background
                 final_ring = Image.alpha_composite(combined, temp_img)
                 
-                # Add subtle border
                 border_img = Image.new('RGBA', (img_size, img_size), (255, 255, 255, 0))
                 border_draw = ImageDraw.Draw(border_img)
                 border_draw.rectangle([0, 0, img_size-1, img_size-1], outline=(230, 230, 230, 255), width=1)
                 final_ring = Image.alpha_composite(final_ring, border_img)
                 
-                # Paste to main image
                 section_img.paste(final_ring, (x, y), final_ring)
                 
-                # Draw label below image
                 label_width, _ = get_text_dimensions(draw, name, label_font)
                 draw.text((x + img_size//2 - label_width//2, y + img_size + 30), 
                          name, font=label_font, fill=(80, 80, 80))
@@ -308,12 +293,10 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         
         except Exception as e:
             print(f"Error processing ring image: {e}")
-            # Fall back to color circles
             create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
                                               img_size, h_spacing, v_spacing, label_font)
     else:
         print("No ring image provided, using fallback color circles")
-        # No image provided, use color circles
         create_color_circles_fallback_figma(section_img, draw, colors, start_x, start_y, 
                                           img_size, h_spacing, v_spacing, label_font)
     
@@ -330,24 +313,19 @@ def create_color_circles_fallback_figma(section_img, draw, colors, start_x, star
         x = start_x + col * (img_size + h_spacing)
         y = start_y + row * v_spacing
         
-        # Draw ring shape with metallic effect
-        # Outer circle
         draw.ellipse([x, y, x+img_size, y+img_size], 
                     fill=color_hex, outline=(180, 180, 180), width=2)
         
-        # Inner circle (hole)
         inner_margin = img_size // 3
         draw.ellipse([x+inner_margin, y+inner_margin, 
                      x+img_size-inner_margin, y+img_size-inner_margin], 
                     fill=(255, 255, 255), outline=(200, 200, 200), width=1)
         
-        # Add highlight for metallic effect
         highlight_size = img_size // 8
         draw.ellipse([x+highlight_size, y+highlight_size, 
                      x+highlight_size*3, y+highlight_size*3], 
                     fill=(255, 255, 255, 180))
         
-        # Draw label
         label_width, _ = get_text_dimensions(draw, name, label_font)
         draw.text((x + img_size//2 - label_width//2, y + img_size + 30), 
                  name, font=label_font, fill=(80, 80, 80))
@@ -375,17 +353,14 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         title_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
     
-    # Draw title
     title = "MD TALK"
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 100), title, font=title_font, fill=(40, 40, 40))
     
-    # Process Claude text - CLEAN VERSION
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         lines = cleaned_text.split(' ')
         
-        # Group words into lines (max 10 words per line)
         content_lines = []
         current_line = []
         for word in lines:
@@ -403,11 +378,10 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
             "섬세한 연결을 느끼고 싶은 커플에게 추천드립니다."
         ]
     
-    # Draw content lines
     y_pos = 200
     line_height = 40
     
-    for line in content_lines[:5]:  # Max 5 lines to prevent overflow
+    for line in content_lines[:5]:
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -437,17 +411,14 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         title_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
     
-    # Draw title
     title = "DESIGN POINT"
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(40, 40, 40))
     
-    # Process Claude text - CLEAN VERSION
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         lines = cleaned_text.split(' ')
         
-        # Group words into lines (max 12 words per line)
         content_lines = []
         current_line = []
         for word in lines:
@@ -466,11 +437,10 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
             "메인 스톤이 두 반지를 하나의 결로 이어주는 상징이 됩니다"
         ]
     
-    # Draw content lines
     y_pos = 200
     line_height = 45
     
-    for line in content_lines[:6]:  # Max 6 lines to prevent overflow
+    for line in content_lines[:6]:
         line_width, _ = get_text_dimensions(draw, line, body_font)
         draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
@@ -548,7 +518,6 @@ def download_image_from_google_drive(url):
 def get_image_from_input(input_data):
     """Get image from URL or base64"""
     try:
-        # Check for URL first
         image_url = (input_data.get('image_url') or 
                     input_data.get('imageUrl') or 
                     input_data.get('url') or 
@@ -563,7 +532,6 @@ def get_image_from_input(input_data):
                 response = requests.get(image_url, timeout=30)
                 return Image.open(BytesIO(response.content))
         
-        # Check for base64
         image_base64 = (input_data.get('image_base64') or 
                        input_data.get('base64') or 
                        input_data.get('image_data') or 
@@ -596,29 +564,22 @@ def process_single_image(input_data, group_number):
     """Process single image (groups 1, 2)"""
     print(f"Processing single image for group {group_number}")
     
-    # Get image
     img = get_image_from_input(input_data)
     print(f"Original image size: {img.size}")
     
-    # Calculate proportional height
     new_height = calculate_image_height(img.width, img.height, FIXED_WIDTH)
     
-    # Margins
     TOP_MARGIN = 50
     BOTTOM_MARGIN = 50
     TOTAL_HEIGHT = TOP_MARGIN + new_height + BOTTOM_MARGIN
     
-    # Create canvas
     detail_page = Image.new('RGB', (FIXED_WIDTH, TOTAL_HEIGHT), '#FFFFFF')
     
-    # Resize image
     resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
     img_resized = img.resize((FIXED_WIDTH, new_height), resample_filter)
     
-    # Paste image
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
-    # Add page indicator
     draw = ImageDraw.Draw(detail_page)
     page_text = f"- {group_number} -"
     
@@ -642,24 +603,19 @@ def process_single_image(input_data, group_number):
     return detail_page
 
 def process_clean_combined_images(images_data, group_number):
-    """Process combined images WITHOUT text sections (groups 3, 4, 5) - CLEAN VERSION"""
+    """Process combined images WITHOUT text sections (groups 3, 4, 5)"""
     print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
-    # IMPORTANT: Group 5 should only have 2 images (7, 8)
     if group_number == 5 and len(images_data) != 2:
         print(f"WARNING: Group 5 should have exactly 2 images, got {len(images_data)}")
-        # Use only first 2 images for group 5
         images_data = images_data[:2]
     
-    # Calculate heights
     TOP_MARGIN = 100
     BOTTOM_MARGIN = 100
-    IMAGE_SPACING = 200  # 200픽셀 간격
+    IMAGE_SPACING = 200
     
-    # Calculate total height - NO TEXT SECTIONS!
     total_height = TOP_MARGIN + BOTTOM_MARGIN
     
-    # Add all image heights
     image_heights = []
     for img_data in images_data:
         img = get_image_from_input(img_data)
@@ -668,38 +624,31 @@ def process_clean_combined_images(images_data, group_number):
         total_height += img_height
         img.close()
     
-    # Add spacing between images
     total_height += (len(images_data) - 1) * IMAGE_SPACING
     
     print(f"Creating CLEAN combined canvas: {FIXED_WIDTH}x{total_height}")
     
-    # Create canvas
     detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
     
     current_y = TOP_MARGIN
     
-    # Process each image WITHOUT any text sections
     for idx, (img_data, img_height) in enumerate(zip(images_data, image_heights)):
         if idx > 0:
-            current_y += IMAGE_SPACING  # 200픽셀 간격
+            current_y += IMAGE_SPACING
         
-        # Get image
         img = get_image_from_input(img_data)
         
-        # Resize image
         resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
         img_resized = img.resize((FIXED_WIDTH, img_height), resample_filter)
         
-        # Paste image
         detail_page.paste(img_resized, (0, current_y))
         current_y += img_height
         
         img.close()
     
-    # Add page indicator
     draw = ImageDraw.Draw(detail_page)
     if group_number == 5:
-        page_text = f"- Gallery 7-8 -"  # 명확하게 7-8만 표시
+        page_text = f"- Gallery 7-8 -"
     else:
         page_text = f"- Clean Images {group_number} -"
     
@@ -723,14 +672,12 @@ def process_clean_combined_images(images_data, group_number):
     return detail_page
 
 def process_color_section(input_data):
-    """Process group 6 - COLOR section with ring image (image 9 only) - FIXED VERSION"""
-    print("=== PROCESSING GROUP 6 COLOR SECTION - FIXED ===")
+    """Process group 6 - COLOR section with ring image (image 9 only)"""
+    print("=== PROCESSING GROUP 6 COLOR SECTION ===")
     
-    # Get the ring image
     img = get_image_from_input(input_data)
     print(f"Ring image for color section: {img.size}, mode: {img.mode}")
     
-    # Create color section with the ring image
     color_section = create_color_options_section(ring_image=img)
     
     img.close()
@@ -742,13 +689,11 @@ def process_text_section(input_data, group_number):
     """Process text-only sections (groups 7, 8) with Claude-generated content"""
     print(f"Processing text section for group {group_number}")
     
-    # Get Claude-generated text and CLEAN IT
     claude_text = (input_data.get('claude_text') or 
                   input_data.get('text_content') or 
                   input_data.get('ai_text') or 
                   input_data.get('generated_text') or '')
     
-    # CRITICAL: Clean the text first to prevent JSON errors
     if claude_text:
         claude_text = clean_claude_text(claude_text)
     
@@ -759,15 +704,12 @@ def process_text_section(input_data, group_number):
     print(f"Cleaned Claude text preview: {claude_text[:100] if claude_text else 'No text provided'}...")
     
     if group_number == 7 or text_type == 'md_talk':
-        # Group 7: MD Talk text section
         text_section = create_ai_generated_md_talk(claude_text)
         section_type = "md_talk"
     elif group_number == 8 or text_type == 'design_point':
-        # Group 8: Design Point text section
         text_section = create_ai_generated_design_point(claude_text)
         section_type = "design_point"
     else:
-        # Fallback - determine by group number
         if group_number == 7:
             text_section = create_ai_generated_md_talk(claude_text)
             section_type = "md_talk"
@@ -795,7 +737,6 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
             }
         }
         
-        # Add base64 image
         webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
         
         print(f"Sending to webhook: {handler_type} for {file_name}")
@@ -820,25 +761,26 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """Enhanced group number detection from various input formats with URL analysis"""
-    print("=== GROUP NUMBER DETECTION ENHANCED ===")
+    """Enhanced group number detection with better group 1/2 differentiation"""
+    print("=== GROUP NUMBER DETECTION ENHANCED V113 ===")
     
-    # Method 1: Direct route_number
+    # Method 1: Direct route_number - HIGHEST PRIORITY
     route_number = input_data.get('route_number', 0)
     if route_number > 0:
-        print(f"Found route_number: {route_number}")
+        print(f"Found route_number: {route_number} - USING THIS AS DEFINITIVE")
         return route_number
     
-    # Method 2: group_number
+    # Method 2: group_number - SECOND PRIORITY
     group_number = input_data.get('group_number', 0)
     if group_number > 0:
         print(f"Found group_number: {group_number}")
         return group_number
     
-    # Method 3: Check for specific image keys
+    # Method 3: Check for specific image keys (image1, image2, etc.)
     for i in range(1, 9):
-        if f'image{i}' in input_data:
-            print(f"Found image{i} key, assuming group {i}")
+        key = f'image{i}'
+        if key in input_data:
+            print(f"Found {key} key, assuming group {i}")
             return i
     
     # Method 4: Check text_type for groups 7, 8
@@ -850,92 +792,98 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type, assuming group 8")
         return 8
     
-    # Method 5: ENHANCED URL analysis
+    # Method 5: Check for Claude text presence
+    has_claude_text = bool(input_data.get('claude_text'))
+    if has_claude_text:
+        print("Found claude_text, checking text_type...")
+        if text_type == 'md_talk':
+            return 7
+        elif text_type == 'design_point':
+            return 8
+        else:
+            # Default to MD Talk if text type not specified
+            print("Has claude_text but no text_type, defaulting to group 7 (MD Talk)")
+            return 7
+    
+    # Method 6: Enhanced URL analysis
     image_data = input_data.get('image', '')
     if image_data:
         print(f"Analyzing image URLs: {image_data[:200]}...")
         
         if ';' in image_data:
-            # Multiple URLs - analyze the file IDs to determine group
+            # Multiple URLs
             urls = image_data.split(';')
             url_count = len([url for url in urls if url.strip()])
             print(f"Found {url_count} URLs in image data")
             
-            # Extract file IDs and try to match patterns
-            file_ids = []
-            for url in urls:
-                file_id = extract_file_id_from_url(url.strip())
-                if file_id:
-                    file_ids.append(file_id)
-            
-            print(f"Extracted file IDs: {file_ids}")
-            
-            # If we have 2 URLs, could be groups 3, 4, or 5
             if url_count == 2:
-                # Check if there's text_type to help determine
-                if text_type == 'md_talk':
-                    return 7  # MD Talk group
-                elif text_type == 'design_point':
-                    return 8  # Design Point group
-                else:
-                    # Default to group 3 for 2 images
-                    print("2 URLs detected, defaulting to group 3")
-                    return 3
+                # Could be groups 3, 4, or 5
+                # Check if it's group 5 (images 7-8)
+                print("2 URLs detected - likely group 3 or 5")
+                return 3  # Default to group 3 for 2 images
             elif url_count == 3:
-                print("3 URLs detected, assuming group 5")
-                return 5
+                print("3 URLs detected, assuming group 4 or 5")
+                return 4  # Default to group 4 for 3 images
         else:
             # Single URL - could be groups 1, 2, 6, 7, 8
             print("Single URL detected")
             
-            # Check if there's Claude text to determine if it's text section
-            if input_data.get('claude_text') or text_type:
-                if text_type == 'md_talk':
-                    return 7
-                elif text_type == 'design_point':
-                    return 8
-                else:
-                    # Has text but no type - default to MD Talk
-                    return 7
-            else:
-                # No text, could be image groups 1, 2, or 6
-                print("Single URL, no text - defaulting to group 1")
-                return 1
+            # Check for specific patterns or markers that indicate group 2
+            # This is where you might add additional logic based on URL patterns
+            # or other metadata that distinguishes group 1 from group 2
+            
+            # For now, defaulting to group 1 for single images without other indicators
+            print("Single URL, no other indicators - defaulting to group 1")
+            return 1
     
-    print("Could not detect group number from input")
+    # Last resort - check for any patterns in the input
+    print("WARNING: Could not reliably detect group number")
+    print(f"Available keys in input: {list(input_data.keys())}")
+    
+    # Default to 0 (error case)
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V112 PERFECT TEXT CLEANING + GROUP MAPPING"""
+    """Main handler for detail page creation - V113 ENHANCED"""
     try:
-        print(f"=== V112 Detail Page Handler - PERFECT TEXT CLEANING + GROUP MAPPING ===")
+        print(f"=== V113 Detail Page Handler - ENHANCED TEXT CLEANING & GROUP DETECTION ===")
         
-        # Find input data
+        # Enhanced JSON safety - clean any text fields before processing
         input_data = event.get('input', event)
+        
+        # Pre-clean any text fields to prevent JSON parsing errors
+        for key in ['claude_text', 'text_content', 'ai_text', 'generated_text']:
+            if key in input_data and input_data[key]:
+                input_data[key] = clean_claude_text(input_data[key])
+                print(f"Pre-cleaned {key} field")
+        
         print(f"Input keys: {list(input_data.keys())}")
         print(f"Full input data: {json.dumps(input_data, indent=2)}")
         
-        # ENHANCED group number detection with URL analysis
+        # Enhanced group number detection
         group_number = detect_group_number_from_input(input_data)
         route_number = input_data.get('route_number', group_number)
         
-        print(f"Detected group_number: {group_number}, route_number: {route_number}")
+        print(f"FINAL: group_number={group_number}, route_number={route_number}")
         
         # Validate group number
         if group_number == 0:
-            raise ValueError(f"Could not determine group number from input data. Available keys: {list(input_data.keys())}")
+            # Try one more time with route_number if available
+            if route_number > 0:
+                group_number = route_number
+                print(f"Using route_number as group_number: {group_number}")
+            else:
+                raise ValueError(f"Could not determine group number. Keys: {list(input_data.keys())}")
         
         if group_number < 1 or group_number > 8:
             raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
         
-        # CRITICAL FIX: Handle Make.com's 'image' key format
+        # Handle Make.com's 'image' key format
         if 'image' in input_data and input_data['image']:
             print(f"Found 'image' key with value: {input_data['image'][:100]}...")
             image_data = input_data['image']
             
-            # Check if semicolon-separated (multiple URLs)
             if ';' in image_data:
-                # Multiple URLs for groups 3, 4, 5
                 urls = image_data.split(';')
                 input_data['images'] = []
                 for url in urls:
@@ -944,13 +892,11 @@ def handler(event):
                         input_data['images'].append({'url': url})
                 print(f"Converted 'image' to {len(input_data['images'])} images array")
             else:
-                # Single URL for groups 1, 2, 6, 7, 8
                 input_data['url'] = image_data
                 print(f"Set single URL from 'image' key")
         
-        # Handle different input formats from Make.com
+        # Handle combined_urls format
         if 'combined_urls' in input_data and input_data['combined_urls']:
-            # URLs are semicolon-separated
             urls = input_data['combined_urls'].split(';')
             input_data['images'] = []
             for url in urls:
@@ -959,47 +905,38 @@ def handler(event):
                     input_data['images'].append({'url': url})
             print(f"Converted combined_urls to {len(input_data['images'])} images")
         
-        # Also check for Make.com specific image keys
+        # Handle Make.com specific image keys
         elif f'image{group_number}' in input_data:
-            # Single URL from Make.com
             image_url = input_data[f'image{group_number}']
             if ';' in image_url:
-                # Multiple URLs
                 urls = image_url.split(';')
                 input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
             else:
-                # Single URL
                 input_data['url'] = image_url
         
-        # ===== CRITICAL ORDER FIX: Check Group 6 FIRST! =====
+        # Process based on group number
         if group_number == 6:
-            # Group 6: COLOR section ONLY (using image 9)
             print("=== Processing Group 6: COLOR section (image 9) ===")
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
         elif group_number in [7, 8]:
-            # Groups 7, 8: Text-only sections with CLEANED TEXT
-            print(f"=== Processing Group {group_number}: Text-only section with CLEANED TEXT ===")
+            print(f"=== Processing Group {group_number}: Text-only section ===")
             detail_page, section_type = process_text_section(input_data, group_number)
             page_type = f"text_section_{section_type}"
             
         elif group_number in [1, 2]:
-            # Groups 1, 2: Individual images
             print(f"=== Processing Group {group_number}: Individual image ===")
             detail_page = process_single_image(input_data, group_number)
             page_type = "individual"
             
         elif group_number in [3, 4, 5]:
-            # Groups 3, 4, 5: CLEAN Combined images (NO TEXT SECTIONS!)
-            print(f"=== Processing Group {group_number}: CLEAN Combined images (NO TEXT) ===")
+            print(f"=== Processing Group {group_number}: CLEAN Combined images ===")
             if 'images' not in input_data or not isinstance(input_data['images'], list):
-                # Convert single image to images array
                 input_data['images'] = [input_data]
             
-            # CRITICAL: Group 5 should only have 2 images (7, 8), NOT 3!
             if group_number == 5 and len(input_data['images']) > 2:
-                print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
+                print(f"WARNING: Group 5 has {len(input_data['images'])} images, using first 2 only")
                 input_data['images'] = input_data['images'][:2]
             
             detail_page = process_clean_combined_images(input_data['images'], group_number)
@@ -1030,10 +967,10 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V112_PERFECT_TEXT_CLEANING",
+            "version": "V113_ENHANCED",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
-            "detected_group_method": "enhanced_url_analysis"
+            "detected_group_method": "priority_based_detection"
         }
         
         # Send to webhook if configured
@@ -1056,11 +993,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V112_PERFECT_TEXT_CLEANING"
+                "version": "V113_ENHANCED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V112 - PERFECT TEXT CLEANING...")
+    print("Starting Detail Page Handler V113 - ENHANCED...")
     runpod.serverless.start({"handler": handler})
