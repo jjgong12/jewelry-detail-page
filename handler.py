@@ -764,10 +764,19 @@ def process_color_section(input_data):
         print("Found group6 key for COLOR section")
         img_data = {'url': input_data['group6']}
         img = get_image_from_input(img_data)
-    # Method 3: Check if it's a single image input
+    # Method 3: Check for image6 key (FIXED: should be for GROUP 6)
+    elif 'image6' in input_data:
+        print("Found image6 key for COLOR section")
+        img_data = {'url': input_data['image6']}
+        img = get_image_from_input(img_data)
+    # Method 4: Check if it's a single image input
     else:
         print("Using standard image input for COLOR section")
-        img = get_image_from_input(input_data)
+        try:
+            img = get_image_from_input(input_data)
+        except:
+            print("No image found for COLOR section, creating without image")
+            img = None
     
     if img:
         print(f"Ring image for color section: {img.size}, mode: {img.mode}")
@@ -797,8 +806,8 @@ def process_text_section(input_data, group_number):
             if missing_padding:
                 claude_text_base64 += '=' * (4 - missing_padding)
             
-            # Decode from base64
-            claude_text = base64.b64decode(claude_text_base64).decode('utf-8')
+            # Decode from base64 - FIX: specify UTF-8 encoding
+            claude_text = base64.b64decode(claude_text_base64).decode('utf-8', errors='ignore')
             print("Successfully decoded base64 claude_text")
         except Exception as e:
             print(f"Error decoding base64: {e}")
@@ -903,8 +912,8 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """CORRECT group number detection - V130 FINAL"""
-    print("=== GROUP NUMBER DETECTION V130 - FINAL VERSION ===")
+    """CORRECT group number detection - V131 FIXED"""
+    print("=== GROUP NUMBER DETECTION V131 - FIXED VERSION ===")
     print(f"Full input_data keys: {sorted(input_data.keys())}")
     
     # PRIORITY 1: Direct route_number - ABSOLUTE HIGHEST PRIORITY!
@@ -973,29 +982,34 @@ def detect_group_number_from_input(input_data):
             print("Single URL in 'image' field")
             return 1
     
-    # PRIORITY 8: Check for specific image keys
+    # PRIORITY 8: Check for specific image keys with CORRECT mapping
     # Check for image1 only
     if 'image1' in input_data and not any(f'image{i}' in input_data for i in range(2, 10)):
         print("Found only image1 - GROUP 1")
         return 1
     
     # Check for image2 only
-    if 'image2' in input_data and not any(f'image{i}' in input_data for i in range(3, 10)):
+    if 'image2' in input_data and not any(f'image{i}' in input_data for i in [1,3,4,5,6,7,8,9]):
         print("Found only image2 - GROUP 2")
         return 2
     
     # Check for image3 or image4 - GROUP 3
-    if ('image3' in input_data or 'image4' in input_data) and not any(f'image{i}' in input_data for i in [1,2,5,6,7,8,9]):
+    if ('image3' in input_data or 'image4' in input_data):
         print("Found image3 or image4 - GROUP 3")
         return 3
     
-    # Check for image5 or image6 - GROUP 4
-    if ('image5' in input_data or 'image6' in input_data) and not any(f'image{i}' in input_data for i in [1,2,3,4,7,8,9]):
-        print("Found image5 or image6 - GROUP 4")
+    # Check for image5 or image6 - GROUP 4 (NOT GROUP 6!)
+    if 'image5' in input_data:
+        print("Found image5 - GROUP 4")
         return 4
     
+    # CRITICAL FIX: image6 alone should be GROUP 6 for COLOR section
+    if 'image6' in input_data and not any(f'image{i}' in input_data for i in [1,2,3,4,5,7,8,9]):
+        print("Found only image6 - GROUP 6 (COLOR)")
+        return 6
+    
     # Check for image7 or image8 - GROUP 5
-    if ('image7' in input_data or 'image8' in input_data) and not any(f'image{i}' in input_data for i in [1,2,3,4,5,6,9]):
+    if ('image7' in input_data or 'image8' in input_data):
         print("Found image7 or image8 - GROUP 5")
         return 5
     
@@ -1010,8 +1024,10 @@ def detect_group_number_from_input(input_data):
                 return i
             elif i in [3, 4]:
                 return 3
-            elif i in [5, 6]:
+            elif i == 5:
                 return 4
+            elif i == 6:
+                return 6  # image6 = GROUP 6 COLOR
             elif i in [7, 8]:
                 return 5
             elif i == 9:
@@ -1022,9 +1038,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V130 FINAL"""
+    """Main handler for detail page creation - V131 FIXED"""
     try:
-        print(f"=== V130 Detail Page Handler - FINAL VERSION ===")
+        print(f"=== V131 Detail Page Handler - FIXED VERSION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1092,8 +1108,8 @@ def handler(event):
             print(f"Found 'image' key with value: {input_data['image'][:100]}...")
             image_data = input_data['image']
             
-            if ';' in image_data:
-                urls = image_data.split(';')
+            if ';' in str(image_data):
+                urls = str(image_data).split(';')
                 input_data['images'] = []
                 for url in urls:
                     url = url.strip()
@@ -1106,7 +1122,7 @@ def handler(event):
         
         # Format 2: 'combined_urls' key
         if 'combined_urls' in input_data and input_data['combined_urls']:
-            urls = input_data['combined_urls'].split(';')
+            urls = str(input_data['combined_urls']).split(';')
             input_data['images'] = []
             for url in urls:
                 url = url.strip()
@@ -1117,11 +1133,26 @@ def handler(event):
         # Format 3: Specific image keys (image1, image2, etc.)
         # Only process if we don't already have images/url
         if not input_data.get('images') and not input_data.get('url'):
+            # CRITICAL FIX: Special handling for GROUP 6
+            if group_number == 6:
+                # Try multiple sources for GROUP 6
+                if 'image9' in input_data:
+                    input_data['url'] = input_data['image9']
+                    print("GROUP 6: Using image9")
+                elif 'image6' in input_data:
+                    input_data['url'] = input_data['image6']
+                    print("GROUP 6: Using image6")
+                elif 'group6' in input_data:
+                    input_data['url'] = input_data['group6']
+                    print("GROUP 6: Using group6")
+                else:
+                    print("WARNING: GROUP 6 but no specific image found")
+            
             # First try exact match for current group
-            if f'image{group_number}' in input_data:
+            elif f'image{group_number}' in input_data:
                 image_url = input_data[f'image{group_number}']
-                if ';' in image_url:
-                    urls = image_url.split(';')
+                if ';' in str(image_url):
+                    urls = str(image_url).split(';')
                     input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
                 else:
                     input_data['url'] = image_url
@@ -1140,18 +1171,19 @@ def handler(event):
                 else:
                     print("WARNING: GROUP 3 but missing image3/image4")
             
-            # Special handling for GROUP 4 - need image5 and image6
+            # Special handling for GROUP 4 - need image5 and possibly image6
             elif group_number == 4:
                 images_to_add = []
                 if 'image5' in input_data:
                     images_to_add.append({'url': input_data['image5']})
-                if 'image6' in input_data:
+                # Note: image6 alone goes to GROUP 6, but with image5 it's GROUP 4
+                if 'image6' in input_data and 'image5' in input_data:
                     images_to_add.append({'url': input_data['image6']})
                 if images_to_add:
                     input_data['images'] = images_to_add
                     print(f"GROUP 4: Found {len(images_to_add)} images")
                 else:
-                    print("WARNING: GROUP 4 but missing image5/image6")
+                    print("WARNING: GROUP 4 but missing images")
             
             # Special handling for GROUP 5 - need image7 and image8
             elif group_number == 5:
@@ -1172,8 +1204,8 @@ def handler(event):
                     if f'image{i}' in input_data:
                         print(f"WARNING: Using image{i} for group {group_number}")
                         image_url = input_data[f'image{i}']
-                        if ';' in image_url:
-                            urls = image_url.split(';')
+                        if ';' in str(image_url):
+                            urls = str(image_url).split(';')
                             input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
                         else:
                             input_data['url'] = image_url
@@ -1220,7 +1252,10 @@ def handler(event):
         # Convert to base64
         buffered = BytesIO()
         detail_page.save(buffered, format="PNG", optimize=True)
-        detail_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        img_str = base64.b64encode(buffered.getvalue())
+        
+        # CRITICAL FIX: Decode bytes to string for JSON serialization
+        detail_base64 = img_str.decode('utf-8')
         
         # Remove padding for Make.com
         detail_base64_no_padding = detail_base64.rstrip('=')
@@ -1240,7 +1275,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V130_FINAL",
+            "version": "V131_FIXED",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
@@ -1266,11 +1301,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V130_FINAL"
+                "version": "V131_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V130 - FINAL VERSION...")
+    print("Starting Detail Page Handler V131 - FIXED VERSION...")
     runpod.serverless.start({"handler": handler})
