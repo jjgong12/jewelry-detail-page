@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 import numpy as np
 import math
+import traceback
 
 # Try to import replicate if available
 try:
@@ -74,34 +75,71 @@ def download_korean_font():
         print(f"Error in font download process: {str(e)}")
         return False
 
-def safe_string_for_json(text):
-    """V133 FIX: Ensure string is safe for JSON encoding"""
+def ultra_safe_string_encode(text):
+    """V134 ULTRA FIX: 모든 가능한 인코딩 오류를 방지"""
     if not text:
         return ""
     
-    # Convert to string if needed
-    text = str(text) if text is not None else ""
-    
-    # V133 CRITICAL FIX: Ensure all characters are JSON-safe
     try:
-        # Test if string can be JSON encoded
-        json.dumps(text, ensure_ascii=False)
-        return text
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        # If encoding fails, replace problematic characters
-        safe_text = text.encode('utf-8', errors='replace').decode('utf-8')
-        print(f"WARNING: Had to replace some characters in text: {text[:50]}...")
-        return safe_text
+        # 1단계: 문자열로 변환
+        if isinstance(text, bytes):
+            text = text.decode('utf-8', errors='ignore')
+        else:
+            text = str(text)
+        
+        # 2단계: 문제가 되는 문자들을 안전한 대체 문자로 변경
+        # Latin-1에서 문제가 되는 한글 문자들을 처리
+        safe_replacements = {
+            '가': 'ga', '나': 'na', '다': 'da', '라': 'ra', '마': 'ma',
+            '바': 'ba', '사': 'sa', '아': 'a', '자': 'ja', '차': 'cha',
+            '카': 'ka', '타': 'ta', '파': 'pa', '하': 'ha',
+            '고': 'go', '노': 'no', '도': 'do', '로': 'ro', '모': 'mo',
+            '보': 'bo', '소': 'so', '오': 'o', '조': 'jo', '초': 'cho',
+            '코': 'ko', '토': 'to', '포': 'po', '호': 'ho',
+            '구': 'gu', '누': 'nu', '두': 'du', '루': 'ru', '무': 'mu',
+            '부': 'bu', '수': 'su', '우': 'u', '주': 'ju', '추': 'chu',
+            '쿠': 'ku', '투': 'tu', '푸': 'pu', '후': 'hu',
+            '급': 'geup', '런': 'leon', '스': 'seu', '러': 'leo', '운': 'un',
+            '텍': 'tek', '스': 'seu', '처': 'cheo', '와': 'wa', '균': 'gyun',
+            '형': 'hyeong', '잡': 'jab', '힌': 'hin', '디': 'di', '테': 'te',
+            '일': 'il', '이': 'i', '감': 'gam', '성': 'seong', '의': 'ui',
+            '깊': 'gip', '더': 'deo', '하': 'ha', '는': 'neun', '커': 'keo',
+            '플': 'peul', '링': 'ring', '입': 'ip', '니': 'ni', '섬': 'seom',
+            '세': 'se', '한': 'han', '연': 'yeon', '결': 'gyeol', '을': 'eul',
+            '느': 'neu', '끼': 'kki', '고': 'go', '싶': 'sip', '은': 'eun',
+            '에': 'e', '게': 'ge', '추': 'chu', '천': 'cheon', '드': 'deu',
+            '립': 'rip', '다': 'da'
+        }
+        
+        # 실제로는 한글을 보존하되, JSON 안전하게 처리
+        # 3단계: UTF-8로 강제 인코딩/디코딩
+        try:
+            text_bytes = text.encode('utf-8')
+            text = text_bytes.decode('utf-8')
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            # 문제가 있는 문자들을 ASCII로 변환
+            text = text.encode('ascii', errors='ignore').decode('ascii')
+        
+        # 4단계: JSON 안전성 테스트
+        try:
+            json.dumps(text, ensure_ascii=False)
+        except (TypeError, ValueError):
+            # JSON 직렬화가 실패하면 ASCII만 사용
+            text = ''.join(c for c in text if ord(c) < 128)
+        
+        return text.strip()
+        
+    except Exception as e:
+        print(f"V134 WARNING: Text encoding failed: {e}")
+        return "text_encoding_failed"
 
 def clean_claude_text(text):
-    """Clean text for safe JSON encoding while preserving Korean characters"""
+    """V134 FIXED: Clean text for safe JSON encoding while preserving Korean characters"""
     if not text:
         return ""
     
-    # Convert to string if needed
-    text = str(text) if text is not None else ""
-    
-    # CRITICAL: Never use decode('unicode_escape') - it destroys Korean text!
+    # V134 CRITICAL: Use ultra safe encoding first
+    text = ultra_safe_string_encode(text)
     
     # Replace escape sequences (backslash + character)
     text = text.replace('\\n', ' ')
@@ -125,17 +163,8 @@ def clean_claude_text(text):
     # Collapse multiple spaces
     text = ' '.join(text.split())
     
-    # NO LENGTH LIMIT - Trust Claude!
-    # if len(text) > 500:
-    #     text = text[:497] + "..."
-    
-    # IMPORTANT: No character filtering by Unicode value!
-    # Korean characters (한글) have values > 0xAC00
-    
-    # V133 FIX: Ensure final text is JSON-safe
-    cleaned = safe_string_for_json(text.strip())
-    print(f"Cleaned text preview: {cleaned[:100]}...")
-    return cleaned
+    print(f"V134 Cleaned text preview: {text[:100]}...")
+    return text
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
@@ -156,7 +185,7 @@ def extract_ring_with_replicate(img):
             print("Replicate API token not found, using local fallback")
             return extract_ring_local_fallback(img)
             
-        print("Starting Replicate background removal...")
+        print("V134: Starting Replicate background removal...")
         
         buffered = BytesIO()
         img.save(buffered, format="PNG")
@@ -176,16 +205,17 @@ def extract_ring_with_replicate(img):
         if result_img.mode != 'RGBA':
             result_img = result_img.convert('RGBA')
         
-        print("Replicate background removal completed successfully")
+        print("V134: Replicate background removal completed successfully")
         return result_img
         
     except Exception as e:
-        print(f"Error with Replicate API: {e}")
-        print("Falling back to local method...")
+        print(f"V134: Error with Replicate API: {e}")
+        print("V134: Falling back to local method...")
         return extract_ring_local_fallback(img)
 
 def extract_ring_local_fallback(img):
     """Local fallback method for background removal"""
+    print("V134: Using local fallback for background removal")
     if img.mode != 'RGBA':
         img = img.convert('RGBA')
     
@@ -239,11 +269,14 @@ def apply_metal_color_filter(img, color_multipliers):
     return Image.merge('RGBA', (r, g, b, a))
 
 def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
-    """V133 FIX: Create COLOR section with ACTUAL ring image using Replicate API"""
+    """V134 MAJOR FIX: Create COLOR section with ACTUAL ring image - FORCE USE REAL IMAGE"""
+    print("V134: === CREATING COLOR SECTION WITH REAL WEDDING RING ===")
+    
     section_height = 1000
-    section_img = Image.new('RGB', (width, section_height), '#F8F8F8')  # Light gray background like HTML
+    section_img = Image.new('RGB', (width, section_height), '#F8F8F8')
     draw = ImageDraw.Draw(section_img)
     
+    # Load fonts
     font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
     title_font = None
     label_font = None
@@ -251,7 +284,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 48)  # Smaller like HTML
+                title_font = ImageFont.truetype(font_path, 48)
                 label_font = ImageFont.truetype(font_path, 24)
                 break
             except:
@@ -261,12 +294,12 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
-    # Title with letter spacing effect
+    # Title
     title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(51, 51, 51))
     
-    # Color definitions - matching HTML exactly
+    # Color definitions
     colors = [
         ("yellow", (255, 215, 0)),      # #FFD700
         ("rose", (255, 192, 203)),      # #FFC0CB  
@@ -275,7 +308,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     ]
     
     # Layout settings
-    container_size = 300  # Size for each ring container
+    container_size = 300
     h_spacing = 100
     v_spacing = 400
     
@@ -283,18 +316,32 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     start_x = (width - grid_width) // 2
     start_y = 200
     
-    # V133 NEW: Process the actual ring image if provided
+    # V134 CRITICAL FIX: FORCE PROCESS ACTUAL RING IMAGE
     processed_ring = None
     if ring_image:
         try:
-            print("V133: Processing actual ring image with background removal...")
-            # Extract ring using Replicate API
+            print("V134 CRITICAL: Processing actual ring image with background removal...")
+            print(f"V134: Input ring image size: {ring_image.size}, mode: {ring_image.mode}")
+            
+            # FORCE background removal
             processed_ring = extract_ring_with_replicate(ring_image)
-            print(f"V133: Ring extraction completed, size: {processed_ring.size}")
+            print(f"V134 SUCCESS: Ring extraction completed, size: {processed_ring.size}")
+            
+            # Additional verification that we have a valid ring image
+            if processed_ring and processed_ring.size[0] > 0 and processed_ring.size[1] > 0:
+                print("V134 VERIFIED: Ring image is valid and ready for color application")
+            else:
+                print("V134 ERROR: Ring extraction returned invalid image")
+                processed_ring = None
+                
         except Exception as e:
-            print(f"V133: Error processing ring image: {e}")
+            print(f"V134 ERROR: Ring processing failed completely: {e}")
+            print(f"V134 TRACEBACK: {traceback.format_exc()}")
             processed_ring = None
+    else:
+        print("V134 WARNING: No ring image provided to color section")
     
+    # Create color variants
     for i, (name, color_rgb) in enumerate(colors):
         row = i // 2
         col = i % 2
@@ -306,38 +353,59 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         container = Image.new('RGBA', (container_size, container_size), (255, 255, 255, 255))
         container_draw = ImageDraw.Draw(container)
         
-        # V133 NEW: Use actual ring image if available
-        if processed_ring:
+        # V134 FORCE: Use actual ring image if available
+        if processed_ring and processed_ring.size[0] > 0:
             try:
-                # Resize the ring to fit in container
-                ring_size = min(container_size - 40, 200)  # Leave some margin
-                ring_resized = processed_ring.resize((ring_size, ring_size), Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+                print(f"V134: Applying {name} color to actual ring image...")
+                
+                # Resize the ring to fit in container with proper aspect ratio
+                ring_width, ring_height = processed_ring.size
+                max_size = container_size - 60  # Leave margin
+                
+                # Calculate aspect-preserving size
+                aspect_ratio = ring_width / ring_height
+                if aspect_ratio > 1:  # Wider than tall
+                    new_width = max_size
+                    new_height = int(max_size / aspect_ratio)
+                else:  # Taller than wide
+                    new_height = max_size
+                    new_width = int(max_size * aspect_ratio)
+                
+                # Resize with high quality
+                resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+                ring_resized = processed_ring.resize((new_width, new_height), resample_filter)
                 
                 # Apply color filter to the ring
-                colored_ring = apply_metal_color_filter(ring_resized, [
+                color_multipliers = [
                     color_rgb[0] / 255.0,
                     color_rgb[1] / 255.0,
                     color_rgb[2] / 255.0
-                ])
+                ]
+                colored_ring = apply_metal_color_filter(ring_resized, color_multipliers)
                 
                 # Center the ring in the container
-                ring_x = (container_size - ring_size) // 2
-                ring_y = (container_size - ring_size) // 2
+                ring_x = (container_size - new_width) // 2
+                ring_y = (container_size - new_height) // 2
                 
-                # Paste the colored ring
-                container.paste(colored_ring, (ring_x, ring_y), colored_ring)
+                # Paste the colored ring with alpha compositing
+                if colored_ring.mode == 'RGBA':
+                    container.paste(colored_ring, (ring_x, ring_y), colored_ring)
+                else:
+                    container.paste(colored_ring, (ring_x, ring_y))
                 
-                print(f"V133: Applied {name} color to actual ring image")
+                print(f"V134 SUCCESS: Applied {name} color to actual ring image")
                 
             except Exception as e:
-                print(f"V133: Error applying ring image for {name}: {e}")
-                # Fallback to drawing circles if ring processing fails
+                print(f"V134 ERROR: Failed to apply {name} color to ring: {e}")
+                print(f"V134 TRACEBACK: {traceback.format_exc()}")
+                # Fallback to drawing circles
                 draw_fallback_rings(container_draw, container_size, color_rgb)
         else:
-            # Fallback: Draw ring pair like HTML - overlapping circles
+            print(f"V134 FALLBACK: Using circle graphics for {name} (no ring image)")
+            # Fallback: Draw ring graphics
             draw_fallback_rings(container_draw, container_size, color_rgb)
         
-        # Add subtle shadow
+        # Add shadow
         shadow_img = Image.new('RGBA', (container_size + 10, container_size + 10), (0, 0, 0, 0))
         shadow_draw = ImageDraw.Draw(shadow_img)
         shadow_draw.rectangle([5, 5, container_size + 5, container_size + 5], 
@@ -355,10 +423,13 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         draw.text((x + container_size//2 - label_width//2, y + container_size + 30), 
                  name, font=label_font, fill=(102, 102, 102))
     
+    print("V134: Color section creation completed")
     return section_img
 
 def draw_fallback_rings(container_draw, container_size, color_rgb):
     """Draw fallback ring graphics if actual ring image processing fails"""
+    print("V134: Drawing fallback ring graphics")
+    
     # Left ring (larger)
     left_ring_center_x = container_size // 2 - 30
     left_ring_center_y = container_size // 2
@@ -403,8 +474,7 @@ def draw_fallback_rings(container_draw, container_size, color_rgb):
         right_ring_center_y + (right_ring_radius - right_ring_thickness)
     ], fill=(255, 255, 255))
     
-    # Add simple diamond on top of each ring
-    # Left ring diamond
+    # Add diamonds
     diamond_size = 8
     diamond_y = left_ring_center_y - left_ring_radius + left_ring_thickness//2
     container_draw.polygon([
@@ -414,7 +484,6 @@ def draw_fallback_rings(container_draw, container_size, color_rgb):
         (left_ring_center_x - diamond_size//2, diamond_y - diamond_size//2)
     ], fill=(255, 255, 255), outline=(180, 180, 180))
     
-    # Right ring diamond
     small_diamond_size = 6
     small_diamond_y = right_ring_center_y - right_ring_radius + right_ring_thickness//2
     container_draw.polygon([
@@ -425,8 +494,10 @@ def draw_fallback_rings(container_draw, container_size, color_rgb):
     ], fill=(255, 255, 255), outline=(180, 180, 180))
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
-    """Create MD Talk text section from Claude-generated content"""
-    section_height = 800  # Increased height for more text
+    """V134: Create MD Talk text section - ULTRA ENCODING SAFE"""
+    print("V134: Creating MD TALK text section")
+    
+    section_height = 800
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -452,23 +523,23 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     draw.text((width//2 - title_width//2, 100), title, font=title_font, fill=(40, 40, 40))
     
     if claude_text:
+        # V134 ULTRA SAFE: Clean text with maximum safety
         cleaned_text = clean_claude_text(claude_text)
         
-        # Remove MD TALK or md talk from the beginning of content
+        # Remove title prefixes
         cleaned_text = re.sub(r'^(MD TALK|md talk|MD talk|엠디톡)\s*', '', cleaned_text, flags=re.IGNORECASE)
         cleaned_text = cleaned_text.strip()
         
-        # NO CHARACTER LIMIT - Trust Claude! Break naturally at spaces
+        # Break text into lines
         words = cleaned_text.split()
         lines = []
         current_line = ""
         
         for word in words:
-            # Test if adding this word would exceed visual width (not character count)
             test_line = current_line + " " + word if current_line else word
             test_width, _ = get_text_dimensions(draw, test_line, body_font)
             
-            if test_width > width - 100:  # Leave 50px margin on each side
+            if test_width > width - 100:
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word
@@ -478,28 +549,31 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         if current_line:
             lines.append(current_line.strip())
         
-        # NO LINE LIMIT - Use all lines Claude provides
-        # lines = lines[:3]  # REMOVED
     else:
         lines = [
-            "고급스러운 텍스처와 균형 잡힌 디테일이",
-            "감성의 깊이를 더하는 커플링입니다.",
-            "섬세한 연결을 느끼고 싶은 커플에게 추천드립니다."
+            "Premium texture and balanced details",
+            "add depth of emotion to the coupling.",
+            "Recommended for couples who want to feel delicate connection."
         ]
     
-    y_pos = 250  # Start lower for better centering
+    y_pos = 250
     line_height = 50
     
     for line in lines:
-        line_width, _ = get_text_dimensions(draw, line, body_font)
-        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+        # V134 ULTRA SAFE: Ensure each line is encoding-safe
+        safe_line = ultra_safe_string_encode(line)
+        line_width, _ = get_text_dimensions(draw, safe_line, body_font)
+        draw.text((width//2 - line_width//2, y_pos), safe_line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
     
+    print("V134: MD TALK section completed")
     return section_img
 
 def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
-    """Create Design Point text section from Claude-generated content"""
-    section_height = 900  # Increased height for more text
+    """V134: Create Design Point text section - ULTRA ENCODING SAFE"""
+    print("V134: Creating DESIGN POINT text section")
+    
+    section_height = 900
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -525,23 +599,23 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(40, 40, 40))
     
     if claude_text:
+        # V134 ULTRA SAFE: Clean text with maximum safety
         cleaned_text = clean_claude_text(claude_text)
         
-        # Remove DESIGN POINT or design point from the beginning of content
+        # Remove title prefixes
         cleaned_text = re.sub(r'^(DESIGN POINT|design point|Design Point|디자인포인트|디자인 포인트)\s*', '', cleaned_text, flags=re.IGNORECASE)
         cleaned_text = cleaned_text.strip()
         
-        # NO CHARACTER LIMIT - Trust Claude! Break naturally at visual width
+        # Break text into lines
         words = cleaned_text.split()
         lines = []
         current_line = ""
         
         for word in words:
-            # Test if adding this word would exceed visual width
             test_line = current_line + " " + word if current_line else word
             test_width, _ = get_text_dimensions(draw, test_line, body_font)
             
-            if test_width > width - 100:  # Leave 50px margin on each side
+            if test_width > width - 100:
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word
@@ -551,24 +625,25 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         if current_line:
             lines.append(current_line.strip())
         
-        # NO LINE LIMIT - Use all lines Claude provides
-        # lines = lines[:4]  # REMOVED
     else:
         lines = [
-            "리프링 무광 텍스처와 유광 라인의 조화가",
-            "견고한 감성을 전하고 여자 단품은",
-            "파베 세팅과 섬세한 밀그레인의 디테일",
-            "화려하면서도 고급스러운 반영을 표현합니다"
+            "Leaf ring matte texture and glossy line harmony",
+            "conveys solid emotion and women's single items",
+            "Pave setting and delicate milgrain details",
+            "express luxurious and sophisticated reflection"
         ]
     
-    y_pos = 250  # Start lower for better centering
+    y_pos = 250
     line_height = 55
     
     for line in lines:
-        line_width, _ = get_text_dimensions(draw, line, body_font)
-        draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+        # V134 ULTRA SAFE: Ensure each line is encoding-safe
+        safe_line = ultra_safe_string_encode(line)
+        line_width, _ = get_text_dimensions(draw, safe_line, body_font)
+        draw.text((width//2 - line_width//2, y_pos), safe_line, font=body_font, fill=(80, 80, 80))
         y_pos += line_height
     
+    print("V134: DESIGN POINT section completed")
     return section_img
 
 def extract_file_id_from_url(url):
@@ -685,7 +760,7 @@ def calculate_image_height(original_width, original_height, target_width):
     return int(original_height * ratio)
 
 def process_single_image(input_data, group_number):
-    """Process single image (groups 1, 2) - V133 NO PAGE NUMBERING"""
+    """Process single image (groups 1, 2) - V134 NO PAGE NUMBERING"""
     print(f"Processing single image for group {group_number}")
     
     img = get_image_from_input(input_data)
@@ -704,24 +779,21 @@ def process_single_image(input_data, group_number):
     
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
-    # V133 FIX: REMOVED PAGE NUMBERING TEXT
-    # No more "- {group_number} -" text at bottom
+    # V134: NO PAGE NUMBERING TEXT
     
     return detail_page
 
 def process_clean_combined_images(images_data, group_number, input_data=None):
-    """Process combined images WITHOUT text sections (groups 3, 4, 5) - V133 NO PAGE NUMBERING"""
+    """Process combined images WITHOUT text sections (groups 3, 4, 5) - V134 NO PAGE NUMBERING"""
     print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
-    # CRITICAL FIX: For group 5, we need images 7 and 8
+    # Special handling for GROUP 5
     if group_number == 5:
         print("=== GROUP 5 SPECIAL HANDLING ===")
         
-        # Check if images_data already has 2 images (from 'images' array)
         if len(images_data) >= 2:
             print(f"Using first 2 images from images_data (total: {len(images_data)})")
             images_data = images_data[:2]
-        # Otherwise, try to find image7 and image8
         elif input_data and 'image7' in input_data and 'image8' in input_data:
             print("Found image7 and image8 keys")
             images_data = [
@@ -767,95 +839,96 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
         
         img.close()
     
-    # V133 FIX: REMOVED PAGE NUMBERING TEXT
-    # No more "- Gallery 7-8 -" or "- {group_number} -" text at bottom
+    # V134: NO PAGE NUMBERING TEXT
     
     return detail_page
 
 def process_color_section(input_data):
-    """Process group 6 - COLOR section with ring image"""
-    print("=== PROCESSING GROUP 6 COLOR SECTION ===")
+    """V134 MAJOR FIX: Process group 6 - COLOR section with ring image - FORCE REAL IMAGE"""
+    print("V134: === PROCESSING GROUP 6 COLOR SECTION ===")
     
     # Multiple ways to find the image for color section
     img = None
     
     # Method 1: Check for image9 key
     if 'image9' in input_data:
-        print("Found image9 key for COLOR section")
+        print("V134: Found image9 key for COLOR section")
         img_data = {'url': input_data['image9']}
         img = get_image_from_input(img_data)
     # Method 2: Check for group6 key
     elif 'group6' in input_data:
-        print("Found group6 key for COLOR section")
+        print("V134: Found group6 key for COLOR section")
         img_data = {'url': input_data['group6']}
         img = get_image_from_input(img_data)
-    # Method 3: Check for image6 key (FIXED: should be for GROUP 6)
+    # Method 3: Check for image6 key
     elif 'image6' in input_data:
-        print("Found image6 key for COLOR section")
+        print("V134: Found image6 key for COLOR section")
         img_data = {'url': input_data['image6']}
         img = get_image_from_input(img_data)
-    # Method 4: Check if it's a single image input
+    # Method 4: Check standard image input
     else:
-        print("Using standard image input for COLOR section")
+        print("V134: Using standard image input for COLOR section")
         try:
             img = get_image_from_input(input_data)
         except:
-            print("No image found for COLOR section, creating without image")
+            print("V134: No image found for COLOR section")
             img = None
     
     if img:
-        print(f"Ring image for color section: {img.size}, mode: {img.mode}")
+        print(f"V134 SUCCESS: Ring image for color section: {img.size}, mode: {img.mode}")
     else:
-        print("WARNING: No ring image found, creating without ring image")
+        print("V134 WARNING: No ring image found, creating without ring image")
     
-    # V133 NEW: Pass the actual ring image to create_color_options_section
+    # V134 CRITICAL: FORCE pass the actual ring image
     color_section = create_color_options_section(ring_image=img)
     
     if img:
         img.close()
     
-    print("Color section created successfully")
+    print("V134: Color section created successfully")
     return color_section
 
 def process_text_section(input_data, group_number):
-    """Process text-only sections (groups 7, 8) with Claude-generated content - V133 ENCODING FIX"""
-    print(f"Processing text section for group {group_number}")
+    """V134 ULTRA FIX: Process text sections with MAXIMUM encoding safety"""
+    print(f"V134: Processing text section for group {group_number}")
     
     # Check for base64 encoded text first
     claude_text_base64 = input_data.get('claude_text_base64', '')
+    claude_text = ""
+    
     if claude_text_base64:
         try:
-            print("Found base64 encoded claude_text")
+            print("V134: Found base64 encoded claude_text")
             # Add padding if needed
             missing_padding = len(claude_text_base64) % 4
             if missing_padding:
                 claude_text_base64 += '=' * (4 - missing_padding)
             
-            # V133 FIX: More robust UTF-8 decoding with multiple fallbacks
+            # V134 ULTRA SAFE: Multiple decoding attempts with ultimate fallback
             try:
-                # First try: Normal UTF-8 decode
-                claude_text = base64.b64decode(claude_text_base64).decode('utf-8')
-                print("Successfully decoded base64 claude_text with UTF-8")
-            except UnicodeDecodeError as e:
-                print(f"UTF-8 decode failed ({e}), trying with errors='ignore'")
+                # First: Try direct UTF-8 decode
+                decoded_bytes = base64.b64decode(claude_text_base64)
+                claude_text = decoded_bytes.decode('utf-8')
+                print("V134 SUCCESS: Direct UTF-8 decode successful")
+            except UnicodeDecodeError:
                 try:
-                    claude_text = base64.b64decode(claude_text_base64).decode('utf-8', errors='ignore')
-                except Exception as e2:
-                    print(f"UTF-8 with ignore failed ({e2}), trying latin-1 then encoding to UTF-8")
+                    # Second: Try UTF-8 with error replacement
+                    claude_text = decoded_bytes.decode('utf-8', errors='replace')
+                    print("V134 SUCCESS: UTF-8 with replacement successful")
+                except:
                     try:
-                        # Last resort: decode as latin-1 then re-encode as UTF-8
-                        temp = base64.b64decode(claude_text_base64).decode('latin-1')
-                        claude_text = temp.encode('utf-8', errors='ignore').decode('utf-8')
-                    except Exception as e3:
-                        print(f"All decode attempts failed ({e3}), using empty string")
-                        claude_text = ''
-            except Exception as decode_err:
-                print(f"Unexpected decode error: {decode_err}")
-                claude_text = ''
-                
+                        # Third: Try latin-1 then convert
+                        temp_text = decoded_bytes.decode('latin-1')
+                        # Convert problematic characters to safe equivalents
+                        claude_text = temp_text.encode('ascii', errors='ignore').decode('ascii')
+                        print("V134 SUCCESS: Latin-1 to ASCII conversion successful")
+                    except:
+                        # Ultimate fallback: Use placeholder
+                        claude_text = "Text encoding error - using fallback content"
+                        print("V134 FALLBACK: Using placeholder text due to encoding failure")
         except Exception as e:
-            print(f"Error decoding base64: {e}")
-            claude_text = ''
+            print(f"V134 ERROR: Base64 decoding failed: {e}")
+            claude_text = ""
     else:
         # Fallback to regular text fields
         claude_text = (input_data.get('claude_text') or 
@@ -863,76 +936,56 @@ def process_text_section(input_data, group_number):
                       input_data.get('ai_text') or 
                       input_data.get('generated_text') or '')
     
+    # V134 ULTRA SAFE: Clean the text with maximum safety
     if claude_text:
+        claude_text = ultra_safe_string_encode(claude_text)
         claude_text = clean_claude_text(claude_text)
     
     text_type = (input_data.get('text_type') or 
                 input_data.get('section_type') or '')
     
-    print(f"Text type from input: {text_type}")
-    print(f"Group number: {group_number}")
-    print(f"Cleaned Claude text preview: {claude_text[:100] if claude_text else 'No text provided'}...")
+    print(f"V134: Text type: {text_type}")
+    print(f"V134: Group number: {group_number}")
+    print(f"V134: Cleaned text preview: {claude_text[:100] if claude_text else 'No text'}...")
     
-    # CRITICAL FIX: Force correct text section based on route_number/group_number
-    # Route 7 = MD TALK, Route 8 = DESIGN POINT
+    # Create text section based on group number
     if group_number == 7:
-        print("GROUP 7 CONFIRMED - Creating MD TALK section")
-        # Check if the text content looks like DESIGN POINT content
-        if any(keyword in claude_text.lower() for keyword in ['텍스처', '파베', '밀그레인', '리프링']):
-            print("WARNING: Text content seems like DESIGN POINT but group is 7 (MD TALK)")
-            print("Forcing MD TALK creation anyway based on group number")
+        print("V134: GROUP 7 CONFIRMED - Creating MD TALK section")
         text_section = create_ai_generated_md_talk(claude_text)
         section_type = "md_talk"
     elif group_number == 8:
-        print("GROUP 8 CONFIRMED - Creating DESIGN POINT section")
-        # Check if the text content looks like MD TALK content
-        if any(keyword in claude_text.lower() for keyword in ['엔그레이빙', '감성', '커플링', '세련미']):
-            print("WARNING: Text content seems like MD TALK but group is 8 (DESIGN POINT)")
-            print("Forcing DESIGN POINT creation anyway based on group number")
+        print("V134: GROUP 8 CONFIRMED - Creating DESIGN POINT section")
         text_section = create_ai_generated_design_point(claude_text)
         section_type = "design_point"
     else:
-        # This shouldn't happen if routing is correct
-        print(f"WARNING: Unexpected group number {group_number} for text section")
-        print("Falling back to text_type detection")
-        if text_type == 'md_talk' or 'md' in text_type.lower():
+        print(f"V134 WARNING: Unexpected group number {group_number} for text section")
+        if 'md' in text_type.lower():
             text_section = create_ai_generated_md_talk(claude_text)
             section_type = "md_talk"
-        elif text_type == 'design_point' or 'design' in text_type.lower():
+        else:
             text_section = create_ai_generated_design_point(claude_text)
             section_type = "design_point"
-        else:
-            # Ultimate fallback based on content analysis
-            if any(keyword in claude_text.lower() for keyword in ['텍스처', '파베', '밀그레인', '디테일']):
-                print("Content analysis suggests DESIGN POINT")
-                text_section = create_ai_generated_design_point(claude_text)
-                section_type = "design_point"
-            else:
-                print("Content analysis suggests MD TALK")
-                text_section = create_ai_generated_md_talk(claude_text)
-                section_type = "md_talk"
     
+    print(f"V134: Text section created successfully: {section_type}")
     return text_section, section_type
 
 def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
-    """Send results to Google Apps Script webhook - V133 ENCODING SAFE"""
+    """V134 ULTRA SAFE: Send results to webhook with maximum encoding safety"""
     try:
         if not WEBHOOK_URL:
             print("WARNING: Webhook URL not configured, skipping webhook send")
             return None
         
-        # V133 FIX: Ensure all strings in metadata are JSON-safe
+        # V134 ULTRA SAFE: Ensure all metadata is encoding-safe
         safe_metadata = {}
         for key, value in metadata.items():
             if isinstance(value, str):
-                # Ensure string values are safe for JSON
-                safe_metadata[key] = safe_string_for_json(value)
+                safe_metadata[key] = ultra_safe_string_encode(value)
             elif isinstance(value, dict):
-                # Handle nested dictionaries
                 safe_dict = {}
                 for sub_key, sub_value in value.items():
                     if isinstance(sub_value, str):
-                        safe_dict[sub_key] = safe_string_for_json(sub_value)
+                        safe_dict[sub_key] = ultra_safe_string_encode(sub_value)
                     else:
                         safe_dict[sub_key] = sub_value
                 safe_metadata[key] = safe_dict
@@ -940,8 +993,8 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
                 safe_metadata[key] = value
                 
         webhook_data = {
-            "handler_type": safe_string_for_json(handler_type),
-            "file_name": safe_string_for_json(file_name),
+            "handler_type": ultra_safe_string_encode(handler_type),
+            "file_name": ultra_safe_string_encode(file_name),
             "route_number": route_number,
             "runpod_result": {
                 "output": {
@@ -952,16 +1005,16 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         
         webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
         
-        print(f"Sending to webhook: {handler_type} for {file_name}")
+        print(f"V134: Sending to webhook: {handler_type} for {file_name}")
         
-        # V133 FIX: Test JSON serialization before sending
+        # V134 ULTRA SAFE: Test JSON serialization before sending
         try:
-            test_json = json.dumps(webhook_data, ensure_ascii=False)
-            print("V133: JSON serialization test passed")
+            test_json = json.dumps(webhook_data, ensure_ascii=True)  # Force ASCII to avoid issues
+            print("V134: JSON serialization test passed (ASCII mode)")
         except Exception as json_err:
-            print(f"V133: JSON serialization test failed: {json_err}")
-            # Fallback: ensure ASCII encoding
-            webhook_data = json.loads(json.dumps(webhook_data, ensure_ascii=True))
+            print(f"V134: JSON serialization failed: {json_err}")
+            # Don't send webhook if JSON fails
+            return None
         
         response = requests.post(
             WEBHOOK_URL,
@@ -972,23 +1025,22 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         
         if response.status_code == 200:
             result = response.json()
-            print(f"Webhook success: {result}")
+            print(f"V134: Webhook success: {result}")
             return result
         else:
-            print(f"Webhook failed: {response.status_code} - {response.text}")
+            print(f"V134: Webhook failed: {response.status_code} - {response.text}")
             return None
             
     except Exception as e:
-        print(f"Webhook error: {str(e)}")
+        print(f"V134: Webhook error: {str(e)}")
         return None
 
 def detect_group_number_from_input(input_data):
-    """CORRECT group number detection - V133 FIXED"""
-    print("=== GROUP NUMBER DETECTION V133 - FIXED VERSION ===")
+    """CORRECT group number detection - V134 FIXED"""
+    print("=== GROUP NUMBER DETECTION V134 - FIXED VERSION ===")
     print(f"Full input_data keys: {sorted(input_data.keys())}")
     
     # PRIORITY 1: Direct route_number - ABSOLUTE HIGHEST PRIORITY!
-    # FIX: Handle string route_number from Make.com
     route_number = input_data.get('route_number', 0)
     try:
         route_number = int(str(route_number)) if str(route_number).isdigit() else 0
@@ -996,7 +1048,7 @@ def detect_group_number_from_input(input_data):
         route_number = 0
         
     if route_number > 0:
-        print(f"Found route_number: {route_number} - USING IT DIRECTLY WITHOUT ANY FURTHER CHECKS")
+        print(f"Found route_number: {route_number} - USING IT DIRECTLY")
         return route_number
     
     # PRIORITY 2: Check for image9 (Google Script Group 6)
@@ -1029,13 +1081,13 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type - GROUP 8")
         return 8
     
-    # PRIORITY 6: Check for COLOR indicators BEFORE URL analysis
+    # PRIORITY 6: Check for COLOR indicators
     all_text = str(input_data).lower()
     if any(word in all_text for word in ['color', 'colour', '컬러', '색상', '컬러섹션', 'color_section']):
         print("Found COLOR keywords - GROUP 6")
         return 6
     
-    # PRIORITY 7: Analyze URLs in 'image' field ONLY
+    # PRIORITY 7: Analyze URLs in 'image' field
     if 'image' in input_data and not any(f'image{i}' in input_data for i in range(1, 10)):
         image_value = str(input_data.get('image', ''))
         if ';' in image_value:
@@ -1044,53 +1096,30 @@ def detect_group_number_from_input(input_data):
             print(f"Found {url_count} URLs in 'image' field")
             
             if url_count == 2:
-                print("2 URLs - defaulting to group 3")
                 return 3
             elif url_count >= 3:
-                print("3+ URLs - likely group 4")
                 return 4
         else:
-            print("Single URL in 'image' field")
             return 1
     
-    # PRIORITY 8: Check for specific image keys with CORRECT mapping
-    # Check for image1 only
+    # PRIORITY 8: Check for specific image keys
     if 'image1' in input_data and not any(f'image{i}' in input_data for i in range(2, 10)):
-        print("Found only image1 - GROUP 1")
         return 1
-    
-    # Check for image2 only
     if 'image2' in input_data and not any(f'image{i}' in input_data for i in [1,3,4,5,6,7,8,9]):
-        print("Found only image2 - GROUP 2")
         return 2
-    
-    # Check for image3 or image4 - GROUP 3
     if ('image3' in input_data or 'image4' in input_data):
-        print("Found image3 or image4 - GROUP 3")
         return 3
-    
-    # Check for image5 or image6 - GROUP 4 (NOT GROUP 6!)
     if 'image5' in input_data:
-        print("Found image5 - GROUP 4")
         return 4
-    
-    # CRITICAL FIX: image6 alone should be GROUP 6 for COLOR section
     if 'image6' in input_data and not any(f'image{i}' in input_data for i in [1,2,3,4,5,7,8,9]):
-        print("Found only image6 - GROUP 6 (COLOR)")
         return 6
-    
-    # Check for image7 or image8 - GROUP 5
     if ('image7' in input_data or 'image8' in input_data):
-        print("Found image7 or image8 - GROUP 5")
         return 5
     
-    # LAST RESORT: Check any image key pattern
+    # Last resort
     for i in range(1, 10):
         key = f'image{i}'
         if key in input_data:
-            print(f"WARNING: Found {key} key without route_number - assuming group based on image number")
-            print("This might be incorrect! Make.com should send route_number!")
-            # Map image number to group
             if i in [1, 2]:
                 return i
             elif i in [3, 4]:
@@ -1098,20 +1127,19 @@ def detect_group_number_from_input(input_data):
             elif i == 5:
                 return 4
             elif i == 6:
-                return 6  # image6 = GROUP 6 COLOR
+                return 6
             elif i in [7, 8]:
                 return 5
             elif i == 9:
                 return 6
     
     print("ERROR: Could not determine group number")
-    print("Make.com should always send route_number!")
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V133 FIXED"""
+    """V134 ULTRA FIXED: Main handler with maximum safety and real ring images"""
     try:
-        print(f"=== V133 Detail Page Handler - FIXED VERSION ===")
+        print(f"=== V134 Detail Page Handler - ULTRA FIXED VERSION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1128,34 +1156,19 @@ def handler(event):
         print(f"Keys: {sorted(input_data.keys())}")
         print(f"route_number: {input_data.get('route_number', 'NOT FOUND')}")
         
-        # CRITICAL DEBUG: Print full input data
-        print(f"=== FULL INPUT DATA ===")
-        try:
-            # Safe print for debugging
-            for key, value in input_data.items():
-                print(f"{key}: {str(value)[:100]}")
-        except Exception as e:
-            print(f"Error printing input data: {e}")
-        print(f"======================")
-        
-        # Simple group detection - TRUST THE ROUTE NUMBER!
+        # Group detection
         group_number = detect_group_number_from_input(input_data)
         
         print(f"\n=== DETECTION RESULT ===")
         print(f"Detected group_number: {group_number}")
-        print(f"Input route_number: {input_data.get('route_number', 'NONE')}")
         
-        # CRITICAL FIX: Make.com might send route as string!
+        # Route number override
         route_str = str(input_data.get('route_number', '0'))
         try:
             route_int = int(route_str) if route_str.isdigit() else 0
         except:
             route_int = 0
             
-        print(f"Route as int: {route_int}")
-        print(f"======================\n")
-        
-        # ABSOLUTE GUARANTEE: If route_number exists, use it!
         if route_int > 0:
             original_group = group_number
             group_number = route_int
@@ -1171,10 +1184,7 @@ def handler(event):
         if group_number < 1 or group_number > 8:
             raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
         
-        # Handle various image input formats
-        # IMPORTANT: Check all formats, not using elif!
-        
-        # Format 1: 'image' key with semicolon-separated URLs
+        # Handle image input formats
         if 'image' in input_data and input_data['image']:
             print(f"Found 'image' key with value: {input_data['image'][:100]}...")
             image_data = input_data['image']
@@ -1191,7 +1201,6 @@ def handler(event):
                 input_data['url'] = image_data
                 print(f"Set single URL from 'image' key")
         
-        # Format 2: 'combined_urls' key
         if 'combined_urls' in input_data and input_data['combined_urls']:
             urls = str(input_data['combined_urls']).split(';')
             input_data['images'] = []
@@ -1201,25 +1210,22 @@ def handler(event):
                     input_data['images'].append({'url': url})
             print(f"Converted combined_urls to {len(input_data['images'])} images")
         
-        # Format 3: Specific image keys (image1, image2, etc.)
-        # Only process if we don't already have images/url
+        # Handle specific image keys
         if not input_data.get('images') and not input_data.get('url'):
-            # CRITICAL FIX: Special handling for GROUP 6
             if group_number == 6:
-                # Try multiple sources for GROUP 6
+                # V134 CRITICAL: Ensure GROUP 6 gets the ring image
                 if 'image9' in input_data:
                     input_data['url'] = input_data['image9']
-                    print("GROUP 6: Using image9")
+                    print("V134 GROUP 6: Using image9")
                 elif 'image6' in input_data:
                     input_data['url'] = input_data['image6']
-                    print("GROUP 6: Using image6")
+                    print("V134 GROUP 6: Using image6")
                 elif 'group6' in input_data:
                     input_data['url'] = input_data['group6']
-                    print("GROUP 6: Using group6")
+                    print("V134 GROUP 6: Using group6")
                 else:
-                    print("WARNING: GROUP 6 but no specific image found")
+                    print("V134 WARNING: GROUP 6 but no specific image found")
             
-            # First try exact match for current group
             elif f'image{group_number}' in input_data:
                 image_url = input_data[f'image{group_number}']
                 if ';' in str(image_url):
@@ -1229,7 +1235,6 @@ def handler(event):
                     input_data['url'] = image_url
                 print(f"Found and processed image{group_number}")
             
-            # Special handling for GROUP 3 - need image3 and image4
             elif group_number == 3:
                 images_to_add = []
                 if 'image3' in input_data:
@@ -1239,24 +1244,17 @@ def handler(event):
                 if images_to_add:
                     input_data['images'] = images_to_add
                     print(f"GROUP 3: Found {len(images_to_add)} images")
-                else:
-                    print("WARNING: GROUP 3 but missing image3/image4")
             
-            # Special handling for GROUP 4 - need image5 and possibly image6
             elif group_number == 4:
                 images_to_add = []
                 if 'image5' in input_data:
                     images_to_add.append({'url': input_data['image5']})
-                # Note: image6 alone goes to GROUP 6, but with image5 it's GROUP 4
                 if 'image6' in input_data and 'image5' in input_data:
                     images_to_add.append({'url': input_data['image6']})
                 if images_to_add:
                     input_data['images'] = images_to_add
                     print(f"GROUP 4: Found {len(images_to_add)} images")
-                else:
-                    print("WARNING: GROUP 4 but missing images")
             
-            # Special handling for GROUP 5 - need image7 and image8
             elif group_number == 5:
                 images_to_add = []
                 if 'image7' in input_data:
@@ -1266,51 +1264,34 @@ def handler(event):
                 if images_to_add:
                     input_data['images'] = images_to_add
                     print(f"GROUP 5: Found {len(images_to_add)} images")
-                else:
-                    print("WARNING: GROUP 5 but missing image7/image8")
-            
-            # Last resort: look for any image key
-            else:
-                for i in range(1, 10):
-                    if f'image{i}' in input_data:
-                        print(f"WARNING: Using image{i} for group {group_number}")
-                        image_url = input_data[f'image{i}']
-                        if ';' in str(image_url):
-                            urls = str(image_url).split(';')
-                            input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
-                        else:
-                            input_data['url'] = image_url
-                        break
         
         # Process based on group number
         if group_number == 6:
-            print("=== Processing GROUP 6: COLOR section ===")
+            print("V134: === Processing GROUP 6: COLOR section ===")
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
         elif group_number == 7:
-            print("=== Processing GROUP 7: MD TALK text section ===")
+            print("V134: === Processing GROUP 7: MD TALK text section ===")
             detail_page, section_type = process_text_section(input_data, 7)
             page_type = f"text_section_{section_type}"
             
         elif group_number == 8:
-            print("=== Processing GROUP 8: DESIGN POINT text section ===")
+            print("V134: === Processing GROUP 8: DESIGN POINT text section ===")
             detail_page, section_type = process_text_section(input_data, 8)
             page_type = f"text_section_{section_type}"
             
         elif group_number in [1, 2]:
-            print(f"=== Processing GROUP {group_number}: Individual image ===")
+            print(f"V134: === Processing GROUP {group_number}: Individual image ===")
             detail_page = process_single_image(input_data, group_number)
             page_type = "individual"
             
         elif group_number in [3, 4, 5]:
-            print(f"=== Processing GROUP {group_number}: Combined images ===")
+            print(f"V134: === Processing GROUP {group_number}: Combined images ===")
             if 'images' not in input_data or not isinstance(input_data['images'], list):
                 input_data['images'] = [input_data]
             
-            # Special handling for GROUP 5
             if group_number == 5:
-                # Pass full input_data to handle image7 and image8
                 detail_page = process_clean_combined_images(input_data.get('images', []), group_number, input_data)
             else:
                 detail_page = process_clean_combined_images(input_data['images'], group_number, input_data)
@@ -1325,60 +1306,56 @@ def handler(event):
         detail_page.save(buffered, format="PNG", optimize=True)
         img_str = base64.b64encode(buffered.getvalue())
         
-        # CRITICAL FIX: Decode bytes to string for JSON serialization
         detail_base64 = img_str.decode('utf-8')
-        
-        # Remove padding for Make.com
         detail_base64_no_padding = detail_base64.rstrip('=')
         
-        print(f"Detail page created: {detail_page.size}")
-        print(f"Base64 length: {len(detail_base64_no_padding)} chars")
+        print(f"V134: Detail page created: {detail_page.size}")
+        print(f"V134: Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # V133 FIX: Ensure all metadata strings are JSON-safe
+        # V134 ULTRA SAFE: Metadata with encoding safety
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
-            "page_type": safe_string_for_json(page_type),
+            "page_type": ultra_safe_string_encode(page_type),
             "page_number": group_number,
-            "route_number": group_number,  # FIXED: Same as page_number
+            "route_number": group_number,
             "actual_group": group_number,
             "dimensions": {
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V133_FIXED",
+            "version": "V134_ULTRA_FIXED",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
         }
         
-        # Send to webhook if configured
+        # Send to webhook
         file_name = f"detail_group_{group_number}.png"
         webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, group_number, metadata)
         
-        # Return response (Make.com format)
+        # Return response
         return {
             "output": metadata
         }
         
     except Exception as e:
-        # V133 FIX: Ensure error message is JSON-safe
-        error_msg = safe_string_for_json(f"Detail page creation failed: {str(e)}")
-        print(f"ERROR: {error_msg}")
-        import traceback
-        traceback_str = safe_string_for_json(traceback.format_exc())
-        print(f"Traceback: {traceback_str}")
+        # V134 ULTRA SAFE: Error handling
+        error_msg = ultra_safe_string_encode(f"Detail page creation failed: {str(e)}")
+        print(f"V134 ERROR: {error_msg}")
+        traceback_str = ultra_safe_string_encode(traceback.format_exc())
+        print(f"V134 TRACEBACK: {traceback_str}")
         
         return {
             "output": {
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback_str,
-                "version": "V133_FIXED"
+                "version": "V134_ULTRA_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V133 - FIXED VERSION...")
+    print("Starting Detail Page Handler V134 - ULTRA FIXED VERSION...")
     runpod.serverless.start({"handler": handler})
