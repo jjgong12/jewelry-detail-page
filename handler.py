@@ -1,51 +1,4 @@
-# Handle Make.com's 'image' key format FIRST
-        if 'image' in input_data and input_data['image']:
-            print(f"Found 'image' key with value: {input_data['image'][:100]}...")
-            image_data = input_data['image']
-            
-            if ';' in image_data:
-                urls = image_data.split(';')
-                input_data['images'] = []
-                for url in urls:
-                    url = url.strip()
-                    if url:
-                        input_data['images'].append({'url': url})
-                print(f"Converted 'image' to {len(input_data['images'])} images array")
-            else:
-                input_data['url'] = image_data
-                print(f"Set single URL from 'image' key")
-        
-        # Handle combined_urls format
-        elif 'combined_urls' in input_data and input_data['combined_urls']:
-            urls = input_data['combined_urls'].split(';')
-            input_data['images'] = []
-            for url in urls:
-                url = url.strip()
-                if url:
-                    input_data['images'].append({'url': url})
-            print(f"Converted combined_urls to {len(input_data['images'])} images")
-        
-        # CRITICAL FIX: Check ALL possible image keys, not just the group_number one
-        else:
-            # Try to find any image key
-            image_found = False
-            
-            # First try exact match
-            if f'image{group_number}' in input_data:
-                image_url = input_data[f'image{group_number}']
-                if ';' in image_url:
-                    urls = image_url.split(';')
-                    input_data['images'] = [{'url': url.strip()} for url in urls if url.strip()]
-                else:
-                    input_data['url'] = image_url
-                image_found = True
-                print(f"Found image{group_number} key")
-            
-            # If not found, look for ANY image key
-            if not image_found:
-                for i in range(1, 10):
-                    key = f'image{i}'
-                    if keyimport runpod
+import runpod
 import base64
 import requests
 from io import BytesIO
@@ -1023,9 +976,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V126 CORRECT"""
+    """Main handler for detail page creation - V128 FINAL PERFECT"""
     try:
-        print(f"=== V126 Detail Page Handler - CORRECT VERSION ===")
+        print(f"=== V128 Detail Page Handler - FINAL PERFECT VERSION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1042,8 +995,29 @@ def handler(event):
         print(f"Keys: {sorted(input_data.keys())}")
         print(f"route_number: {input_data.get('route_number', 'NOT FOUND')}")
         
+        # CRITICAL DEBUG: Print full input data
+        import json
+        print(f"=== FULL INPUT DATA ===")
+        try:
+            print(json.dumps(input_data, indent=2, ensure_ascii=False))
+        except:
+            print(f"Could not JSON serialize, raw data: {input_data}")
+        print(f"======================")
+        
         # Simple group detection - TRUST THE ROUTE NUMBER!
         group_number = detect_group_number_from_input(input_data)
+        
+        print(f"\n=== DETECTION RESULT ===")
+        print(f"Detected group_number: {group_number}")
+        print(f"Input route_number: {input_data.get('route_number', 'NONE')}")
+        print(f"======================\n")
+        
+        # ABSOLUTE GUARANTEE: If route_number exists, use it!
+        if 'route_number' in input_data and input_data['route_number'] > 0:
+            original_group = group_number
+            group_number = input_data['route_number']
+            if original_group != group_number:
+                print(f"!!! OVERRIDE: Changed group {original_group} → {group_number} based on route_number")
         
         print(f"\n=== FINAL GROUP: {group_number} ===")
         
@@ -1165,21 +1139,19 @@ def handler(event):
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Simple metadata
-        route_number = input_data.get('route_number', group_number)
-        
+        # Simple metadata - FIXED to be consistent
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
             "page_type": page_type,
             "page_number": group_number,
-            "route_number": route_number,
+            "route_number": group_number,  # FIXED: Same as page_number
             "actual_group": group_number,
             "dimensions": {
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V126_CORRECT",
+            "version": "V128_FINAL_PERFECT",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
@@ -1187,7 +1159,7 @@ def handler(event):
         
         # Send to webhook if configured
         file_name = f"detail_group_{group_number}.png"
-        webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, route_number, metadata)
+        webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, group_number, metadata)
         
         # Return response (Make.com format)
         return {
