@@ -903,12 +903,18 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """CORRECT group number detection - V128 FINAL PERFECT"""
-    print("=== GROUP NUMBER DETECTION V128 - FINAL PERFECT VERSION ===")
+    """CORRECT group number detection - V129 FORCE FIX"""
+    print("=== GROUP NUMBER DETECTION V129 - FORCE FIX VERSION ===")
     print(f"Full input_data keys: {sorted(input_data.keys())}")
     
     # PRIORITY 1: Direct route_number - ABSOLUTE HIGHEST PRIORITY!
+    # FIX: Handle string route_number from Make.com
     route_number = input_data.get('route_number', 0)
+    try:
+        route_number = int(str(route_number)) if str(route_number).isdigit() else 0
+    except:
+        route_number = 0
+        
     if route_number > 0:
         print(f"Found route_number: {route_number} - USING IT DIRECTLY WITHOUT ANY FURTHER CHECKS")
         return route_number
@@ -928,12 +934,17 @@ def detect_group_number_from_input(input_data):
     
     # PRIORITY 5: group_number field
     group_number = input_data.get('group_number', 0)
+    try:
+        group_number = int(str(group_number)) if str(group_number).isdigit() else 0
+    except:
+        group_number = 0
+        
     if group_number > 0:
         print(f"Found group_number: {group_number}")
         return group_number
     
     # PRIORITY 6: Check text_type for groups 7, 8
-    text_type = input_data.get('text_type', '')
+    text_type = str(input_data.get('text_type', ''))
     if text_type == 'md_talk':
         print("Found md_talk text_type - GROUP 7")
         return 7
@@ -941,7 +952,13 @@ def detect_group_number_from_input(input_data):
         print("Found design_point text_type - GROUP 8")
         return 8
     
-    # PRIORITY 7: Analyze URLs in 'image' field ONLY
+    # PRIORITY 7: Check for COLOR indicators BEFORE URL analysis
+    all_text = str(input_data).lower()
+    if any(word in all_text for word in ['color', 'colour', '컬러', '색상', '컬러섹션', 'color_section']):
+        print("Found COLOR keywords - GROUP 6")
+        return 6
+    
+    # PRIORITY 8: Analyze URLs in 'image' field ONLY
     if 'image' in input_data and not any(f'image{i}' in input_data for i in range(1, 10)):
         image_value = str(input_data.get('image', ''))
         if ';' in image_value:
@@ -957,10 +974,6 @@ def detect_group_number_from_input(input_data):
                 return 4
         else:
             print("Single URL in 'image' field")
-            # Check for COLOR indicators
-            if any(word in str(input_data).lower() for word in ['color', 'colour', '컬러', '색상']):
-                print("Found color keyword - GROUP 6")
-                return 6
             return 1
     
     # LAST RESORT: Check specific image keys ONLY if no route_number
@@ -976,9 +989,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V128 FINAL PERFECT"""
+    """Main handler for detail page creation - V129 FORCE FIX"""
     try:
-        print(f"=== V128 Detail Page Handler - FINAL PERFECT VERSION ===")
+        print(f"=== V129 Detail Page Handler - FORCE FIX VERSION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -996,12 +1009,13 @@ def handler(event):
         print(f"route_number: {input_data.get('route_number', 'NOT FOUND')}")
         
         # CRITICAL DEBUG: Print full input data
-        import json
         print(f"=== FULL INPUT DATA ===")
         try:
-            print(json.dumps(input_data, indent=2, ensure_ascii=False))
-        except:
-            print(f"Could not JSON serialize, raw data: {input_data}")
+            # Safe print for debugging
+            for key, value in input_data.items():
+                print(f"{key}: {str(value)[:100]}")
+        except Exception as e:
+            print(f"Error printing input data: {e}")
         print(f"======================")
         
         # Simple group detection - TRUST THE ROUTE NUMBER!
@@ -1010,16 +1024,34 @@ def handler(event):
         print(f"\n=== DETECTION RESULT ===")
         print(f"Detected group_number: {group_number}")
         print(f"Input route_number: {input_data.get('route_number', 'NONE')}")
+        
+        # CRITICAL FIX: Make.com might send route as string!
+        route_str = str(input_data.get('route_number', '0'))
+        try:
+            route_int = int(route_str) if route_str.isdigit() else 0
+        except:
+            route_int = 0
+            
+        print(f"Route as int: {route_int}")
         print(f"======================\n")
         
         # ABSOLUTE GUARANTEE: If route_number exists, use it!
-        if 'route_number' in input_data and input_data['route_number'] > 0:
+        if route_int > 0:
             original_group = group_number
-            group_number = input_data['route_number']
+            group_number = route_int
             if original_group != group_number:
                 print(f"!!! OVERRIDE: Changed group {original_group} → {group_number} based on route_number")
         
         print(f"\n=== FINAL GROUP: {group_number} ===")
+        
+        # DOUBLE CHECK FOR GROUP 6
+        if group_number == 5:
+            print("WARNING: Group 5 detected, checking if it should be 6...")
+            # Check for COLOR indicators
+            all_text = str(input_data)
+            if any(indicator in all_text.lower() for indicator in ['color', 'colour', '컬러', '색상', 'image9']):
+                print("!!! FORCE OVERRIDE: GROUP 5 → GROUP 6 (COLOR SECTION)")
+                group_number = 6
         
         # Validate group number
         if group_number == 0:
@@ -1101,9 +1133,14 @@ def handler(event):
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
-        elif group_number in [7, 8]:
-            print(f"=== Processing GROUP {group_number}: Text-only section ===")
-            detail_page, section_type = process_text_section(input_data, group_number)
+        elif group_number == 7:
+            print("=== Processing GROUP 7: MD TALK text section ===")
+            detail_page, section_type = process_text_section(input_data, 7)
+            page_type = f"text_section_{section_type}"
+            
+        elif group_number == 8:
+            print("=== Processing GROUP 8: DESIGN POINT text section ===")
+            detail_page, section_type = process_text_section(input_data, 8)
             page_type = f"text_section_{section_type}"
             
         elif group_number in [1, 2]:
@@ -1126,7 +1163,7 @@ def handler(event):
             page_type = "clean_combined"
         
         else:
-            raise ValueError(f"Invalid group number: {group_number}")
+            raise ValueError(f"Invalid group number: {group_number}. Must be 1-8.")
         
         # Convert to base64
         buffered = BytesIO()
@@ -1151,7 +1188,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V128_FINAL_PERFECT",
+            "version": "V129_FORCE_FIX",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
@@ -1177,11 +1214,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V128_FINAL_PERFECT"
+                "version": "V129_FORCE_FIX"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V128 - FINAL PERFECT VERSION...")
+    print("Starting Detail Page Handler V129 - FORCE FIX VERSION...")
     runpod.serverless.start({"handler": handler})
