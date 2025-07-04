@@ -25,8 +25,21 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pph
 # FIXED WIDTH FOR ALL IMAGES
 FIXED_WIDTH = 1200
 
+# Custom Exception Classes
 class FontDownloadError(Exception):
     """Custom exception for font download failures"""
+    pass
+
+class BackgroundRemovalError(Exception):
+    """Custom exception for background removal failures"""
+    pass
+
+class GoogleDriveDownloadError(Exception):
+    """Custom exception for Google Drive download failures"""
+    pass
+
+class WebhookError(Exception):
+    """Custom exception for webhook failures"""
     pass
 
 def download_korean_font():
@@ -94,8 +107,6 @@ def clean_claude_text(text):
     # Convert to string if needed
     text = str(text) if text is not None else ""
     
-    # CRITICAL: Never use decode('unicode_escape') - it destroys Korean text!
-    
     # Replace escape sequences (backslash + character)
     text = text.replace('\\n', ' ')
     text = text.replace('\\r', ' ')
@@ -118,13 +129,6 @@ def clean_claude_text(text):
     # Collapse multiple spaces
     text = ' '.join(text.split())
     
-    # NO LENGTH LIMIT - Trust Claude!
-    # if len(text) > 500:
-    #     text = text[:497] + "..."
-    
-    # IMPORTANT: No character filtering by Unicode value!
-    # Korean characters (한글) have values > 0xAC00
-    
     print(f"Cleaned text preview: {text[:100]}...")
     return text.strip()
 
@@ -135,10 +139,6 @@ def get_text_dimensions(draw, text, font):
         return bbox[2] - bbox[0], bbox[3] - bbox[1]
     except AttributeError:
         return draw.textsize(text, font=font)
-
-class BackgroundRemovalError(Exception):
-    """Custom exception for background removal failures"""
-    pass
 
 def extract_ring_with_replicate(img):
     """Extract ring from background using Replicate API with proper error handling"""
@@ -243,7 +243,7 @@ def apply_metal_color_filter(img, color_multipliers):
 def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     """Create COLOR section with simple CSS-style rings"""
     section_height = 1000
-    section_img = Image.new('RGB', (width, section_height), '#F8F8F8')  # Light gray background like HTML
+    section_img = Image.new('RGB', (width, section_height), '#F8F8F8')
     draw = ImageDraw.Draw(section_img)
     
     font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
@@ -253,7 +253,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     for font_path in font_paths:
         if os.path.exists(font_path):
             try:
-                title_font = ImageFont.truetype(font_path, 48)  # Smaller like HTML
+                title_font = ImageFont.truetype(font_path, 48)
                 label_font = ImageFont.truetype(font_path, 24)
                 break
             except:
@@ -263,21 +263,21 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
-    # Title with letter spacing effect
+    # Title
     title = "COLOR"
     title_width, _ = get_text_dimensions(draw, title, title_font)
     draw.text((width//2 - title_width//2, 80), title, font=title_font, fill=(51, 51, 51))
     
-    # Color definitions - matching HTML exactly
+    # Color definitions
     colors = [
-        ("yellow", (255, 215, 0)),      # #FFD700
-        ("rose", (255, 192, 203)),      # #FFC0CB  
-        ("white", (229, 229, 229)),     # #E5E5E5
-        ("antique", (212, 175, 55))     # #D4AF37
+        ("yellow", (255, 215, 0)),
+        ("rose", (255, 192, 203)),
+        ("white", (229, 229, 229)),
+        ("antique", (212, 175, 55))
     ]
     
     # Layout settings
-    container_size = 300  # Size for each ring container
+    container_size = 300
     h_spacing = 100
     v_spacing = 400
     
@@ -296,8 +296,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         container = Image.new('RGBA', (container_size, container_size), (255, 255, 255, 255))
         container_draw = ImageDraw.Draw(container)
         
-        # Draw ring pair like HTML - overlapping circles
-        # Left ring (larger)
+        # Draw ring pair - overlapping circles
         left_ring_center_x = container_size // 2 - 30
         left_ring_center_y = container_size // 2
         left_ring_radius = 70
@@ -341,8 +340,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
             right_ring_center_y + (right_ring_radius - right_ring_thickness)
         ], fill=(255, 255, 255))
         
-        # Add simple diamond on top of each ring
-        # Left ring diamond
+        # Add diamonds
         diamond_size = 8
         diamond_y = left_ring_center_y - left_ring_radius + left_ring_thickness//2
         container_draw.polygon([
@@ -352,7 +350,6 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
             (left_ring_center_x - diamond_size//2, diamond_y - diamond_size//2)
         ], fill=(255, 255, 255), outline=(180, 180, 180))
         
-        # Right ring diamond
         small_diamond_size = 6
         small_diamond_y = right_ring_center_y - right_ring_radius + right_ring_thickness//2
         container_draw.polygon([
@@ -362,7 +359,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
             (right_ring_center_x - small_diamond_size//2, small_diamond_y - small_diamond_size//2)
         ], fill=(255, 255, 255), outline=(180, 180, 180))
         
-        # Add subtle shadow
+        # Add shadow
         shadow_img = Image.new('RGBA', (container_size + 10, container_size + 10), (0, 0, 0, 0))
         shadow_draw = ImageDraw.Draw(shadow_img)
         shadow_draw.rectangle([5, 5, container_size + 5, container_size + 5], 
@@ -384,7 +381,7 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     """Create MD Talk text section from Claude-generated content"""
-    section_height = 800  # Increased height for more text
+    section_height = 800
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -412,21 +409,20 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Remove MD TALK or md talk from the beginning of content
+        # Remove MD TALK from the beginning
         cleaned_text = re.sub(r'^(MD TALK|md talk|MD talk|엠디톡)\s*', '', cleaned_text, flags=re.IGNORECASE)
         cleaned_text = cleaned_text.strip()
         
-        # NO CHARACTER LIMIT - Trust Claude! Break naturally at spaces
+        # Break naturally at spaces
         words = cleaned_text.split()
         lines = []
         current_line = ""
         
         for word in words:
-            # Test if adding this word would exceed visual width (not character count)
             test_line = current_line + " " + word if current_line else word
             test_width, _ = get_text_dimensions(draw, test_line, body_font)
             
-            if test_width > width - 100:  # Leave 50px margin on each side
+            if test_width > width - 100:
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word
@@ -436,8 +432,6 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         if current_line:
             lines.append(current_line.strip())
         
-        # NO LINE LIMIT - Use all lines Claude provides
-        # lines = lines[:3]  # REMOVED
     else:
         lines = [
             "고급스러운 텍스처와 균형 잡힌 디테일이",
@@ -445,7 +439,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
             "섬세한 연결을 느끼고 싶은 커플에게 추천드립니다."
         ]
     
-    y_pos = 250  # Start lower for better centering
+    y_pos = 250
     line_height = 50
     
     for line in lines:
@@ -457,7 +451,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
 
 def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     """Create Design Point text section from Claude-generated content"""
-    section_height = 900  # Increased height for more text
+    section_height = 900
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -485,21 +479,20 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     if claude_text:
         cleaned_text = clean_claude_text(claude_text)
         
-        # Remove DESIGN POINT or design point from the beginning of content
+        # Remove DESIGN POINT from the beginning
         cleaned_text = re.sub(r'^(DESIGN POINT|design point|Design Point|디자인포인트|디자인 포인트)\s*', '', cleaned_text, flags=re.IGNORECASE)
         cleaned_text = cleaned_text.strip()
         
-        # NO CHARACTER LIMIT - Trust Claude! Break naturally at visual width
+        # Break naturally at visual width
         words = cleaned_text.split()
         lines = []
         current_line = ""
         
         for word in words:
-            # Test if adding this word would exceed visual width
             test_line = current_line + " " + word if current_line else word
             test_width, _ = get_text_dimensions(draw, test_line, body_font)
             
-            if test_width > width - 100:  # Leave 50px margin on each side
+            if test_width > width - 100:
                 if current_line:
                     lines.append(current_line.strip())
                 current_line = word
@@ -509,8 +502,6 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         if current_line:
             lines.append(current_line.strip())
         
-        # NO LINE LIMIT - Use all lines Claude provides
-        # lines = lines[:4]  # REMOVED
     else:
         lines = [
             "리프링 무광 텍스처와 유광 라인의 조화가",
@@ -519,7 +510,7 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
             "화려하면서도 고급스러운 반영을 표현합니다"
         ]
     
-    y_pos = 250  # Start lower for better centering
+    y_pos = 250
     line_height = 55
     
     for line in lines:
@@ -547,10 +538,6 @@ def extract_file_id_from_url(url):
             return match.group(1)
     
     return None
-
-class GoogleDriveDownloadError(Exception):
-    """Custom exception for Google Drive download failures"""
-    pass
 
 def download_image_from_google_drive(url):
     """Download image from Google Drive URL with proper error handling"""
@@ -748,7 +735,6 @@ def process_single_image(input_data, group_number):
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
     draw = ImageDraw.Draw(detail_page)
-    # FIXED: Use group_number directly, not route_number
     page_text = f"- {group_number} -"
     
     small_font = None
@@ -774,15 +760,13 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
     """Process combined images WITHOUT text sections (groups 3, 4, 5)"""
     print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
-    # CRITICAL FIX: For group 5, we need images 7 and 8
+    # Special handling for group 5
     if group_number == 5:
         print("=== GROUP 5 SPECIAL HANDLING ===")
         
-        # Check if images_data already has 2 images (from 'images' array)
         if len(images_data) >= 2:
             print(f"Using first 2 images from images_data (total: {len(images_data)})")
             images_data = images_data[:2]
-        # Otherwise, try to find image7 and image8
         elif input_data and 'image7' in input_data and 'image8' in input_data:
             print("Found image7 and image8 keys")
             images_data = [
@@ -830,7 +814,6 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
     
     draw = ImageDraw.Draw(detail_page)
     
-    # FIXED: Use group_number directly for page text
     if group_number == 5:
         page_text = f"- Gallery 7-8 -"
     else:
@@ -859,20 +842,17 @@ def process_color_section(input_data):
     """Process group 6 - COLOR section with ring image"""
     print("=== PROCESSING GROUP 6 COLOR SECTION ===")
     
-    # Multiple ways to find the image for color section
     img = None
     
-    # Method 1: Check for image9 key
+    # Multiple ways to find the image for color section
     if 'image9' in input_data:
         print("Found image9 key for COLOR section")
         img_data = {'url': input_data['image9']}
         img = get_image_from_input(img_data)
-    # Method 2: Check for group6 key
     elif 'group6' in input_data:
         print("Found group6 key for COLOR section")
         img_data = {'url': input_data['group6']}
         img = get_image_from_input(img_data)
-    # Method 3: Check if it's a single image input
     else:
         print("Using standard image input for COLOR section")
         img = get_image_from_input(input_data)
@@ -882,7 +862,7 @@ def process_color_section(input_data):
     else:
         print("WARNING: No ring image found, creating without ring image")
     
-    # Create color section (with or without ring image)
+    # Create color section
     color_section = create_color_options_section(ring_image=img)
     
     if img:
@@ -928,28 +908,18 @@ def process_text_section(input_data, group_number):
     print(f"Group number: {group_number}")
     print(f"Cleaned Claude text preview: {claude_text[:100] if claude_text else 'No text provided'}...")
     
-    # CRITICAL FIX: Force correct text section based on route_number/group_number
-    # Route 7 = MD TALK, Route 8 = DESIGN POINT
+    # Force correct text section based on group_number
     if group_number == 7:
         print("GROUP 7 CONFIRMED - Creating MD TALK section")
-        # Check if the text content looks like DESIGN POINT content
-        if any(keyword in claude_text.lower() for keyword in ['텍스처', '파베', '밀그레인', '리프링']):
-            print("WARNING: Text content seems like DESIGN POINT but group is 7 (MD TALK)")
-            print("Forcing MD TALK creation anyway based on group number")
         text_section = create_ai_generated_md_talk(claude_text)
         section_type = "md_talk"
     elif group_number == 8:
         print("GROUP 8 CONFIRMED - Creating DESIGN POINT section")
-        # Check if the text content looks like MD TALK content
-        if any(keyword in claude_text.lower() for keyword in ['엔그레이빙', '감성', '커플링', '세련미']):
-            print("WARNING: Text content seems like MD TALK but group is 8 (DESIGN POINT)")
-            print("Forcing DESIGN POINT creation anyway based on group number")
         text_section = create_ai_generated_design_point(claude_text)
         section_type = "design_point"
     else:
-        # This shouldn't happen if routing is correct
         print(f"WARNING: Unexpected group number {group_number} for text section")
-        print("Falling back to text_type detection")
+        # Fallback based on text_type
         if text_type == 'md_talk' or 'md' in text_type.lower():
             text_section = create_ai_generated_md_talk(claude_text)
             section_type = "md_talk"
@@ -968,10 +938,6 @@ def process_text_section(input_data, group_number):
                 section_type = "md_talk"
     
     return text_section, section_type
-
-class WebhookError(Exception):
-    """Custom exception for webhook failures"""
-    pass
 
 def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
     """Send results to Google Apps Script webhook with proper error handling"""
@@ -1335,5 +1301,5 @@ def handler(event):
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V129 - FORCE FIX VERSION...")
+    print("Starting Detail Page Handler V129 - IMPROVED VERSION...")
     runpod.serverless.start({"handler": handler})
