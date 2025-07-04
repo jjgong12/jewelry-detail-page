@@ -620,7 +620,7 @@ def calculate_image_height(original_width, original_height, target_width):
     return int(original_height * ratio)
 
 def process_single_image(input_data, group_number):
-    """Process single image (groups 1, 2)"""
+    """Process single image (groups 1, 2) - V132 NO PAGE NUMBERING"""
     print(f"Processing single image for group {group_number}")
     
     img = get_image_from_input(input_data)
@@ -639,31 +639,13 @@ def process_single_image(input_data, group_number):
     
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
-    draw = ImageDraw.Draw(detail_page)
-    # FIXED: Use group_number directly, not route_number
-    page_text = f"- {group_number} -"
-    
-    small_font = None
-    for font_path in ["/tmp/NanumMyeongjo.ttf", 
-                     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
-        if os.path.exists(font_path):
-            try:
-                small_font = ImageFont.truetype(font_path, 16)
-                break
-            except:
-                continue
-    
-    if small_font is None:
-        small_font = ImageFont.load_default()
-    
-    text_width, _ = get_text_dimensions(draw, page_text, small_font)
-    draw.text((FIXED_WIDTH//2 - text_width//2, TOTAL_HEIGHT - 30), 
-             page_text, fill=(200, 200, 200), font=small_font)
+    # V132 FIX: REMOVED PAGE NUMBERING TEXT
+    # No more "- {group_number} -" text at bottom
     
     return detail_page
 
 def process_clean_combined_images(images_data, group_number, input_data=None):
-    """Process combined images WITHOUT text sections (groups 3, 4, 5)"""
+    """Process combined images WITHOUT text sections (groups 3, 4, 5) - V132 NO PAGE NUMBERING"""
     print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
     # CRITICAL FIX: For group 5, we need images 7 and 8
@@ -720,30 +702,8 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
         
         img.close()
     
-    draw = ImageDraw.Draw(detail_page)
-    
-    # FIXED: Use group_number directly for page text
-    if group_number == 5:
-        page_text = f"- Gallery 7-8 -"
-    else:
-        page_text = f"- {group_number} -"
-    
-    small_font = None
-    for font_path in ["/tmp/NanumMyeongjo.ttf", 
-                     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
-        if os.path.exists(font_path):
-            try:
-                small_font = ImageFont.truetype(font_path, 16)
-                break
-            except:
-                continue
-    
-    if small_font is None:
-        small_font = ImageFont.load_default()
-    
-    text_width, _ = get_text_dimensions(draw, page_text, small_font)
-    draw.text((FIXED_WIDTH//2 - text_width//2, total_height - 50), 
-             page_text, fill=(200, 200, 200), font=small_font)
+    # V132 FIX: REMOVED PAGE NUMBERING TEXT
+    # No more "- Gallery 7-8 -" or "- {group_number} -" text at bottom
     
     return detail_page
 
@@ -793,7 +753,7 @@ def process_color_section(input_data):
     return color_section
 
 def process_text_section(input_data, group_number):
-    """Process text-only sections (groups 7, 8) with Claude-generated content"""
+    """Process text-only sections (groups 7, 8) with Claude-generated content - V132 ENCODING FIX"""
     print(f"Processing text section for group {group_number}")
     
     # Check for base64 encoded text first
@@ -806,9 +766,17 @@ def process_text_section(input_data, group_number):
             if missing_padding:
                 claude_text_base64 += '=' * (4 - missing_padding)
             
-            # Decode from base64 - FIX: specify UTF-8 encoding
-            claude_text = base64.b64decode(claude_text_base64).decode('utf-8', errors='ignore')
-            print("Successfully decoded base64 claude_text")
+            # V132 FIX: Proper UTF-8 decoding with better error handling
+            try:
+                claude_text = base64.b64decode(claude_text_base64).decode('utf-8')
+                print("Successfully decoded base64 claude_text with UTF-8")
+            except UnicodeDecodeError:
+                print("UTF-8 decode failed, trying with errors='replace'")
+                claude_text = base64.b64decode(claude_text_base64).decode('utf-8', errors='replace')
+            except Exception as decode_err:
+                print(f"All decode attempts failed: {decode_err}")
+                claude_text = ''
+                
         except Exception as e:
             print(f"Error decoding base64: {e}")
             claude_text = ''
@@ -871,19 +839,31 @@ def process_text_section(input_data, group_number):
     return text_section, section_type
 
 def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
-    """Send results to Google Apps Script webhook"""
+    """Send results to Google Apps Script webhook - V132 ENCODING SAFE"""
     try:
         if not WEBHOOK_URL:
             print("WARNING: Webhook URL not configured, skipping webhook send")
             return None
-            
+        
+        # V132 FIX: Ensure all strings in metadata are properly encoded
+        safe_metadata = {}
+        for key, value in metadata.items():
+            if isinstance(value, str):
+                # Ensure string values are safe for JSON
+                try:
+                    safe_metadata[key] = value.encode('utf-8', errors='replace').decode('utf-8')
+                except:
+                    safe_metadata[key] = str(value)
+            else:
+                safe_metadata[key] = value
+                
         webhook_data = {
             "handler_type": handler_type,
             "file_name": file_name,
             "route_number": route_number,
             "runpod_result": {
                 "output": {
-                    "output": metadata
+                    "output": safe_metadata
                 }
             }
         }
@@ -895,7 +875,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         response = requests.post(
             WEBHOOK_URL,
             json=webhook_data,
-            headers={'Content-Type': 'application/json'},
+            headers={'Content-Type': 'application/json; charset=utf-8'},
             timeout=30
         )
         
@@ -912,8 +892,8 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """CORRECT group number detection - V131 FIXED"""
-    print("=== GROUP NUMBER DETECTION V131 - FIXED VERSION ===")
+    """CORRECT group number detection - V132 FIXED"""
+    print("=== GROUP NUMBER DETECTION V132 - FIXED VERSION ===")
     print(f"Full input_data keys: {sorted(input_data.keys())}")
     
     # PRIORITY 1: Direct route_number - ABSOLUTE HIGHEST PRIORITY!
@@ -1038,9 +1018,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V131 FIXED"""
+    """Main handler for detail page creation - V132 FIXED"""
     try:
-        print(f"=== V131 Detail Page Handler - FIXED VERSION ===")
+        print(f"=== V132 Detail Page Handler - FIXED VERSION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1275,7 +1255,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V131_FIXED",
+            "version": "V132_FIXED",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
@@ -1301,11 +1281,11 @@ def handler(event):
                 "error": error_msg,
                 "status": "error",
                 "traceback": traceback.format_exc(),
-                "version": "V131_FIXED"
+                "version": "V132_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V131 - FIXED VERSION...")
+    print("Starting Detail Page Handler V132 - FIXED VERSION...")
     runpod.serverless.start({"handler": handler})
