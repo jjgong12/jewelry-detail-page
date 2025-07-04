@@ -74,6 +74,25 @@ def download_korean_font():
         print(f"Error in font download process: {str(e)}")
         return False
 
+def safe_string_for_json(text):
+    """V133 FIX: Ensure string is safe for JSON encoding"""
+    if not text:
+        return ""
+    
+    # Convert to string if needed
+    text = str(text) if text is not None else ""
+    
+    # V133 CRITICAL FIX: Ensure all characters are JSON-safe
+    try:
+        # Test if string can be JSON encoded
+        json.dumps(text, ensure_ascii=False)
+        return text
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # If encoding fails, replace problematic characters
+        safe_text = text.encode('utf-8', errors='replace').decode('utf-8')
+        print(f"WARNING: Had to replace some characters in text: {text[:50]}...")
+        return safe_text
+
 def clean_claude_text(text):
     """Clean text for safe JSON encoding while preserving Korean characters"""
     if not text:
@@ -113,8 +132,10 @@ def clean_claude_text(text):
     # IMPORTANT: No character filtering by Unicode value!
     # Korean characters (한글) have values > 0xAC00
     
-    print(f"Cleaned text preview: {text[:100]}...")
-    return text.strip()
+    # V133 FIX: Ensure final text is JSON-safe
+    cleaned = safe_string_for_json(text.strip())
+    print(f"Cleaned text preview: {cleaned[:100]}...")
+    return cleaned
 
 def get_text_dimensions(draw, text, font):
     """Get text dimensions compatible with all PIL versions"""
@@ -218,7 +239,7 @@ def apply_metal_color_filter(img, color_multipliers):
     return Image.merge('RGBA', (r, g, b, a))
 
 def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
-    """Create COLOR section with simple CSS-style rings"""
+    """V133 FIX: Create COLOR section with ACTUAL ring image using Replicate API"""
     section_height = 1000
     section_img = Image.new('RGB', (width, section_height), '#F8F8F8')  # Light gray background like HTML
     draw = ImageDraw.Draw(section_img)
@@ -262,6 +283,18 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
     start_x = (width - grid_width) // 2
     start_y = 200
     
+    # V133 NEW: Process the actual ring image if provided
+    processed_ring = None
+    if ring_image:
+        try:
+            print("V133: Processing actual ring image with background removal...")
+            # Extract ring using Replicate API
+            processed_ring = extract_ring_with_replicate(ring_image)
+            print(f"V133: Ring extraction completed, size: {processed_ring.size}")
+        except Exception as e:
+            print(f"V133: Error processing ring image: {e}")
+            processed_ring = None
+    
     for i, (name, color_rgb) in enumerate(colors):
         row = i // 2
         col = i % 2
@@ -273,71 +306,36 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
         container = Image.new('RGBA', (container_size, container_size), (255, 255, 255, 255))
         container_draw = ImageDraw.Draw(container)
         
-        # Draw ring pair like HTML - overlapping circles
-        # Left ring (larger)
-        left_ring_center_x = container_size // 2 - 30
-        left_ring_center_y = container_size // 2
-        left_ring_radius = 70
-        left_ring_thickness = 20
-        
-        # Draw left ring
-        container_draw.ellipse([
-            left_ring_center_x - left_ring_radius,
-            left_ring_center_y - left_ring_radius,
-            left_ring_center_x + left_ring_radius,
-            left_ring_center_y + left_ring_radius
-        ], fill=color_rgb, outline=(0, 0, 0, 30), width=1)
-        
-        # Inner circle for left ring
-        container_draw.ellipse([
-            left_ring_center_x - (left_ring_radius - left_ring_thickness),
-            left_ring_center_y - (left_ring_radius - left_ring_thickness),
-            left_ring_center_x + (left_ring_radius - left_ring_thickness),
-            left_ring_center_y + (left_ring_radius - left_ring_thickness)
-        ], fill=(255, 255, 255))
-        
-        # Right ring (smaller)
-        right_ring_center_x = container_size // 2 + 40
-        right_ring_center_y = container_size // 2 + 20
-        right_ring_radius = 55
-        right_ring_thickness = 18
-        
-        # Draw right ring
-        container_draw.ellipse([
-            right_ring_center_x - right_ring_radius,
-            right_ring_center_y - right_ring_radius,
-            right_ring_center_x + right_ring_radius,
-            right_ring_center_y + right_ring_radius
-        ], fill=color_rgb, outline=(0, 0, 0, 30), width=1)
-        
-        # Inner circle for right ring
-        container_draw.ellipse([
-            right_ring_center_x - (right_ring_radius - right_ring_thickness),
-            right_ring_center_y - (right_ring_radius - right_ring_thickness),
-            right_ring_center_x + (right_ring_radius - right_ring_thickness),
-            right_ring_center_y + (right_ring_radius - right_ring_thickness)
-        ], fill=(255, 255, 255))
-        
-        # Add simple diamond on top of each ring
-        # Left ring diamond
-        diamond_size = 8
-        diamond_y = left_ring_center_y - left_ring_radius + left_ring_thickness//2
-        container_draw.polygon([
-            (left_ring_center_x, diamond_y - diamond_size),
-            (left_ring_center_x + diamond_size//2, diamond_y - diamond_size//2),
-            (left_ring_center_x, diamond_y),
-            (left_ring_center_x - diamond_size//2, diamond_y - diamond_size//2)
-        ], fill=(255, 255, 255), outline=(180, 180, 180))
-        
-        # Right ring diamond
-        small_diamond_size = 6
-        small_diamond_y = right_ring_center_y - right_ring_radius + right_ring_thickness//2
-        container_draw.polygon([
-            (right_ring_center_x, small_diamond_y - small_diamond_size),
-            (right_ring_center_x + small_diamond_size//2, small_diamond_y - small_diamond_size//2),
-            (right_ring_center_x, small_diamond_y),
-            (right_ring_center_x - small_diamond_size//2, small_diamond_y - small_diamond_size//2)
-        ], fill=(255, 255, 255), outline=(180, 180, 180))
+        # V133 NEW: Use actual ring image if available
+        if processed_ring:
+            try:
+                # Resize the ring to fit in container
+                ring_size = min(container_size - 40, 200)  # Leave some margin
+                ring_resized = processed_ring.resize((ring_size, ring_size), Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+                
+                # Apply color filter to the ring
+                colored_ring = apply_metal_color_filter(ring_resized, [
+                    color_rgb[0] / 255.0,
+                    color_rgb[1] / 255.0,
+                    color_rgb[2] / 255.0
+                ])
+                
+                # Center the ring in the container
+                ring_x = (container_size - ring_size) // 2
+                ring_y = (container_size - ring_size) // 2
+                
+                # Paste the colored ring
+                container.paste(colored_ring, (ring_x, ring_y), colored_ring)
+                
+                print(f"V133: Applied {name} color to actual ring image")
+                
+            except Exception as e:
+                print(f"V133: Error applying ring image for {name}: {e}")
+                # Fallback to drawing circles if ring processing fails
+                draw_fallback_rings(container_draw, container_size, color_rgb)
+        else:
+            # Fallback: Draw ring pair like HTML - overlapping circles
+            draw_fallback_rings(container_draw, container_size, color_rgb)
         
         # Add subtle shadow
         shadow_img = Image.new('RGBA', (container_size + 10, container_size + 10), (0, 0, 0, 0))
@@ -358,6 +356,73 @@ def create_color_options_section(width=FIXED_WIDTH, ring_image=None):
                  name, font=label_font, fill=(102, 102, 102))
     
     return section_img
+
+def draw_fallback_rings(container_draw, container_size, color_rgb):
+    """Draw fallback ring graphics if actual ring image processing fails"""
+    # Left ring (larger)
+    left_ring_center_x = container_size // 2 - 30
+    left_ring_center_y = container_size // 2
+    left_ring_radius = 70
+    left_ring_thickness = 20
+    
+    # Draw left ring
+    container_draw.ellipse([
+        left_ring_center_x - left_ring_radius,
+        left_ring_center_y - left_ring_radius,
+        left_ring_center_x + left_ring_radius,
+        left_ring_center_y + left_ring_radius
+    ], fill=color_rgb, outline=(0, 0, 0, 30), width=1)
+    
+    # Inner circle for left ring
+    container_draw.ellipse([
+        left_ring_center_x - (left_ring_radius - left_ring_thickness),
+        left_ring_center_y - (left_ring_radius - left_ring_thickness),
+        left_ring_center_x + (left_ring_radius - left_ring_thickness),
+        left_ring_center_y + (left_ring_radius - left_ring_thickness)
+    ], fill=(255, 255, 255))
+    
+    # Right ring (smaller)
+    right_ring_center_x = container_size // 2 + 40
+    right_ring_center_y = container_size // 2 + 20
+    right_ring_radius = 55
+    right_ring_thickness = 18
+    
+    # Draw right ring
+    container_draw.ellipse([
+        right_ring_center_x - right_ring_radius,
+        right_ring_center_y - right_ring_radius,
+        right_ring_center_x + right_ring_radius,
+        right_ring_center_y + right_ring_radius
+    ], fill=color_rgb, outline=(0, 0, 0, 30), width=1)
+    
+    # Inner circle for right ring
+    container_draw.ellipse([
+        right_ring_center_x - (right_ring_radius - right_ring_thickness),
+        right_ring_center_y - (right_ring_radius - right_ring_thickness),
+        right_ring_center_x + (right_ring_radius - right_ring_thickness),
+        right_ring_center_y + (right_ring_radius - right_ring_thickness)
+    ], fill=(255, 255, 255))
+    
+    # Add simple diamond on top of each ring
+    # Left ring diamond
+    diamond_size = 8
+    diamond_y = left_ring_center_y - left_ring_radius + left_ring_thickness//2
+    container_draw.polygon([
+        (left_ring_center_x, diamond_y - diamond_size),
+        (left_ring_center_x + diamond_size//2, diamond_y - diamond_size//2),
+        (left_ring_center_x, diamond_y),
+        (left_ring_center_x - diamond_size//2, diamond_y - diamond_size//2)
+    ], fill=(255, 255, 255), outline=(180, 180, 180))
+    
+    # Right ring diamond
+    small_diamond_size = 6
+    small_diamond_y = right_ring_center_y - right_ring_radius + right_ring_thickness//2
+    container_draw.polygon([
+        (right_ring_center_x, small_diamond_y - small_diamond_size),
+        (right_ring_center_x + small_diamond_size//2, small_diamond_y - small_diamond_size//2),
+        (right_ring_center_x, small_diamond_y),
+        (right_ring_center_x - small_diamond_size//2, small_diamond_y - small_diamond_size//2)
+    ], fill=(255, 255, 255), outline=(180, 180, 180))
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     """Create MD Talk text section from Claude-generated content"""
@@ -620,7 +685,7 @@ def calculate_image_height(original_width, original_height, target_width):
     return int(original_height * ratio)
 
 def process_single_image(input_data, group_number):
-    """Process single image (groups 1, 2) - V132 NO PAGE NUMBERING"""
+    """Process single image (groups 1, 2) - V133 NO PAGE NUMBERING"""
     print(f"Processing single image for group {group_number}")
     
     img = get_image_from_input(input_data)
@@ -639,13 +704,13 @@ def process_single_image(input_data, group_number):
     
     detail_page.paste(img_resized, (0, TOP_MARGIN))
     
-    # V132 FIX: REMOVED PAGE NUMBERING TEXT
+    # V133 FIX: REMOVED PAGE NUMBERING TEXT
     # No more "- {group_number} -" text at bottom
     
     return detail_page
 
 def process_clean_combined_images(images_data, group_number, input_data=None):
-    """Process combined images WITHOUT text sections (groups 3, 4, 5) - V132 NO PAGE NUMBERING"""
+    """Process combined images WITHOUT text sections (groups 3, 4, 5) - V133 NO PAGE NUMBERING"""
     print(f"Processing {len(images_data)} CLEAN images for group {group_number} (NO TEXT SECTIONS)")
     
     # CRITICAL FIX: For group 5, we need images 7 and 8
@@ -702,7 +767,7 @@ def process_clean_combined_images(images_data, group_number, input_data=None):
         
         img.close()
     
-    # V132 FIX: REMOVED PAGE NUMBERING TEXT
+    # V133 FIX: REMOVED PAGE NUMBERING TEXT
     # No more "- Gallery 7-8 -" or "- {group_number} -" text at bottom
     
     return detail_page
@@ -743,7 +808,7 @@ def process_color_section(input_data):
     else:
         print("WARNING: No ring image found, creating without ring image")
     
-    # Create color section (with or without ring image)
+    # V133 NEW: Pass the actual ring image to create_color_options_section
     color_section = create_color_options_section(ring_image=img)
     
     if img:
@@ -753,7 +818,7 @@ def process_color_section(input_data):
     return color_section
 
 def process_text_section(input_data, group_number):
-    """Process text-only sections (groups 7, 8) with Claude-generated content - V132 ENCODING FIX"""
+    """Process text-only sections (groups 7, 8) with Claude-generated content - V133 ENCODING FIX"""
     print(f"Processing text section for group {group_number}")
     
     # Check for base64 encoded text first
@@ -766,15 +831,26 @@ def process_text_section(input_data, group_number):
             if missing_padding:
                 claude_text_base64 += '=' * (4 - missing_padding)
             
-            # V132 FIX: Proper UTF-8 decoding with better error handling
+            # V133 FIX: More robust UTF-8 decoding with multiple fallbacks
             try:
+                # First try: Normal UTF-8 decode
                 claude_text = base64.b64decode(claude_text_base64).decode('utf-8')
                 print("Successfully decoded base64 claude_text with UTF-8")
-            except UnicodeDecodeError:
-                print("UTF-8 decode failed, trying with errors='replace'")
-                claude_text = base64.b64decode(claude_text_base64).decode('utf-8', errors='replace')
+            except UnicodeDecodeError as e:
+                print(f"UTF-8 decode failed ({e}), trying with errors='ignore'")
+                try:
+                    claude_text = base64.b64decode(claude_text_base64).decode('utf-8', errors='ignore')
+                except Exception as e2:
+                    print(f"UTF-8 with ignore failed ({e2}), trying latin-1 then encoding to UTF-8")
+                    try:
+                        # Last resort: decode as latin-1 then re-encode as UTF-8
+                        temp = base64.b64decode(claude_text_base64).decode('latin-1')
+                        claude_text = temp.encode('utf-8', errors='ignore').decode('utf-8')
+                    except Exception as e3:
+                        print(f"All decode attempts failed ({e3}), using empty string")
+                        claude_text = ''
             except Exception as decode_err:
-                print(f"All decode attempts failed: {decode_err}")
+                print(f"Unexpected decode error: {decode_err}")
                 claude_text = ''
                 
         except Exception as e:
@@ -839,27 +915,33 @@ def process_text_section(input_data, group_number):
     return text_section, section_type
 
 def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metadata={}):
-    """Send results to Google Apps Script webhook - V132 ENCODING SAFE"""
+    """Send results to Google Apps Script webhook - V133 ENCODING SAFE"""
     try:
         if not WEBHOOK_URL:
             print("WARNING: Webhook URL not configured, skipping webhook send")
             return None
         
-        # V132 FIX: Ensure all strings in metadata are properly encoded
+        # V133 FIX: Ensure all strings in metadata are JSON-safe
         safe_metadata = {}
         for key, value in metadata.items():
             if isinstance(value, str):
                 # Ensure string values are safe for JSON
-                try:
-                    safe_metadata[key] = value.encode('utf-8', errors='replace').decode('utf-8')
-                except:
-                    safe_metadata[key] = str(value)
+                safe_metadata[key] = safe_string_for_json(value)
+            elif isinstance(value, dict):
+                # Handle nested dictionaries
+                safe_dict = {}
+                for sub_key, sub_value in value.items():
+                    if isinstance(sub_value, str):
+                        safe_dict[sub_key] = safe_string_for_json(sub_value)
+                    else:
+                        safe_dict[sub_key] = sub_value
+                safe_metadata[key] = safe_dict
             else:
                 safe_metadata[key] = value
                 
         webhook_data = {
-            "handler_type": handler_type,
-            "file_name": file_name,
+            "handler_type": safe_string_for_json(handler_type),
+            "file_name": safe_string_for_json(file_name),
             "route_number": route_number,
             "runpod_result": {
                 "output": {
@@ -871,6 +953,15 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         webhook_data["runpod_result"]["output"]["output"]["enhanced_image"] = image_base64
         
         print(f"Sending to webhook: {handler_type} for {file_name}")
+        
+        # V133 FIX: Test JSON serialization before sending
+        try:
+            test_json = json.dumps(webhook_data, ensure_ascii=False)
+            print("V133: JSON serialization test passed")
+        except Exception as json_err:
+            print(f"V133: JSON serialization test failed: {json_err}")
+            # Fallback: ensure ASCII encoding
+            webhook_data = json.loads(json.dumps(webhook_data, ensure_ascii=True))
         
         response = requests.post(
             WEBHOOK_URL,
@@ -892,8 +983,8 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def detect_group_number_from_input(input_data):
-    """CORRECT group number detection - V132 FIXED"""
-    print("=== GROUP NUMBER DETECTION V132 - FIXED VERSION ===")
+    """CORRECT group number detection - V133 FIXED"""
+    print("=== GROUP NUMBER DETECTION V133 - FIXED VERSION ===")
     print(f"Full input_data keys: {sorted(input_data.keys())}")
     
     # PRIORITY 1: Direct route_number - ABSOLUTE HIGHEST PRIORITY!
@@ -1018,9 +1109,9 @@ def detect_group_number_from_input(input_data):
     return 0
 
 def handler(event):
-    """Main handler for detail page creation - V132 FIXED"""
+    """Main handler for detail page creation - V133 FIXED"""
     try:
-        print(f"=== V132 Detail Page Handler - FIXED VERSION ===")
+        print(f"=== V133 Detail Page Handler - FIXED VERSION ===")
         
         # Download Korean font if not exists
         if not os.path.exists('/tmp/NanumMyeongjo.ttf'):
@@ -1243,11 +1334,11 @@ def handler(event):
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Simple metadata - FIXED to be consistent
+        # V133 FIX: Ensure all metadata strings are JSON-safe
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
-            "page_type": page_type,
+            "page_type": safe_string_for_json(page_type),
             "page_number": group_number,
             "route_number": group_number,  # FIXED: Same as page_number
             "actual_group": group_number,
@@ -1255,7 +1346,7 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "version": "V132_FIXED",
+            "version": "V133_FIXED",
             "image_count": len(input_data.get('images', [input_data])),
             "processing_time": "calculated_later",
             "font_status": "korean_font_available" if os.path.exists('/tmp/NanumMyeongjo.ttf') else "fallback_font"
@@ -1271,21 +1362,23 @@ def handler(event):
         }
         
     except Exception as e:
-        error_msg = f"Detail page creation failed: {str(e)}"
+        # V133 FIX: Ensure error message is JSON-safe
+        error_msg = safe_string_for_json(f"Detail page creation failed: {str(e)}")
         print(f"ERROR: {error_msg}")
         import traceback
-        print(f"Traceback: {traceback.format_exc()}")
+        traceback_str = safe_string_for_json(traceback.format_exc())
+        print(f"Traceback: {traceback_str}")
         
         return {
             "output": {
                 "error": error_msg,
                 "status": "error",
-                "traceback": traceback.format_exc(),
-                "version": "V132_FIXED"
+                "traceback": traceback_str,
+                "version": "V133_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("Starting Detail Page Handler V132 - FIXED VERSION...")
+    print("Starting Detail Page Handler V133 - FIXED VERSION...")
     runpod.serverless.start({"handler": handler})
