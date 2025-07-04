@@ -1,5 +1,4 @@
 FROM python:3.10-slim
-
 WORKDIR /app
 
 # Install necessary system packages
@@ -17,12 +16,14 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download Korean font as backup
+# Download Korean font - CORRECT URL
 RUN mkdir -p /tmp && \
-    wget -O /tmp/NanumMyeongjo.ttf https://github.com/google/fonts/raw/main/ofl/nanummyeongjo/NanumMyeongjo-Regular.ttf || true
+    wget -O /tmp/NanumMyeongjo.ttf https://github.com/naver/nanumfont/raw/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf || \
+    wget -O /tmp/NanumMyeongjo.ttf https://cdn.jsdelivr.net/gh/naver/nanumfont@master/fonts/NanumMyeongjo/NanumMyeongjo.ttf || \
+    echo "Font download failed, will retry at runtime"
 
 # Copy handler
 COPY handler.py .
 
-# Run handler
+# Run handler with unbuffered output
 CMD ["python", "-u", "handler.py"]
