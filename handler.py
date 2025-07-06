@@ -37,7 +37,7 @@ def get_text_dimensions(draw, text, font):
 def download_korean_font():
     """Download Korean font for text rendering"""
     try:
-        font_path = '/tmp/NanumMyeongjo.ttf'
+        font_path = '/tmp/NanumGothic.ttf'
         
         if os.path.exists(font_path):
             try:
@@ -49,9 +49,9 @@ def download_korean_font():
                 os.remove(font_path)
         
         font_urls = [
-            'https://github.com/naver/nanumfont/raw/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf',
-            'https://cdn.jsdelivr.net/gh/naver/nanumfont@master/fonts/NanumMyeongjo/NanumMyeongjo.ttf',
-            'https://raw.githubusercontent.com/naver/nanumfont/master/fonts/NanumMyeongjo/NanumMyeongjo.ttf'
+            'https://github.com/naver/nanumfont/raw/master/fonts/NanumFontSetup_TTF_GOTHIC/NanumGothic.ttf',
+            'https://cdn.jsdelivr.net/gh/naver/nanumfont@master/fonts/NanumFontSetup_TTF_GOTHIC/NanumGothic.ttf',
+            'https://raw.githubusercontent.com/naver/nanumfont/master/fonts/NanumFontSetup_TTF_GOTHIC/NanumGothic.ttf'
         ]
         
         for url in font_urls:
@@ -78,6 +78,29 @@ def download_korean_font():
     except Exception as e:
         print(f"Error in font download process: {str(e)}")
         return False
+
+def safe_draw_text(draw, position, text, font, fill):
+    """Safely draw text handling encoding issues"""
+    try:
+        # Ensure text is string and properly encoded
+        if text:
+            text = str(text)
+            draw.text(position, text, font=font, fill=fill)
+    except UnicodeEncodeError:
+        # Fallback: try to encode as UTF-8
+        try:
+            text_encoded = text.encode('utf-8').decode('utf-8')
+            draw.text(position, text_encoded, font=font, fill=fill)
+        except:
+            # Last resort: skip problematic characters
+            safe_text = ''.join(c for c in text if ord(c) < 128)
+            if safe_text:
+                draw.text(position, safe_text, font=font, fill=fill)
+            else:
+                draw.text(position, "[Text Error]", font=font, fill=fill)
+    except Exception as e:
+        print(f"Error drawing text: {str(e)}")
+        draw.text(position, "[Error]", font=font, fill=fill)
 
 def clean_claude_text(text):
     """Clean text for safe JSON encoding while preserving Korean characters"""
@@ -111,7 +134,7 @@ def clean_claude_text(text):
     return text.strip()
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
-    """Create AI-generated MD Talk section"""
+    """Create AI-generated MD Talk section with safe text rendering"""
     section_height = 600
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -122,7 +145,7 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     # Get fonts
     title_font = None
     body_font = None
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
+    font_paths = ["/tmp/NanumGothic.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]
     
     for font_path in font_paths:
         if os.path.exists(font_path):
@@ -139,8 +162,11 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     
     # Title
     title = "MD TALK"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 60), title, font=title_font, fill=(40, 40, 40))
+    try:
+        title_width, _ = get_text_dimensions(draw, title, title_font)
+        safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
+    except:
+        safe_draw_text(draw, (width//2 - 100, 60), title, title_font, (40, 40, 40))
     
     # Process Claude text
     if claude_text:
@@ -154,14 +180,22 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         
         for word in words:
             test_line = current_line + " " + word if current_line else word
-            test_width, _ = get_text_dimensions(draw, test_line, body_font)
-            
-            if test_width > width - 120:  # 60px margin on each side
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-            else:
-                current_line = test_line
+            try:
+                test_width, _ = get_text_dimensions(draw, test_line, body_font)
+                if test_width > width - 120:  # 60px margin on each side
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+                else:
+                    current_line = test_line
+            except:
+                # If text measurement fails, use character count
+                if len(test_line) > 30:
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+                else:
+                    current_line = test_line
         
         if current_line:
             lines.append(current_line)
@@ -183,14 +217,17 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     
     for line in lines:
         if line:  # Skip empty lines
-            line_width, _ = get_text_dimensions(draw, line, body_font)
-            draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+            try:
+                line_width, _ = get_text_dimensions(draw, line, body_font)
+                safe_draw_text(draw, (width//2 - line_width//2, y_pos), line, body_font, (80, 80, 80))
+            except:
+                safe_draw_text(draw, (60, y_pos), line, body_font, (80, 80, 80))
         y_pos += line_height
     
     return section_img
 
 def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
-    """Create AI-generated Design Point section"""
+    """Create AI-generated Design Point section with safe text rendering"""
     section_height = 700
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -198,7 +235,7 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     # Get fonts
     title_font = None
     body_font = None
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
+    font_paths = ["/tmp/NanumGothic.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]
     
     for font_path in font_paths:
         if os.path.exists(font_path):
@@ -215,8 +252,11 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     
     # Title
     title = "DESIGN POINT"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 60), title, font=title_font, fill=(40, 40, 40))
+    try:
+        title_width, _ = get_text_dimensions(draw, title, title_font)
+        safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
+    except:
+        safe_draw_text(draw, (width//2 - 150, 60), title, title_font, (40, 40, 40))
     
     # Process Claude text
     if claude_text:
@@ -230,14 +270,21 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         
         for word in words:
             test_line = current_line + " " + word if current_line else word
-            test_width, _ = get_text_dimensions(draw, test_line, body_font)
-            
-            if test_width > width - 100:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-            else:
-                current_line = test_line
+            try:
+                test_width, _ = get_text_dimensions(draw, test_line, body_font)
+                if test_width > width - 100:
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+                else:
+                    current_line = test_line
+            except:
+                if len(test_line) > 35:
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+                else:
+                    current_line = test_line
         
         if current_line:
             lines.append(current_line)
@@ -256,8 +303,11 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     
     for line in lines:
         if line:
-            line_width, _ = get_text_dimensions(draw, line, body_font)
-            draw.text((width//2 - line_width//2, y_pos), line, font=body_font, fill=(80, 80, 80))
+            try:
+                line_width, _ = get_text_dimensions(draw, line, body_font)
+                safe_draw_text(draw, (width//2 - line_width//2, y_pos), line, body_font, (80, 80, 80))
+            except:
+                safe_draw_text(draw, (50, y_pos), line, body_font, (80, 80, 80))
         y_pos += line_height
     
     # Add decorative line at bottom
@@ -363,14 +413,31 @@ def get_image_from_input(input_data):
         raise
 
 def detect_group_number_from_input(input_data):
-    """Detect which group this is from input data"""
-    # First check for explicit route_number
+    """Detect which group this is from input data - ENHANCED LOGIC"""
+    # PRIORITY 1: Check for explicit route_number (highest priority)
     route_number = input_data.get('route_number', 0)
-    if route_number:
-        print(f"Found route_number: {route_number}")
-        return int(route_number)
+    if route_number and str(route_number).isdigit():
+        group_num = int(route_number)
+        print(f"Found explicit route_number: {group_num}")
+        return group_num
     
-    # Check for specific image keys
+    # PRIORITY 2: Check for group_number
+    group_number = input_data.get('group_number', 0)
+    if group_number and str(group_number).isdigit():
+        group_num = int(group_number)
+        print(f"Found explicit group_number: {group_num}")
+        return group_num
+    
+    # PRIORITY 3: Check for text type hints (for groups 7, 8)
+    text_type = input_data.get('text_type', '').lower()
+    if 'md_talk' in text_type or 'md talk' in text_type:
+        print("Detected MD Talk text type -> Group 7")
+        return 7
+    elif 'design_point' in text_type or 'design point' in text_type:
+        print("Detected Design Point text type -> Group 8")
+        return 8
+    
+    # PRIORITY 4: Check for specific image keys
     if 'image1' in input_data:
         return 1
     elif 'image2' in input_data:
@@ -384,37 +451,47 @@ def detect_group_number_from_input(input_data):
     elif 'image9' in input_data:
         return 6
     
-    # Check for text type hints
-    text_type = input_data.get('text_type', '')
-    if 'md_talk' in text_type.lower():
-        return 7
-    elif 'design_point' in text_type.lower():
-        return 8
+    # PRIORITY 5: Check for color section indicators
+    if any(key in str(input_data).lower() for key in ['color', 'colour', 'image9']):
+        print("Detected color section indicators -> Group 6")
+        return 6
     
-    # Check images array
-    if 'images' in input_data:
+    # PRIORITY 6: Check images array count
+    if 'images' in input_data and isinstance(input_data['images'], list):
         images_count = len(input_data['images'])
+        print(f"Found images array with {images_count} images")
+        
         if images_count == 1:
-            # Could be 1, 2, or 6
-            if any(key in str(input_data) for key in ['color', 'COLOR', 'image9']):
+            # Single image could be 1, 2, or 6
+            # Check for any hints in the data
+            data_str = str(input_data).lower()
+            if 'color' in data_str or 'image9' in data_str:
                 return 6
-            return 1  # Default to 1 for single image
+            elif 'image2' in data_str or 'sub' in data_str:
+                return 2
+            return 1  # Default to group 1 for single image
+            
         elif images_count == 2:
-            # Could be 3, 4, or 5
-            if any(key in str(input_data) for key in ['image3', 'image4']):
-                return 3
-            elif any(key in str(input_data) for key in ['image5', 'image6']):
-                return 4
-            elif any(key in str(input_data) for key in ['image7', 'image8']):
+            # 2 images could be 3, 4, or 5
+            data_str = str(input_data).lower()
+            if 'image7' in data_str or 'image8' in data_str:
                 return 5
-            return 3  # Default to 3 for 2 images
-        elif images_count == 3:
-            return 5  # 3 images is group 5
+            elif 'image5' in data_str or 'image6' in data_str:
+                return 4
+            elif 'image3' in data_str or 'image4' in data_str:
+                return 3
+            return 3  # Default to group 3 for 2 images
+            
+        elif images_count >= 3:
+            # 3 or more images is likely group 5, but should be limited to 2
+            return 5
     
-    return 1  # Default
+    # DEFAULT: If no clear indicators, default to group 1
+    print("No clear group indicators found, defaulting to group 1")
+    return 1
 
 def create_color_options_section(ring_image=None):
-    """Create COLOR section with 4 color options"""
+    """Create COLOR section with 4 color options and safe text rendering"""
     width = FIXED_WIDTH
     height = 800
     
@@ -424,7 +501,7 @@ def create_color_options_section(ring_image=None):
     # Title
     title_font = None
     label_font = None
-    font_paths = ["/tmp/NanumMyeongjo.ttf", "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"]
+    font_paths = ["/tmp/NanumGothic.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]
     
     for font_path in font_paths:
         if os.path.exists(font_path):
@@ -440,8 +517,11 @@ def create_color_options_section(ring_image=None):
         label_font = ImageFont.load_default()
     
     title = "COLOR"
-    title_width, _ = get_text_dimensions(draw, title, title_font)
-    draw.text((width//2 - title_width//2, 60), title, font=title_font, fill=(40, 40, 40))
+    try:
+        title_width, _ = get_text_dimensions(draw, title, title_font)
+        safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
+    except:
+        safe_draw_text(draw, (width//2 - 100, 60), title, title_font, (40, 40, 40))
     
     # Color options
     colors = [
@@ -488,10 +568,14 @@ def create_color_options_section(ring_image=None):
             except Exception as e:
                 print(f"Error overlaying ring on color {color_id}: {e}")
         
-        # Label
-        label_width, _ = get_text_dimensions(draw, label, label_font)
-        draw.text((x + grid_size//2 - label_width//2, y + grid_size + 15), 
-                 label, font=label_font, fill=(80, 80, 80))
+        # Label with safe text rendering
+        try:
+            label_width, _ = get_text_dimensions(draw, label, label_font)
+            safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 15), 
+                         label, label_font, (80, 80, 80))
+        except:
+            safe_draw_text(draw, (x + 10, y + grid_size + 15), 
+                         label, label_font, (80, 80, 80))
     
     return section_img
 
@@ -529,7 +613,7 @@ def process_single_image(input_data, group_number):
     page_text = f"- Image {group_number} -"
     
     small_font = None
-    for font_path in ["/tmp/NanumMyeongjo.ttf", 
+    for font_path in ["/tmp/NanumGothic.ttf", 
                      "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
         if os.path.exists(font_path):
             try:
@@ -541,43 +625,69 @@ def process_single_image(input_data, group_number):
     if small_font is None:
         small_font = ImageFont.load_default()
     
-    text_width, _ = get_text_dimensions(draw, page_text, small_font)
-    draw.text((FIXED_WIDTH//2 - text_width//2, total_height - 30), 
-             page_text, fill=(200, 200, 200), font=small_font)
+    try:
+        text_width, _ = get_text_dimensions(draw, page_text, small_font)
+        safe_draw_text(draw, (FIXED_WIDTH//2 - text_width//2, total_height - 30), 
+                     page_text, small_font, (200, 200, 200))
+    except:
+        safe_draw_text(draw, (FIXED_WIDTH//2 - 50, total_height - 30), 
+                     page_text, small_font, (200, 200, 200))
     
     return detail_page
 
 def process_combined_images(input_data, group_number):
-    """Process combined images WITHOUT text sections (groups 3, 4, 5)"""
+    """Process combined images WITHOUT text sections (groups 3, 4, 5) - FIXED"""
     print(f"Processing CLEAN combined images for group {group_number} (NO TEXT SECTIONS)")
     
-    # Get images data
-    images_data = input_data.get('images', [input_data])
+    # Get images data - FIXED parsing logic
+    images_data = []
+    
+    # First try to get from 'images' key
+    if 'images' in input_data and isinstance(input_data['images'], list):
+        images_data = input_data['images']
+    else:
+        # Try to find individual image keys based on group
+        if group_number == 3:
+            # Look for image3 and image4
+            for key in ['image3', 'image4']:
+                if key in input_data:
+                    images_data.append({key: input_data[key]})
+        elif group_number == 4:
+            # Look for image5 and image6
+            for key in ['image5', 'image6']:
+                if key in input_data:
+                    images_data.append({key: input_data[key]})
+        elif group_number == 5:
+            # Look for image7 and image8
+            for key in ['image7', 'image8']:
+                if key in input_data:
+                    images_data.append({key: input_data[key]})
+        
+        # If still no images, try to use the whole input_data as single image
+        if not images_data:
+            images_data = [input_data]
     
     # CRITICAL: Group 5 should only have 2 images (7, 8), NOT 3!
     if group_number == 5 and len(images_data) > 2:
         print(f"WARNING: Group 5 has {len(images_data)} images, using first 2 only")
         images_data = images_data[:2]
     
+    print(f"Processing {len(images_data)} images for group {group_number}")
+    
+    # Validate we have images
+    if not images_data:
+        raise ValueError(f"No images found for group {group_number}")
+    
     # Calculate dimensions for each image
-    image_heights = []
-    if group_number in [3, 4]:
-        # Groups 3, 4: 860px width
-        target_width = 860
-        for _ in images_data:
-            image_heights.append(int(target_width * 1.46))  # 860 x 1256
-    else:
-        # Group 5: 860px width
-        target_width = 860
-        for _ in images_data:
-            image_heights.append(int(target_width * 1.46))  # 860 x 1256
+    target_width = 860
+    image_height = int(target_width * 1.46)  # 860 x 1256
     
     # Calculate total height WITHOUT text sections
     TOP_MARGIN = 50
     BOTTOM_MARGIN = 50
     IMAGE_SPACING = 200  # 200px between images
     
-    total_height = TOP_MARGIN + sum(image_heights) + (len(images_data) - 1) * IMAGE_SPACING + BOTTOM_MARGIN
+    total_height = TOP_MARGIN + (len(images_data) * image_height) + ((len(images_data) - 1) * IMAGE_SPACING) + BOTTOM_MARGIN
     
     print(f"Creating CLEAN combined page: {FIXED_WIDTH}x{total_height} (NO TEXT)")
     
@@ -587,38 +697,58 @@ def process_combined_images(input_data, group_number):
     current_y = TOP_MARGIN
     
     # Process each image WITHOUT adding text sections
-    for idx, (img_data, img_height) in enumerate(zip(images_data, image_heights)):
+    for idx, img_data in enumerate(images_data):
         if idx > 0:
             current_y += IMAGE_SPACING
         
-        # Get image
-        img = get_image_from_input(img_data)
-        
-        # Center crop to target dimensions
-        img_width, img_height_orig = img.size
-        
-        # Calculate crop
-        if img_width / img_height_orig > target_width / img_height:
-            # Image is wider - crop width
-            new_width = int(img_height_orig * target_width / img_height)
-            left = (img_width - new_width) // 2
-            img_cropped = img.crop((left, 0, left + new_width, img_height_orig))
-        else:
-            # Image is taller - crop height
-            new_height = int(img_width * img_height / target_width)
-            top = (img_height_orig - new_height) // 2
-            img_cropped = img.crop((0, top, img_width, top + new_height))
-        
-        # Resize to exact dimensions
-        resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
-        img_resized = img_cropped.resize((target_width, img_height), resample_filter)
-        
-        # Paste centered on page
-        x_offset = (FIXED_WIDTH - target_width) // 2
-        detail_page.paste(img_resized, (x_offset, current_y))
-        current_y += img_height
-        
-        img.close()
+        try:
+            # Get image from the data
+            if isinstance(img_data, dict):
+                # Try different keys to find the image
+                img = None
+                for key in ['image', 'url', 'enhanced_image', 'image3', 'image4', 'image5', 'image6', 'image7', 'image8']:
+                    if key in img_data and img_data[key]:
+                        temp_data = {'image': img_data[key]}
+                        img = get_image_from_input(temp_data)
+                        break
+                
+                if not img:
+                    img = get_image_from_input(img_data)
+            else:
+                # img_data might be a string (base64 or URL)
+                temp_data = {'image': img_data}
+                img = get_image_from_input(temp_data)
+            
+            # Get original dimensions
+            img_width, img_height_orig = img.size
+            
+            # Calculate crop to maintain aspect ratio
+            if img_width / img_height_orig > target_width / image_height:
+                # Image is wider - crop width
+                new_width = int(img_height_orig * target_width / image_height)
+                left = (img_width - new_width) // 2
+                img_cropped = img.crop((left, 0, left + new_width, img_height_orig))
+            else:
+                # Image is taller - crop height
+                new_height = int(img_width * image_height / target_width)
+                top = (img_height_orig - new_height) // 2
+                img_cropped = img.crop((0, top, img_width, top + new_height))
+            
+            # Resize to exact dimensions
+            resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
+            img_resized = img_cropped.resize((target_width, image_height), resample_filter)
+            
+            # Paste centered on page
+            x_offset = (FIXED_WIDTH - target_width) // 2
+            detail_page.paste(img_resized, (x_offset, current_y))
+            current_y += image_height
+            
+            img.close()
+            print(f"Successfully added image {idx + 1} to combined page")
+            
+        except Exception as e:
+            print(f"Error processing image {idx + 1}: {str(e)}")
+            # Continue with other images
     
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
@@ -628,7 +758,7 @@ def process_combined_images(input_data, group_number):
         page_text = f"- Details {group_number} -"
     
     small_font = None
-    for font_path in ["/tmp/NanumMyeongjo.ttf", 
+    for font_path in ["/tmp/NanumGothic.ttf", 
                      "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]:
         if os.path.exists(font_path):
             try:
@@ -640,9 +770,13 @@ def process_combined_images(input_data, group_number):
     if small_font is None:
         small_font = ImageFont.load_default()
     
-    text_width, _ = get_text_dimensions(draw, page_text, small_font)
-    draw.text((FIXED_WIDTH//2 - text_width//2, total_height - 50), 
-             page_text, fill=(200, 200, 200), font=small_font)
+    try:
+        text_width, _ = get_text_dimensions(draw, page_text, small_font)
+        safe_draw_text(draw, (FIXED_WIDTH//2 - text_width//2, total_height - 50), 
+                     page_text, small_font, (200, 200, 200))
+    except:
+        safe_draw_text(draw, (FIXED_WIDTH//2 - 50, total_height - 50), 
+                     page_text, small_font, (200, 200, 200))
     
     return detail_page
 
@@ -682,11 +816,11 @@ def process_text_section(input_data, group_number):
     print(f"Text type: {text_type}")
     print(f"Cleaned Claude text preview: {claude_text[:100] if claude_text else 'No text provided'}...")
     
-    if group_number == 7 or text_type == 'md_talk':
+    if group_number == 7 or 'md_talk' in text_type.lower():
         # Group 7: MD Talk text section
         text_section = create_ai_generated_md_talk(claude_text)
         section_type = "md_talk"
-    elif group_number == 8 or text_type == 'design_point':
+    elif group_number == 8 or 'design_point' in text_type.lower():
         # Group 8: Design Point text section
         text_section = create_ai_generated_design_point(claude_text)
         section_type = "design_point"
@@ -719,7 +853,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
             }
         }
         
-        print(f"Sending to webhook: {handler_type} for {file_name}")
+        print(f"Sending to webhook: {handler_type} for {file_name} (route {route_number})")
         
         response = requests.post(
             WEBHOOK_URL,
@@ -743,13 +877,13 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V110 Detail Page Handler - 8 Groups System ===")
+        print(f"=== V111 Detail Page Handler - 8 Groups System ===")
         
         # Find input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         
-        # Detect group number
+        # Detect group number with ENHANCED logic
         group_number = detect_group_number_from_input(input_data)
         print(f"Detected group number: {group_number}")
         
@@ -778,15 +912,6 @@ def handler(event):
         elif group_number in [3, 4, 5]:
             # Groups 3, 4, 5: CLEAN Combined images (NO TEXT SECTIONS!)
             print(f"=== Processing Group {group_number}: CLEAN Combined images (NO TEXT) ===")
-            if 'images' not in input_data or not isinstance(input_data['images'], list):
-                # Convert single image to images array
-                input_data['images'] = [input_data]
-            
-            # CRITICAL: Group 5 should only have 2 images (7, 8), NOT 3!
-            if group_number == 5 and len(input_data['images']) > 2:
-                print(f"ERROR: Group 5 has {len(input_data['images'])} images, should have 2. Using first 2 only.")
-                input_data['images'] = input_data['images'][:2]
-            
             detail_page = process_combined_images(input_data, group_number)
             page_type = "combined_clean"
         
@@ -804,23 +929,23 @@ def handler(event):
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Prepare metadata
+        # Prepare metadata with CORRECT route_number
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
             "page_type": page_type,
             "page_number": group_number,
-            "route_number": group_number,
+            "route_number": group_number,  # ENSURE route_number matches group_number
             "dimensions": {
                 "width": detail_page.width,
                 "height": detail_page.height
             },
             "has_text_overlay": group_number in [7, 8],
             "format": "base64_no_padding",
-            "version": "V110_8_GROUPS"
+            "version": "V111_8_GROUPS_FIXED"
         }
         
-        # Send to webhook
+        # Send to webhook with CORRECT route_number
         file_name = f"detail_group_{group_number}_{page_type}.png"
         webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, group_number, metadata)
         
@@ -837,11 +962,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V110_8_GROUPS"
+                "version": "V111_8_GROUPS_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V110 Detail Handler Started - 8 Groups System!")
+    print("V111 Detail Handler Started - 8 Groups System with Fixes!")
     runpod.serverless.start({"handler": handler})
