@@ -91,27 +91,23 @@ def download_korean_font():
         return False
 
 def safe_draw_text(draw, position, text, font, fill):
-    """Safely draw text handling encoding issues"""
+    """Safely draw text handling encoding issues with better Korean support"""
     try:
         # Ensure text is string and properly encoded
         if text:
             text = str(text)
+            # Force UTF-8 encoding for Korean text
+            if isinstance(text, bytes):
+                text = text.decode('utf-8', errors='ignore')
             draw.text(position, text, font=font, fill=fill)
-    except UnicodeEncodeError:
-        # Fallback: try to encode as UTF-8
-        try:
-            text_encoded = text.encode('utf-8').decode('utf-8')
-            draw.text(position, text_encoded, font=font, fill=fill)
-        except:
-            # Last resort: skip problematic characters
-            safe_text = ''.join(c for c in text if ord(c) < 128)
-            if safe_text:
-                draw.text(position, safe_text, font=font, fill=fill)
-            else:
-                draw.text(position, "[Text Error]", font=font, fill=fill)
     except Exception as e:
-        print(f"Error drawing text: {str(e)}")
-        draw.text(position, "[Error]", font=font, fill=fill)
+        print(f"Error drawing text '{text}': {str(e)}")
+        # Try with basic ASCII only as last resort
+        try:
+            safe_text = ''.join(c for c in text if ord(c) < 128 or 0xAC00 <= ord(c) <= 0xD7A3)
+            draw.text(position, safe_text or "[Text Error]", font=font, fill=fill)
+        except:
+            draw.text(position, "[Error]", font=font, fill=fill)
 
 def clean_claude_text(text):
     """Clean text for safe JSON encoding while preserving Korean characters"""
@@ -242,24 +238,35 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
-    # Download Korean font if needed
+    # Ensure Korean font is downloaded
     download_korean_font()
     
-    # Get fonts
+    # Get fonts with better fallback
     title_font = None
     body_font = None
-    font_paths = ["/tmp/NanumGothic.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]
     
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 28)
-                break
-            except:
-                continue
+    # Try Korean font first
+    if os.path.exists("/tmp/NanumGothic.ttf"):
+        try:
+            title_font = ImageFont.truetype("/tmp/NanumGothic.ttf", 48)
+            body_font = ImageFont.truetype("/tmp/NanumGothic.ttf", 28)
+        except Exception as e:
+            print(f"Failed to load Korean font: {e}")
     
-    if title_font is None:
+    # Fallback fonts
+    if not title_font:
+        font_paths = ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                try:
+                    title_font = ImageFont.truetype(font_path, 48)
+                    body_font = ImageFont.truetype(font_path, 28)
+                    break
+                except:
+                    continue
+    
+    if not title_font:
         title_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
     
@@ -280,12 +287,13 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         words = text.split()
         lines = []
         current_line = ""
+        max_line_width = width - 120  # 60px margin on each side
         
         for word in words:
             test_line = current_line + " " + word if current_line else word
             try:
                 test_width, _ = get_text_dimensions(draw, test_line, body_font)
-                if test_width > width - 120:  # 60px margin on each side
+                if test_width > max_line_width:
                     if current_line:
                         lines.append(current_line)
                     current_line = word
@@ -302,6 +310,9 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         
         if current_line:
             lines.append(current_line)
+        
+        # Limit to reasonable number of lines
+        lines = lines[:8]
     else:
         # Default text
         lines = [
@@ -335,21 +346,35 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
-    # Get fonts
+    # Ensure Korean font is downloaded
+    download_korean_font()
+    
+    # Get fonts with better fallback
     title_font = None
     body_font = None
-    font_paths = ["/tmp/NanumGothic.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]
     
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 48)
-                body_font = ImageFont.truetype(font_path, 24)
-                break
-            except:
-                continue
+    # Try Korean font first
+    if os.path.exists("/tmp/NanumGothic.ttf"):
+        try:
+            title_font = ImageFont.truetype("/tmp/NanumGothic.ttf", 48)
+            body_font = ImageFont.truetype("/tmp/NanumGothic.ttf", 24)
+        except Exception as e:
+            print(f"Failed to load Korean font: {e}")
     
-    if title_font is None:
+    # Fallback fonts
+    if not title_font:
+        font_paths = ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                try:
+                    title_font = ImageFont.truetype(font_path, 48)
+                    body_font = ImageFont.truetype(font_path, 24)
+                    break
+                except:
+                    continue
+    
+    if not title_font:
         title_font = ImageFont.load_default()
         body_font = ImageFont.load_default()
     
@@ -370,12 +395,13 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         words = text.split()
         lines = []
         current_line = ""
+        max_line_width = width - 100  # 50px margin on each side
         
         for word in words:
             test_line = current_line + " " + word if current_line else word
             try:
                 test_width, _ = get_text_dimensions(draw, test_line, body_font)
-                if test_width > width - 100:
+                if test_width > max_line_width:
                     if current_line:
                         lines.append(current_line)
                     current_line = word
@@ -391,6 +417,9 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         
         if current_line:
             lines.append(current_line)
+        
+        # Limit to reasonable number of lines
+        lines = lines[:10]
     else:
         # Default text
         lines = [
@@ -609,24 +638,36 @@ def create_color_options_section(ring_image=None):
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
-    # Title
+    # Title with better font handling
     title_font = None
     label_font = None
-    font_paths = ["/tmp/NanumGothic.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]
     
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                title_font = ImageFont.truetype(font_path, 56)
-                label_font = ImageFont.truetype(font_path, 24)
-                break
-            except:
-                continue
+    # Try Korean font first
+    if download_korean_font():
+        try:
+            title_font = ImageFont.truetype('/tmp/NanumGothic.ttf', 56)
+            label_font = ImageFont.truetype('/tmp/NanumGothic.ttf', 24)
+        except:
+            pass
     
-    if title_font is None:
+    # Fallback fonts
+    if not title_font:
+        font_paths = ["/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                try:
+                    title_font = ImageFont.truetype(font_path, 56)
+                    label_font = ImageFont.truetype(font_path, 24)
+                    break
+                except:
+                    continue
+    
+    if not title_font:
         title_font = ImageFont.load_default()
         label_font = ImageFont.load_default()
     
+    # Draw title
     title = "COLOR"
     try:
         title_width, _ = get_text_dimensions(draw, title, title_font)
@@ -644,109 +685,132 @@ def create_color_options_section(ring_image=None):
             # Ensure it's RGBA
             if ring_no_bg.mode != 'RGBA':
                 ring_no_bg = ring_no_bg.convert('RGBA')
+            
+            print(f"Background removed successfully, image mode: {ring_no_bg.mode}")
                 
         except Exception as e:
             print(f"Failed to remove background: {e}")
-            ring_no_bg = ring_image
+            ring_no_bg = ring_image.convert('RGBA') if ring_image.mode != 'RGBA' else ring_image
     
-    # Color options with proper gold colors
+    # Color options with proper colors
     colors = [
         ("yellow", "옐로우골드", (255, 215, 0)),      # Gold color
-        ("rose", "로즈골드", (183, 110, 121)),        # Rose gold color
-        ("white", "화이트골드", (250, 250, 250)),     # White gold (almost white)
+        ("rose", "로즈골드", (183, 110, 121)),        # Rose gold color  
+        ("white", "화이트골드", (250, 250, 250)),     # White gold (slight gray)
         ("antique", "무도금화이트", (255, 255, 255))  # Pure white for unplated
     ]
     
     # Grid layout - 2x2
-    grid_size = 220
-    start_x = (width - (grid_size * 2 + 40)) // 2
+    grid_size = 280  # Larger size for better visibility
+    padding = 60
+    start_x = (width - (grid_size * 2 + padding)) // 2
     start_y = 180
     
     for i, (color_id, label, color_rgb) in enumerate(colors):
         row = i // 2
         col = i % 2
         
-        x = start_x + col * (grid_size + 40)
-        y = start_y + row * (grid_size + 80)
+        x = start_x + col * (grid_size + padding)
+        y = start_y + row * (grid_size + 100)
         
-        # Color container with border
-        container_rect = [x, y, x + grid_size, y + grid_size]
+        # Create white background container
+        container = Image.new('RGBA', (grid_size, grid_size), (255, 255, 255, 255))
+        container_draw = ImageDraw.Draw(container)
         
-        # Fill with color (or white for jewelry display)
-        if color_id in ["white", "antique"]:
-            # For white/unplated, use pure white background
-            draw.rectangle(container_rect, fill=(255, 255, 255), outline=(230, 230, 230), width=2)
-        else:
-            # For gold colors, use a subtle gradient or tinted background
-            draw.rectangle(container_rect, fill=color_rgb, outline=(200, 200, 200), width=2)
+        # Draw border
+        container_draw.rectangle([0, 0, grid_size-1, grid_size-1], 
+                                fill=None, outline=(230, 230, 230), width=2)
         
-        # If ring image provided, overlay it with color tinting
+        # If ring image provided, apply color tinting
         if ring_no_bg:
             try:
                 # Create a copy and resize
                 ring_copy = ring_no_bg.copy()
-                ring_copy.thumbnail((180, 180), Image.Resampling.LANCZOS)
+                ring_copy.thumbnail((int(grid_size * 0.8), int(grid_size * 0.8)), 
+                                  Image.Resampling.LANCZOS)
                 
                 # Apply color tint based on metal type
                 if color_id == "yellow":
-                    # Yellow gold tint
-                    ring_tinted = apply_color_tint(ring_copy, (255, 215, 0), strength=0.3)
+                    # Yellow gold - warm golden tint
+                    ring_tinted = apply_metal_color_effect(ring_copy, (255, 215, 0), strength=0.25)
                 elif color_id == "rose":
-                    # Rose gold tint
-                    ring_tinted = apply_color_tint(ring_copy, (183, 110, 121), strength=0.3)
+                    # Rose gold - pinkish tint
+                    ring_tinted = apply_metal_color_effect(ring_copy, (183, 110, 121), strength=0.25)
                 elif color_id == "white":
-                    # White gold - slight cool tint
-                    ring_tinted = apply_color_tint(ring_copy, (240, 240, 255), strength=0.1)
+                    # White gold - very slight cool tint
+                    ring_tinted = apply_metal_color_effect(ring_copy, (240, 240, 255), strength=0.05)
                 else:
-                    # Antique/unplated - no tint
+                    # Antique/unplated - pure white, no tint
                     ring_tinted = ring_copy
                 
-                # Center in container
-                paste_x = x + (grid_size - ring_tinted.width) // 2
-                paste_y = y + (grid_size - ring_tinted.height) // 2
+                # Center the ring in container
+                paste_x = (grid_size - ring_tinted.width) // 2
+                paste_y = (grid_size - ring_tinted.height) // 2
                 
-                # Create white background for the ring
-                ring_bg = Image.new('RGBA', (grid_size, grid_size), (255, 255, 255, 255))
-                
-                # Paste ring on white background
-                ring_bg.paste(ring_tinted, 
-                            ((grid_size - ring_tinted.width) // 2, 
-                             (grid_size - ring_tinted.height) // 2), 
-                            ring_tinted if ring_tinted.mode == 'RGBA' else None)
-                
-                # Paste the complete image onto the section
-                section_img.paste(ring_bg, (x, y))
-                
-                # Redraw border
-                draw.rectangle(container_rect, fill=None, outline=(230, 230, 230), width=2)
+                # Paste ring with transparency
+                container.paste(ring_tinted, (paste_x, paste_y), ring_tinted)
                 
             except Exception as e:
-                print(f"Error overlaying ring on color {color_id}: {e}")
+                print(f"Error applying color {color_id}: {e}")
+                import traceback
+                traceback.print_exc()
         
-        # Label with safe text rendering
+        # Paste container onto main image
+        section_img.paste(container, (x, y))
+        
+        # Draw label with Korean text
         try:
             label_width, _ = get_text_dimensions(draw, label, label_font)
-            safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 15), 
+            safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 20), 
                          label, label_font, (80, 80, 80))
         except:
-            safe_draw_text(draw, (x + 10, y + grid_size + 15), 
+            safe_draw_text(draw, (x + 20, y + grid_size + 20), 
                          label, label_font, (80, 80, 80))
     
     return section_img
 
-def apply_color_tint(image, tint_color, strength=0.3):
-    """Apply color tint to an image while preserving transparency"""
+def apply_metal_color_effect(image, metal_color, strength=0.2):
+    """Apply realistic metal color effect to jewelry image"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
-    # Create a colored overlay
-    overlay = Image.new('RGBA', image.size, tint_color + (int(255 * strength),))
+    # Split channels
+    r, g, b, a = image.split()
     
-    # Create a composite
-    tinted = Image.alpha_composite(image, overlay)
+    # Convert to arrays for processing
+    r_array = np.array(r, dtype=np.float32)
+    g_array = np.array(g, dtype=np.float32)
+    b_array = np.array(b, dtype=np.float32)
     
-    # Blend with original to control strength
-    return Image.blend(image, tinted, strength)
+    # Only apply color to non-transparent pixels
+    mask = np.array(a) > 0
+    
+    # Calculate luminance
+    luminance = (0.299 * r_array + 0.587 * g_array + 0.114 * b_array) / 255.0
+    
+    # Apply metal color based on luminance (preserves highlights and shadows)
+    if mask.any():
+        # Normalize metal color
+        metal_r, metal_g, metal_b = metal_color
+        metal_r, metal_g, metal_b = metal_r/255.0, metal_g/255.0, metal_b/255.0
+        
+        # Apply color with luminance preservation
+        r_array[mask] = r_array[mask] * (1 - strength) + (metal_r * luminance[mask] * 255) * strength
+        g_array[mask] = g_array[mask] * (1 - strength) + (metal_g * luminance[mask] * 255) * strength
+        b_array[mask] = b_array[mask] * (1 - strength) + (metal_b * luminance[mask] * 255) * strength
+    
+    # Ensure values are in valid range
+    r_array = np.clip(r_array, 0, 255)
+    g_array = np.clip(g_array, 0, 255)
+    b_array = np.clip(b_array, 0, 255)
+    
+    # Convert back to PIL Images
+    r_new = Image.fromarray(r_array.astype(np.uint8))
+    g_new = Image.fromarray(g_array.astype(np.uint8))
+    b_new = Image.fromarray(b_array.astype(np.uint8))
+    
+    # Merge channels
+    return Image.merge('RGBA', (r_new, g_new, b_new, a))
 
 def process_single_image(input_data, group_number):
     """Process individual images (groups 1, 2)"""
@@ -808,66 +872,75 @@ def process_combined_images(input_data, group_number):
     """Process combined images WITHOUT text sections (groups 3, 4, 5) - FIXED WIDTH 1200"""
     print(f"Processing combined images for group {group_number} with FIXED WIDTH 1200")
     
-    # Get images data - FIXED parsing logic
+    # Get images data - ENHANCED parsing logic
     images_data = []
     
-    # First try to get from 'images' key
-    if 'images' in input_data and isinstance(input_data['images'], list):
+    # Priority 1: Check for specific image keys based on group
+    if group_number == 3:
+        # Look for image3 and image4
+        if 'image3' in input_data and 'image4' in input_data:
+            images_data = [
+                {'image': input_data['image3']},
+                {'image': input_data['image4']}
+            ]
+        elif 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) >= 2:
+            images_data = input_data['images'][:2]
+            
+    elif group_number == 4:
+        # Look for image5 and image6
+        if 'image5' in input_data and 'image6' in input_data:
+            images_data = [
+                {'image': input_data['image5']},
+                {'image': input_data['image6']}
+            ]
+        elif 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) >= 2:
+            images_data = input_data['images'][:2]
+            
+    elif group_number == 5:
+        # Look for image7 and image8
+        if 'image7' in input_data and 'image8' in input_data:
+            images_data = [
+                {'image': input_data['image7']},
+                {'image': input_data['image8']}
+            ]
+        elif 'images' in input_data and isinstance(input_data['images'], list) and len(input_data['images']) >= 2:
+            images_data = input_data['images'][:2]
+    
+    # Priority 2: If still no images, check 'images' array
+    if not images_data and 'images' in input_data and isinstance(input_data['images'], list):
         images_data = input_data['images']
-    else:
-        # Try to find individual image keys based on group
-        if group_number == 3:
-            # Look for image3 and image4
-            for key in ['image3', 'image4']:
-                if key in input_data:
-                    images_data.append({key: input_data[key]})
-        elif group_number == 4:
-            # Look for image5 and image6
-            for key in ['image5', 'image6']:
-                if key in input_data:
-                    images_data.append({key: input_data[key]})
-        elif group_number == 5:
-            # Look for image7 and image8
-            for key in ['image7', 'image8']:
-                if key in input_data:
-                    images_data.append({key: input_data[key]})
-        
-        # If still no images, try to use the whole input_data as single image
-        if not images_data:
-            images_data = [input_data]
     
-    # CRITICAL: Group 5 should only have 2 images (7, 8), NOT 3!
-    if group_number == 5 and len(images_data) > 2:
-        print(f"WARNING: Group 5 has {len(images_data)} images, using first 2 only")
+    # CRITICAL: Ensure exactly 2 images for groups 3, 4, 5
+    if len(images_data) > 2:
+        print(f"WARNING: Group {group_number} has {len(images_data)} images, using first 2 only")
         images_data = images_data[:2]
+    elif len(images_data) < 2:
+        raise ValueError(f"Group {group_number} requires exactly 2 images, but only {len(images_data)} found")
     
-    print(f"Processing {len(images_data)} images for group {group_number}")
-    
-    # Validate we have images
-    if not images_data:
-        raise ValueError(f"No images found for group {group_number}")
+    print(f"Processing exactly {len(images_data)} images for group {group_number}")
     
     # Calculate dimensions for each image
-    target_width = 1200  # Changed from 860 to match FIXED_WIDTH
-    image_height = int(target_width * 1.46)  # 1200 x 1752
+    target_width = FIXED_WIDTH  # 1200
+    image_height = int(target_width * 1.3)  # 1200 x 1560 (same ratio as original)
     
-    # Calculate total height WITHOUT text sections
+    # Calculate total height with 200px spacing between images
     TOP_MARGIN = 50
     BOTTOM_MARGIN = 50
-    IMAGE_SPACING = 200  # 200px between images
+    IMAGE_SPACING = 200  # 200px between images as requested
     
-    total_height = TOP_MARGIN + (len(images_data) * image_height) + ((len(images_data) - 1) * IMAGE_SPACING) + BOTTOM_MARGIN
+    # Total height = top margin + image1 + spacing + image2 + bottom margin
+    total_height = TOP_MARGIN + (2 * image_height) + IMAGE_SPACING + BOTTOM_MARGIN
     
-    print(f"Creating combined page with FIXED WIDTH: {FIXED_WIDTH}x{total_height}")
+    print(f"Creating combined page: {FIXED_WIDTH}x{total_height} (2 images with 200px spacing)")
     
-    # Create combined page
+    # Create combined page with white background
     detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
     
     current_y = TOP_MARGIN
     
-    # Process each image WITHOUT adding text sections
-    for idx, img_data in enumerate(images_data):
-        if idx > 0:
+    # Process exactly 2 images
+    for idx, img_data in enumerate(images_data[:2]):  # Ensure max 2 images
+        if idx == 1:  # Add spacing before second image
             current_y += IMAGE_SPACING
         
         try:
@@ -875,7 +948,7 @@ def process_combined_images(input_data, group_number):
             if isinstance(img_data, dict):
                 # Try different keys to find the image
                 img = None
-                for key in ['image', 'url', 'enhanced_image', 'image3', 'image4', 'image5', 'image6', 'image7', 'image8']:
+                for key in ['image', 'url', 'enhanced_image', f'image{group_number*2+idx-1}']:
                     if key in img_data and img_data[key]:
                         temp_data = {'image': img_data[key]}
                         img = get_image_from_input(temp_data)
@@ -888,42 +961,31 @@ def process_combined_images(input_data, group_number):
                 temp_data = {'image': img_data}
                 img = get_image_from_input(temp_data)
             
-            # Get original dimensions
-            img_width, img_height_orig = img.size
-            
-            # Calculate crop to maintain aspect ratio
-            if img_width / img_height_orig > target_width / image_height:
-                # Image is wider - crop width
-                new_width = int(img_height_orig * target_width / image_height)
-                left = (img_width - new_width) // 2
-                img_cropped = img.crop((left, 0, left + new_width, img_height_orig))
-            else:
-                # Image is taller - crop height
-                new_height = int(img_width * image_height / target_width)
-                top = (img_height_orig - new_height) // 2
-                img_cropped = img.crop((0, top, img_width, top + new_height))
-            
-            # Resize to exact dimensions
+            # Resize image to exact dimensions
             resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
-            img_resized = img_cropped.resize((target_width, image_height), resample_filter)
+            img_resized = img.resize((target_width, image_height), resample_filter)
             
-            # Paste on page (no offset needed since width matches FIXED_WIDTH)
-            detail_page.paste(img_resized, (0, current_y))
+            # Paste on page centered horizontally
+            x_position = (FIXED_WIDTH - target_width) // 2  # Should be 0 since widths match
+            detail_page.paste(img_resized, (x_position, current_y))
             current_y += image_height
             
             img.close()
-            print(f"Successfully added image {idx + 1} to combined page")
+            print(f"Successfully added image {idx + 1} at position y={current_y - image_height}")
             
         except Exception as e:
             print(f"Error processing image {idx + 1}: {str(e)}")
-            # Continue with other images
+            import traceback
+            traceback.print_exc()
     
-    # Add page indicator
+    # Add page indicator at bottom
     draw = ImageDraw.Draw(detail_page)
-    if group_number == 5:
-        page_text = f"- Gallery 7-8 -"  # 명확하게 7-8만 표시
-    else:
-        page_text = f"- Details {group_number} -"
+    page_texts = {
+        3: "- Images 3-4 -",
+        4: "- Images 5-6 -", 
+        5: "- Images 7-8 -"
+    }
+    page_text = page_texts.get(group_number, f"- Details {group_number} -")
     
     small_font = None
     for font_path in ["/tmp/NanumGothic.ttf", 
@@ -940,10 +1002,10 @@ def process_combined_images(input_data, group_number):
     
     try:
         text_width, _ = get_text_dimensions(draw, page_text, small_font)
-        safe_draw_text(draw, (FIXED_WIDTH//2 - text_width//2, total_height - 50), 
+        safe_draw_text(draw, (FIXED_WIDTH//2 - text_width//2, total_height - 30), 
                      page_text, small_font, (200, 200, 200))
     except:
-        safe_draw_text(draw, (FIXED_WIDTH//2 - 50, total_height - 50), 
+        safe_draw_text(draw, (FIXED_WIDTH//2 - 50, total_height - 30), 
                      page_text, small_font, (200, 200, 200))
     
     return detail_page
@@ -1045,7 +1107,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V112 Detail Page Handler - Enhanced Color Section ===")
+        print(f"=== V114 Detail Page Handler - Complete Version ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -1078,8 +1140,8 @@ def handler(event):
             page_type = "individual"
             
         elif group_number in [3, 4, 5]:
-            # Groups 3, 4, 5: CLEAN Combined images (NO TEXT SECTIONS!)
-            print(f"=== Processing Group {group_number}: CLEAN Combined images (NO TEXT) ===")
+            # Groups 3, 4, 5: Combined images (2 images with 200px gap)
+            print(f"=== Processing Group {group_number}: Combined images (2 images, 200px gap) ===")
             detail_page = process_combined_images(input_data, group_number)
             page_type = "combined_clean"
         
@@ -1111,7 +1173,7 @@ def handler(event):
             "has_text_overlay": group_number in [7, 8],
             "has_background_removal": group_number == 6,
             "format": "base64_no_padding",
-            "version": "V112_ENHANCED_COLOR"
+            "version": "V114_COMPLETE"
         }
         
         # Send to webhook with CORRECT route_number
@@ -1131,11 +1193,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V112_ENHANCED_COLOR"
+                "version": "V114_COMPLETE"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V112 Detail Handler Started - Enhanced Color Section with Background Removal!")
+    print("V114 Detail Handler Started - Complete Version!")
     runpod.serverless.start({"handler": handler})
