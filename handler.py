@@ -6,12 +6,14 @@ from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 import json
 import re
+import numpy as np
 
-# REPLICATE API (Optional for background removal)
+# REPLICATE API for background removal
 try:
     import replicate
     REPLICATE_API_TOKEN = os.environ.get('REPLICATE_API_TOKEN')
     if REPLICATE_API_TOKEN:
+        REPLICATE_CLIENT = replicate.Client(api_token=REPLICATE_API_TOKEN)
         REPLICATE_AVAILABLE = True
     else:
         print("WARNING: REPLICATE_API_TOKEN not set. Background removal will use local method.")
@@ -19,6 +21,15 @@ try:
 except ImportError:
     print("WARNING: replicate package not installed. Background removal will use local method.")
     REPLICATE_AVAILABLE = False
+
+# Try to import rembg for local background removal
+try:
+    from rembg import remove, new_session
+    REMBG_AVAILABLE = True
+    print("rembg available for local background removal")
+except ImportError:
+    REMBG_AVAILABLE = False
+    print("rembg not available, will use Replicate if available")
 
 # Webhook URL - Google Apps Script Web App URL
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pphacVmJg_XKV5sIyOgxjpDykiWsAHN7ecKFHcygGFrYi/exec"
@@ -132,6 +143,98 @@ def clean_claude_text(text):
     text = ' '.join(text.split())
     
     return text.strip()
+
+def remove_background_from_image(image):
+    """Remove background from image using available methods"""
+    try:
+        # Method 1: Try local rembg first (fastest)
+        if REMBG_AVAILABLE:
+            try:
+                print("Removing background using local rembg...")
+                
+                # Initialize session if not already done
+                if not hasattr(remove_background_from_image, 'session'):
+                    remove_background_from_image.session = new_session('u2netp')
+                
+                # Convert to bytes
+                buffered = BytesIO()
+                image.save(buffered, format="PNG")
+                buffered.seek(0)
+                
+                # Remove background
+                output = remove(
+                    buffered.getvalue(),
+                    session=remove_background_from_image.session,
+                    alpha_matting=True,
+                    alpha_matting_foreground_threshold=200,
+                    alpha_matting_background_threshold=80,
+                    alpha_matting_erode_size=2
+                )
+                
+                result_image = Image.open(BytesIO(output))
+                print("Background removed successfully with local rembg")
+                return result_image
+                
+            except Exception as e:
+                print(f"Local rembg failed: {e}")
+        
+        # Method 2: Try Replicate API
+        if REPLICATE_AVAILABLE and REPLICATE_CLIENT:
+            try:
+                print("Removing background using Replicate API...")
+                
+                # Convert to base64
+                buffered = BytesIO()
+                image.save(buffered, format="PNG")
+                buffered.seek(0)
+                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                img_data_url = f"data:image/png;base64,{img_base64}"
+                
+                # Use rembg model
+                output = REPLICATE_CLIENT.run(
+                    "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
+                    input={
+                        "image": img_data_url,
+                        "model": "u2netp",
+                        "alpha_matting": True,
+                        "alpha_matting_foreground_threshold": 200,
+                        "alpha_matting_background_threshold": 80,
+                        "alpha_matting_erode_size": 2
+                    }
+                )
+                
+                if output:
+                    if isinstance(output, str):
+                        response = requests.get(output)
+                        result_image = Image.open(BytesIO(response.content))
+                    else:
+                        result_image = Image.open(BytesIO(base64.b64decode(output)))
+                    
+                    print("Background removed successfully with Replicate")
+                    return result_image
+                    
+            except Exception as e:
+                print(f"Replicate background removal failed: {e}")
+        
+        # Method 3: Basic manual background removal (fallback)
+        print("Using basic background removal (fallback)")
+        # Convert to RGBA if not already
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+        
+        # Create a simple white background mask
+        # This is very basic and won't work well for complex images
+        data = np.array(image)
+        # Assume white/light gray background
+        mask = (data[:,:,0] > 240) & (data[:,:,1] > 240) & (data[:,:,2] > 240)
+        data[mask] = [255, 255, 255, 0]
+        
+        return Image.fromarray(data, 'RGBA')
+        
+    except Exception as e:
+        print(f"All background removal methods failed: {e}")
+        # Return original image if all methods fail
+        return image
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     """Create AI-generated MD Talk section with safe text rendering"""
@@ -406,6 +509,14 @@ def get_image_from_input(input_data):
             img_data = input_data['enhanced_image']
             return Image.open(BytesIO(base64.b64decode(img_data)))
         
+        # Check for image9 specifically (for color section)
+        if 'image9' in input_data and input_data['image9']:
+            image_data = input_data['image9']
+            if image_data.startswith('http'):
+                return download_image_from_google_drive(image_data)
+            else:
+                return Image.open(BytesIO(base64.b64decode(image_data)))
+        
         raise ValueError("No valid image data found in input")
         
     except Exception as e:
@@ -491,7 +602,7 @@ def detect_group_number_from_input(input_data):
     return 1
 
 def create_color_options_section(ring_image=None):
-    """Create COLOR section with 4 color options and safe text rendering"""
+    """Create COLOR section with 4 color options and proper background removal"""
     width = FIXED_WIDTH
     height = 800
     
@@ -523,12 +634,27 @@ def create_color_options_section(ring_image=None):
     except:
         safe_draw_text(draw, (width//2 - 100, 60), title, title_font, (40, 40, 40))
     
-    # Color options
+    # Remove background from ring image if provided
+    ring_no_bg = None
+    if ring_image:
+        try:
+            print("Removing background from ring image for color section")
+            ring_no_bg = remove_background_from_image(ring_image)
+            
+            # Ensure it's RGBA
+            if ring_no_bg.mode != 'RGBA':
+                ring_no_bg = ring_no_bg.convert('RGBA')
+                
+        except Exception as e:
+            print(f"Failed to remove background: {e}")
+            ring_no_bg = ring_image
+    
+    # Color options with proper gold colors
     colors = [
-        ("yellow", "옐로우골드", (255, 215, 0)),
-        ("rose", "로즈골드", (183, 110, 121)),
-        ("white", "화이트골드", (220, 220, 220)),
-        ("antique", "무도금화이트", (245, 245, 220))
+        ("yellow", "옐로우골드", (255, 215, 0)),      # Gold color
+        ("rose", "로즈골드", (183, 110, 121)),        # Rose gold color
+        ("white", "화이트골드", (250, 250, 250)),     # White gold (almost white)
+        ("antique", "무도금화이트", (255, 255, 255))  # Pure white for unplated
     ]
     
     # Grid layout - 2x2
@@ -543,28 +669,57 @@ def create_color_options_section(ring_image=None):
         x = start_x + col * (grid_size + 40)
         y = start_y + row * (grid_size + 80)
         
-        # Color container
+        # Color container with border
         container_rect = [x, y, x + grid_size, y + grid_size]
         
-        # Fill with color
-        draw.rectangle(container_rect, fill=color_rgb, outline=(200, 200, 200), width=2)
+        # Fill with color (or white for jewelry display)
+        if color_id in ["white", "antique"]:
+            # For white/unplated, use pure white background
+            draw.rectangle(container_rect, fill=(255, 255, 255), outline=(230, 230, 230), width=2)
+        else:
+            # For gold colors, use a subtle gradient or tinted background
+            draw.rectangle(container_rect, fill=color_rgb, outline=(200, 200, 200), width=2)
         
-        # If ring image provided, overlay it
-        if ring_image:
+        # If ring image provided, overlay it with color tinting
+        if ring_no_bg:
             try:
                 # Create a copy and resize
-                ring_copy = ring_image.copy()
+                ring_copy = ring_no_bg.copy()
                 ring_copy.thumbnail((180, 180), Image.Resampling.LANCZOS)
                 
-                # Center in container
-                paste_x = x + (grid_size - ring_copy.width) // 2
-                paste_y = y + (grid_size - ring_copy.height) // 2
-                
-                # Paste with transparency if available
-                if ring_copy.mode == 'RGBA':
-                    section_img.paste(ring_copy, (paste_x, paste_y), ring_copy)
+                # Apply color tint based on metal type
+                if color_id == "yellow":
+                    # Yellow gold tint
+                    ring_tinted = apply_color_tint(ring_copy, (255, 215, 0), strength=0.3)
+                elif color_id == "rose":
+                    # Rose gold tint
+                    ring_tinted = apply_color_tint(ring_copy, (183, 110, 121), strength=0.3)
+                elif color_id == "white":
+                    # White gold - slight cool tint
+                    ring_tinted = apply_color_tint(ring_copy, (240, 240, 255), strength=0.1)
                 else:
-                    section_img.paste(ring_copy, (paste_x, paste_y))
+                    # Antique/unplated - no tint
+                    ring_tinted = ring_copy
+                
+                # Center in container
+                paste_x = x + (grid_size - ring_tinted.width) // 2
+                paste_y = y + (grid_size - ring_tinted.height) // 2
+                
+                # Create white background for the ring
+                ring_bg = Image.new('RGBA', (grid_size, grid_size), (255, 255, 255, 255))
+                
+                # Paste ring on white background
+                ring_bg.paste(ring_tinted, 
+                            ((grid_size - ring_tinted.width) // 2, 
+                             (grid_size - ring_tinted.height) // 2), 
+                            ring_tinted if ring_tinted.mode == 'RGBA' else None)
+                
+                # Paste the complete image onto the section
+                section_img.paste(ring_bg, (x, y))
+                
+                # Redraw border
+                draw.rectangle(container_rect, fill=None, outline=(230, 230, 230), width=2)
+                
             except Exception as e:
                 print(f"Error overlaying ring on color {color_id}: {e}")
         
@@ -578,6 +733,20 @@ def create_color_options_section(ring_image=None):
                          label, label_font, (80, 80, 80))
     
     return section_img
+
+def apply_color_tint(image, tint_color, strength=0.3):
+    """Apply color tint to an image while preserving transparency"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    # Create a colored overlay
+    overlay = Image.new('RGBA', image.size, tint_color + (int(255 * strength),))
+    
+    # Create a composite
+    tinted = Image.alpha_composite(image, overlay)
+    
+    # Blend with original to control strength
+    return Image.blend(image, tinted, strength)
 
 def process_single_image(input_data, group_number):
     """Process individual images (groups 1, 2)"""
@@ -636,8 +805,8 @@ def process_single_image(input_data, group_number):
     return detail_page
 
 def process_combined_images(input_data, group_number):
-    """Process combined images WITHOUT text sections (groups 3, 4, 5) - FIXED"""
-    print(f"Processing CLEAN combined images for group {group_number} (NO TEXT SECTIONS)")
+    """Process combined images WITHOUT text sections (groups 3, 4, 5) - FIXED WIDTH 1200"""
+    print(f"Processing combined images for group {group_number} with FIXED WIDTH 1200")
     
     # Get images data - FIXED parsing logic
     images_data = []
@@ -679,8 +848,8 @@ def process_combined_images(input_data, group_number):
         raise ValueError(f"No images found for group {group_number}")
     
     # Calculate dimensions for each image
-    target_width = 860
-    image_height = int(target_width * 1.46)  # 860 x 1256
+    target_width = 1200  # Changed from 860 to match FIXED_WIDTH
+    image_height = int(target_width * 1.46)  # 1200 x 1752
     
     # Calculate total height WITHOUT text sections
     TOP_MARGIN = 50
@@ -689,7 +858,7 @@ def process_combined_images(input_data, group_number):
     
     total_height = TOP_MARGIN + (len(images_data) * image_height) + ((len(images_data) - 1) * IMAGE_SPACING) + BOTTOM_MARGIN
     
-    print(f"Creating CLEAN combined page: {FIXED_WIDTH}x{total_height} (NO TEXT)")
+    print(f"Creating combined page with FIXED WIDTH: {FIXED_WIDTH}x{total_height}")
     
     # Create combined page
     detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
@@ -738,9 +907,8 @@ def process_combined_images(input_data, group_number):
             resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
             img_resized = img_cropped.resize((target_width, image_height), resample_filter)
             
-            # Paste centered on page
-            x_offset = (FIXED_WIDTH - target_width) // 2
-            detail_page.paste(img_resized, (x_offset, current_y))
+            # Paste on page (no offset needed since width matches FIXED_WIDTH)
+            detail_page.paste(img_resized, (0, current_y))
             current_y += image_height
             
             img.close()
@@ -877,7 +1045,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V111 Detail Page Handler - 8 Groups System ===")
+        print(f"=== V112 Detail Page Handler - Enhanced Color Section ===")
         
         # Find input data
         input_data = event.get('input', event)
@@ -893,7 +1061,7 @@ def handler(event):
         # Process based on group number
         if group_number == 6:
             # Group 6: COLOR section ONLY (using image 9)
-            print("=== Processing Group 6: COLOR section (image 9) ===")
+            print("=== Processing Group 6: COLOR section with background removal ===")
             detail_page = process_color_section(input_data)
             page_type = "color_section"
             
@@ -941,8 +1109,9 @@ def handler(event):
                 "height": detail_page.height
             },
             "has_text_overlay": group_number in [7, 8],
+            "has_background_removal": group_number == 6,
             "format": "base64_no_padding",
-            "version": "V111_8_GROUPS_FIXED"
+            "version": "V112_ENHANCED_COLOR"
         }
         
         # Send to webhook with CORRECT route_number
@@ -962,11 +1131,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V111_8_GROUPS_FIXED"
+                "version": "V112_ENHANCED_COLOR"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V111 Detail Handler Started - 8 Groups System with Fixes!")
+    print("V112 Detail Handler Started - Enhanced Color Section with Background Removal!")
     runpod.serverless.start({"handler": handler})
