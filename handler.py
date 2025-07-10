@@ -358,6 +358,38 @@ def post_process_ring_transparency(image):
     
     return Image.fromarray(data, 'RGBA')
 
+def auto_crop_transparent(image):
+    """Auto-crop transparent borders from image"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    # Get image data
+    data = np.array(image)
+    alpha = data[:,:,3]
+    
+    # Find non-transparent pixels
+    non_transparent = np.where(alpha > 10)  # Threshold for transparency
+    
+    if len(non_transparent[0]) == 0:
+        return image  # Return original if all transparent
+    
+    # Get bounding box
+    min_y = non_transparent[0].min()
+    max_y = non_transparent[0].max()
+    min_x = non_transparent[1].min()
+    max_x = non_transparent[1].max()
+    
+    # Add small padding
+    padding = 5
+    min_y = max(0, min_y - padding)
+    max_y = min(data.shape[0] - 1, max_y + padding)
+    min_x = max(0, min_x - padding)
+    max_x = min(data.shape[1] - 1, max_x + padding)
+    
+    # Crop
+    cropped = image.crop((min_x, min_y, max_x + 1, max_y + 1))
+    return cropped
+
 def manual_remove_background(image):
     """Basic manual background removal for rings"""
     if image.mode != 'RGBA':
@@ -547,9 +579,9 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     return section_img
 
 def create_color_options_section(ring_image=None):
-    """Create COLOR section with fixed height and better layout"""
+    """Create COLOR section with improved layout and ring detection"""
     width = FIXED_WIDTH
-    height = 950  # Increased height to prevent cutoff
+    height = 850  # Adjusted height
     
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -564,7 +596,7 @@ def create_color_options_section(ring_image=None):
     title_width, _ = get_text_size(draw, title, title_font)
     safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
     
-    # Remove background from ring
+    # Remove background from ring with enhanced detection
     ring_no_bg = None
     if ring_image:
         try:
@@ -573,52 +605,55 @@ def create_color_options_section(ring_image=None):
             
             if ring_no_bg.mode != 'RGBA':
                 ring_no_bg = ring_no_bg.convert('RGBA')
+            
+            # Additional crop to remove any border artifacts
+            ring_no_bg = auto_crop_transparent(ring_no_bg)
                 
         except Exception as e:
             print(f"Failed to remove background: {e}")
             ring_no_bg = ring_image.convert('RGBA') if ring_image else None
     
-    # Enhanced color definitions with adjusted strengths
+    # Updated color definitions with better tones
     colors = [
-        ("yellow", "옐로우골드", (255, 200, 50), 0.3),      # Lighter gold (연하게)
-        ("rose", "로즈골드", (235, 155, 155), 0.2),        # Less saturated rose gold (채도 낮춤)
-        ("white", "화이트골드", (250, 250, 255), 0.05),    # More white (더 하얗게)
+        ("yellow", "옐로우골드", (255, 200, 50), 0.3),      # Golden yellow
+        ("rose", "로즈골드", (235, 170, 140), 0.25),       # Orange-tinted rose gold (주황색 느낌)
+        ("white", "화이트골드", (255, 255, 255), 0.02),    # Almost pure white (새하얀색)
         ("antique", "무도금화이트", (255, 255, 255), 0.0)  # Pure white
     ]
     
-    # Grid layout with adjusted positioning
-    grid_size = 300  # Increased size
-    padding = 80     # Increased padding
+    # Tighter grid layout
+    grid_size = 260  # Reduced from 300
+    padding = 60     # Reduced from 80
     start_x = (width - (grid_size * 2 + padding)) // 2
-    start_y = 180
+    start_y = 160    # Moved up slightly
     
     for i, (color_id, label, color_rgb, strength) in enumerate(colors):
         row = i // 2
         col = i % 2
         
         x = start_x + col * (grid_size + padding)
-        y = start_y + row * (grid_size + 120)  # Increased vertical spacing
+        y = start_y + row * (grid_size + 100)  # Reduced vertical spacing
         
-        # Create container
-        container = Image.new('RGBA', (grid_size, grid_size), (255, 255, 255, 255))
+        # Create container with subtle background
+        container = Image.new('RGBA', (grid_size, grid_size), (252, 252, 252, 255))
         container_draw = ImageDraw.Draw(container)
         
-        # Draw border
+        # Draw softer border
         container_draw.rectangle([0, 0, grid_size-1, grid_size-1], 
-                                fill=None, outline=(230, 230, 230), width=2)
+                                fill=None, outline=(240, 240, 240), width=1)
         
         # Apply ring with color
         if ring_no_bg:
             try:
                 ring_copy = ring_no_bg.copy()
-                # Increase ring size from 0.8 to 0.9
-                ring_copy.thumbnail((int(grid_size * 0.85), int(grid_size * 0.85)), 
-                                  Image.Resampling.LANCZOS)
+                # Smaller ring size for clearer boundaries
+                max_size = int(grid_size * 0.7)  # Reduced from 0.85 to 0.7
+                ring_copy.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
                 
                 # Apply enhanced metal color effect
                 ring_tinted = apply_enhanced_metal_color(ring_copy, color_rgb, strength)
                 
-                # Center and paste
+                # Center and paste with padding
                 paste_x = (grid_size - ring_tinted.width) // 2
                 paste_y = (grid_size - ring_tinted.height) // 2
                 container.paste(ring_tinted, (paste_x, paste_y), ring_tinted)
@@ -631,13 +666,13 @@ def create_color_options_section(ring_image=None):
         
         # Draw label
         label_width, _ = get_text_size(draw, label, label_font)
-        safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 25), 
+        safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 20), 
                      label, label_font, (80, 80, 80))
     
     return section_img
 
 def apply_enhanced_metal_color(image, metal_color, strength=0.3):
-    """Apply enhanced metal color effect for jewelry"""
+    """Apply enhanced metal color effect for jewelry with better color accuracy"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -660,29 +695,40 @@ def apply_enhanced_metal_color(image, metal_color, strength=0.3):
         # Normalize metal color
         metal_r, metal_g, metal_b = [c/255.0 for c in metal_color]
         
-        # Apply color with luminance preservation and stronger effect
-        # Preserve highlights and shadows while tinting midtones more
-        highlight_mask = luminance > 0.8
-        shadow_mask = luminance < 0.2
-        midtone_mask = ~highlight_mask & ~shadow_mask & mask
-        
-        # Apply stronger color to midtones
-        if midtone_mask.any():
-            r_array[midtone_mask] = r_array[midtone_mask] * (1 - strength * 1.5) + (metal_r * 255) * (strength * 1.5)
-            g_array[midtone_mask] = g_array[midtone_mask] * (1 - strength * 1.5) + (metal_g * 255) * (strength * 1.5)
-            b_array[midtone_mask] = b_array[midtone_mask] * (1 - strength * 1.5) + (metal_b * 255) * (strength * 1.5)
-        
-        # Apply lighter color to highlights
-        if highlight_mask.any():
-            r_array[highlight_mask] = r_array[highlight_mask] * (1 - strength * 0.3) + (metal_r * 255) * (strength * 0.3)
-            g_array[highlight_mask] = g_array[highlight_mask] * (1 - strength * 0.3) + (metal_g * 255) * (strength * 0.3)
-            b_array[highlight_mask] = b_array[highlight_mask] * (1 - strength * 0.3) + (metal_b * 255) * (strength * 0.3)
-        
-        # Preserve shadows with slight tint
-        if shadow_mask.any():
-            r_array[shadow_mask] = r_array[shadow_mask] * (1 - strength * 0.1) + (metal_r * luminance[shadow_mask] * 255) * (strength * 0.1)
-            g_array[shadow_mask] = g_array[shadow_mask] * (1 - strength * 0.1) + (metal_g * luminance[shadow_mask] * 255) * (strength * 0.1)
-            b_array[shadow_mask] = b_array[shadow_mask] * (1 - strength * 0.1) + (metal_b * luminance[shadow_mask] * 255) * (strength * 0.1)
+        # For white gold, preserve more of original brightness
+        if metal_color[0] == 255 and metal_color[1] == 255 and metal_color[2] == 255:
+            # White gold - just brighten slightly
+            brightness_boost = 1.05
+            r_array[mask] = np.clip(r_array[mask] * brightness_boost, 0, 255)
+            g_array[mask] = np.clip(g_array[mask] * brightness_boost, 0, 255)
+            b_array[mask] = np.clip(b_array[mask] * brightness_boost, 0, 255)
+        else:
+            # Apply color with luminance preservation
+            highlight_mask = luminance > 0.85
+            shadow_mask = luminance < 0.15
+            midtone_mask = ~highlight_mask & ~shadow_mask & mask
+            
+            # Apply color more strongly to midtones
+            if midtone_mask.any():
+                # Blend with original color
+                blend_factor = strength * 2.0  # Stronger effect
+                r_array[midtone_mask] = r_array[midtone_mask] * (1 - blend_factor) + (metal_r * 255 * luminance[midtone_mask]) * blend_factor
+                g_array[midtone_mask] = g_array[midtone_mask] * (1 - blend_factor) + (metal_g * 255 * luminance[midtone_mask]) * blend_factor
+                b_array[midtone_mask] = b_array[midtone_mask] * (1 - blend_factor) + (metal_b * 255 * luminance[midtone_mask]) * blend_factor
+            
+            # Lighter tint for highlights to preserve shine
+            if highlight_mask.any():
+                tint_factor = strength * 0.5
+                r_array[highlight_mask] = r_array[highlight_mask] * (1 - tint_factor) + (metal_r * 255) * tint_factor
+                g_array[highlight_mask] = g_array[highlight_mask] * (1 - tint_factor) + (metal_g * 255) * tint_factor
+                b_array[highlight_mask] = b_array[highlight_mask] * (1 - tint_factor) + (metal_b * 255) * tint_factor
+            
+            # Preserve shadows with very light tint
+            if shadow_mask.any():
+                shadow_tint = strength * 0.2
+                r_array[shadow_mask] = r_array[shadow_mask] * (1 - shadow_tint) + (metal_r * r_array[shadow_mask]) * shadow_tint
+                g_array[shadow_mask] = g_array[shadow_mask] * (1 - shadow_tint) + (metal_g * g_array[shadow_mask]) * shadow_tint
+                b_array[shadow_mask] = b_array[shadow_mask] * (1 - shadow_tint) + (metal_b * b_array[shadow_mask]) * shadow_tint
     
     # Ensure valid range
     r_array = np.clip(r_array, 0, 255)
@@ -1141,7 +1187,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V117 All Issues Fixed Detail Page Handler ===")
+        print(f"=== V118 Enhanced Color Section Detail Page Handler ===")
         
         # Get input data
         input_data = event.get('input', event)
@@ -1204,7 +1250,7 @@ def handler(event):
             "has_text_overlay": group_number in [7, 8],
             "has_background_removal": group_number == 6,
             "format": "base64_no_padding",
-            "version": "V117_ALL_FIXED"
+            "version": "V118_ENHANCED_COLOR"
         }
         
         # Send to webhook
@@ -1225,11 +1271,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V117_ALL_FIXED"
+                "version": "V118_ENHANCED_COLOR"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V117 All Issues Fixed Detail Handler Started!")
+    print("V118 Enhanced Color Section Detail Handler Started!")
     runpod.serverless.start({"handler": handler})
