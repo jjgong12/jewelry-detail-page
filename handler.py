@@ -417,8 +417,8 @@ def manual_remove_background_enhanced(image):
     return result
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
-    """Create MD Talk section with proper Korean text rendering"""
-    section_height = 600
+    """Create MD Talk section with proper Korean text rendering and increased line spacing"""
+    section_height = 650  # Increased height
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -469,9 +469,9 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
             "당신만의 특별한 주얼리입니다."
         ]
     
-    # Draw content
-    y_pos = 180
-    line_height = 40
+    # Draw content with increased line spacing
+    y_pos = 200  # Increased gap between title and content
+    line_height = 50  # Increased from 40 to 50
     
     for line in lines:
         if line:
@@ -482,8 +482,8 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     return section_img
 
 def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
-    """Create Design Point section with proper Korean text rendering"""
-    section_height = 700
+    """Create Design Point section with proper Korean text rendering and increased line spacing"""
+    section_height = 750  # Increased height
     section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
     
@@ -531,9 +531,9 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
             "화려하면서도 고급스러운 반영을 표현합니다"
         ]
     
-    # Draw content
-    y_pos = 200
-    line_height = 45
+    # Draw content with increased line spacing
+    y_pos = 220  # Increased gap between title and content
+    line_height = 55  # Increased from 45 to 55
     
     for line in lines:
         if line:
@@ -547,9 +547,9 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     return section_img
 
 def create_color_options_section(ring_image=None):
-    """Create COLOR section with enhanced color application"""
+    """Create COLOR section with fixed height and better layout"""
     width = FIXED_WIDTH
-    height = 800
+    height = 950  # Increased height to prevent cutoff
     
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -586,9 +586,9 @@ def create_color_options_section(ring_image=None):
         ("antique", "무도금화이트", (255, 255, 255), 0.0)  # Pure white
     ]
     
-    # Grid layout
-    grid_size = 280
-    padding = 60
+    # Grid layout with adjusted positioning
+    grid_size = 300  # Increased size
+    padding = 80     # Increased padding
     start_x = (width - (grid_size * 2 + padding)) // 2
     start_y = 180
     
@@ -597,7 +597,7 @@ def create_color_options_section(ring_image=None):
         col = i % 2
         
         x = start_x + col * (grid_size + padding)
-        y = start_y + row * (grid_size + 100)
+        y = start_y + row * (grid_size + 120)  # Increased vertical spacing
         
         # Create container
         container = Image.new('RGBA', (grid_size, grid_size), (255, 255, 255, 255))
@@ -612,7 +612,7 @@ def create_color_options_section(ring_image=None):
             try:
                 ring_copy = ring_no_bg.copy()
                 # Increase ring size from 0.8 to 0.9
-                ring_copy.thumbnail((int(grid_size * 0.9), int(grid_size * 0.9)), 
+                ring_copy.thumbnail((int(grid_size * 0.85), int(grid_size * 0.85)), 
                                   Image.Resampling.LANCZOS)
                 
                 # Apply enhanced metal color effect
@@ -631,7 +631,7 @@ def create_color_options_section(ring_image=None):
         
         # Draw label
         label_width, _ = get_text_size(draw, label, label_font)
-        safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 20), 
+        safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 25), 
                      label, label_font, (80, 80, 80))
     
     return section_img
@@ -718,7 +718,7 @@ def extract_file_id_from_url(url):
 def download_image_from_google_drive(url):
     """Download image from Google Drive"""
     try:
-        print(f"Processing Google Drive URL: {url}")
+        print(f"Processing Google Drive URL: {url[:80]}...")
         
         file_id = extract_file_id_from_url(url)
         if not file_id:
@@ -784,13 +784,24 @@ def get_image_from_input(input_data):
         raise
 
 def parse_semicolon_separated_urls(url_string):
-    """Parse semicolon-separated URLs from Google Script"""
+    """Parse semicolon-separated URLs from Google Script - ENHANCED"""
     if not url_string:
         return []
     
+    # Remove any whitespace and split by semicolon
+    url_string = url_string.strip()
+    
     # Split by semicolon and clean each URL
-    urls = [url.strip() for url in url_string.split(';') if url.strip()]
+    urls = []
+    for url in url_string.split(';'):
+        url = url.strip()
+        if url and url.startswith('http'):  # Make sure it's a valid URL
+            urls.append(url)
+    
     print(f"Parsed {len(urls)} URLs from semicolon-separated string")
+    for i, url in enumerate(urls):
+        print(f"  URL {i+1}: {url[:60]}...")
+    
     return urls
 
 def process_single_image(input_data, group_number):
@@ -834,57 +845,100 @@ def process_single_image(input_data, group_number):
     return detail_page
 
 def process_combined_images(input_data, group_number):
-    """Process combined images (groups 3, 4, 5) - FIXED for semicolon-separated URLs"""
+    """Process combined images (groups 3, 4, 5) - ENHANCED PARSING"""
     print(f"Processing combined images for group {group_number}")
-    print(f"Input data for debugging: {input_data}")
+    print(f"Available input keys: {list(input_data.keys())}")
     
     # Get exactly 2 images based on group number
     images = []
     
-    # Map group numbers to expected keys from Google Script
-    group_to_key_map = {
-        3: 'image3',  # Google Script sends combined URLs as image3
-        4: 'image4',  # Google Script sends combined URLs as image4
-        5: 'image5'   # Google Script sends combined URLs as image5
+    # First priority: Check for semicolon-separated URLs
+    # Google Script sends combined URLs as image3, image4, or image5
+    main_keys = {
+        3: ['image3', 'image'],
+        4: ['image4', 'image'],
+        5: ['image5', 'image']
     }
     
-    # First, check if we have semicolon-separated URLs from Google Script
-    main_key = group_to_key_map.get(group_number)
-    if main_key and main_key in input_data and input_data[main_key]:
-        url_string = input_data[main_key]
-        print(f"Found {main_key} with value: {url_string[:100]}...")  # Debug log
-        
-        if isinstance(url_string, str) and ';' in url_string:
-            # Parse semicolon-separated URLs
-            urls = parse_semicolon_separated_urls(url_string)
-            print(f"Parsed {len(urls)} URLs from semicolon-separated string")
-            
-            for i, url in enumerate(urls[:2]):  # Take only first 2
-                try:
-                    print(f"Downloading image {i+1} from: {url[:80]}...")
-                    img = download_image_from_google_drive(url)
-                    images.append(img)
-                    print(f"Successfully downloaded image {i+1}")
-                except Exception as e:
-                    print(f"Failed to download image {i+1}: {e}")
-        else:
-            # Single URL case (shouldn't happen for groups 3-5 from Google Script)
-            print(f"WARNING: Expected semicolon-separated URLs but got single URL")
-            try:
-                img = download_image_from_google_drive(url_string)
-                images.append(img)
-            except Exception as e:
-                print(f"Failed to get image from {main_key}: {e}")
-    else:
-        print(f"ERROR: Key '{main_key}' not found or empty in input_data")
-        print(f"Available keys: {list(input_data.keys())}")
+    urls_found = False
     
-    # If we don't have exactly 2 images, there's a problem
+    # Try main keys for this group
+    for key in main_keys.get(group_number, []):
+        if key in input_data and input_data[key]:
+            value = input_data[key]
+            print(f"Checking key '{key}' with value type: {type(value)}")
+            
+            if isinstance(value, str):
+                # Clean the string
+                value = value.strip()
+                
+                # Check if it contains semicolon
+                if ';' in value:
+                    print(f"Found semicolon-separated URLs in {key}")
+                    urls = parse_semicolon_separated_urls(value)
+                    
+                    if len(urls) >= 2:
+                        # Download each URL
+                        for i, url in enumerate(urls[:2]):
+                            try:
+                                print(f"Downloading image {i+1} from URL...")
+                                img = download_image_from_google_drive(url)
+                                images.append(img)
+                                print(f"Successfully downloaded image {i+1}")
+                            except Exception as e:
+                                print(f"Failed to download image {i+1}: {e}")
+                        
+                        if len(images) == 2:
+                            urls_found = True
+                            break
+                    else:
+                        print(f"WARNING: Expected 2 URLs but found {len(urls)}")
+                else:
+                    # Single URL - shouldn't happen for groups 3-5 but handle it
+                    print(f"Found single URL in {key}, looking for second image...")
+                    try:
+                        img = download_image_from_google_drive(value)
+                        images.append(img)
+                    except Exception as e:
+                        print(f"Failed to download single URL: {e}")
+    
+    # Fallback: Look for individual image keys if no semicolon-separated URLs found
+    if not urls_found and len(images) < 2:
+        print("No semicolon-separated URLs found, trying individual keys...")
+        
+        key_pairs = {
+            3: ['image3', 'image4'],
+            4: ['image5', 'image6'],
+            5: ['image7', 'image8']
+        }
+        
+        for key in key_pairs.get(group_number, []):
+            if key in input_data and input_data[key] and len(images) < 2:
+                try:
+                    print(f"Trying to get image from key: {key}")
+                    img = get_image_from_input({key: input_data[key]})
+                    images.append(img)
+                    print(f"Successfully got image from {key}")
+                except Exception as e:
+                    print(f"Failed to get image from {key}: {e}")
+    
+    # Validate we have exactly 2 images
     if len(images) != 2:
-        print(f"ERROR: Group {group_number} found {len(images)} images")
-        print(f"Input data keys: {list(input_data.keys())}")
-        if main_key in input_data:
-            print(f"Main key '{main_key}' value: {input_data.get(main_key, 'NOT FOUND')[:200]}")
+        print(f"ERROR: Group {group_number} requires exactly 2 images, but {len(images)} found")
+        print(f"Debug info:")
+        print(f"  - Group number: {group_number}")
+        print(f"  - Keys checked: {main_keys.get(group_number, [])}")
+        print(f"  - Images found: {len(images)}")
+        
+        # Print what we found in input_data
+        for key in ['image', 'image3', 'image4', 'image5']:
+            if key in input_data:
+                value = input_data[key]
+                if isinstance(value, str):
+                    print(f"  - {key}: {value[:100]}... (contains ';': {';' in value})")
+                else:
+                    print(f"  - {key}: {type(value)}")
+        
         raise ValueError(f"Group {group_number} requires exactly 2 images, but {len(images)} found")
     
     print(f"Successfully loaded 2 images for group {group_number}")
@@ -1021,22 +1075,24 @@ def detect_group_number_from_input(input_data):
                 print(f"Detected group {group} from semicolon-separated URLs in {key}")
                 return group
     
-    # Priority 5: Specific image keys
+    # Priority 5: Check for color section indicators
+    if 'image6' in input_data or 'image9' in input_data:
+        return 6
+    
+    # Priority 6: Specific image keys
     if 'image1' in input_data:
         return 1
     elif 'image2' in input_data:
         return 2
-    elif 'image3' in input_data or 'image4' in input_data:
+    elif 'image3' in input_data:
         return 3
-    elif 'image5' in input_data or 'image6' in input_data:
+    elif 'image4' in input_data:
         return 4
-    elif 'image7' in input_data or 'image8' in input_data:
+    elif 'image5' in input_data:
         return 5
-    elif 'image9' in input_data:
-        return 6
     
-    # Priority 6: Check for color indicators
-    if any(key in str(input_data).lower() for key in ['color', 'colour']):
+    # Priority 7: Check for color indicators in any field
+    if any(key in str(input_data).lower() for key in ['color', 'colour', 'gold']):
         return 6
     
     # Default
@@ -1085,7 +1141,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V116 Fixed Detail Page Handler ===")
+        print(f"=== V117 All Issues Fixed Detail Page Handler ===")
         
         # Get input data
         input_data = event.get('input', event)
@@ -1148,7 +1204,7 @@ def handler(event):
             "has_text_overlay": group_number in [7, 8],
             "has_background_removal": group_number == 6,
             "format": "base64_no_padding",
-            "version": "V116_FIXED"
+            "version": "V117_ALL_FIXED"
         }
         
         # Send to webhook
@@ -1169,11 +1225,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V116_FIXED"
+                "version": "V117_ALL_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V116 Fixed Detail Handler Started!")
+    print("V117 All Issues Fixed Detail Handler Started!")
     runpod.serverless.start({"handler": handler})
