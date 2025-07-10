@@ -261,31 +261,73 @@ def remove_background_from_image(image):
         return image
 
 def post_process_ring_transparency(image):
-    """Post-process to ensure ring center holes are transparent"""
+    """Enhanced post-process to detect and remove ring center holes"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
     data = np.array(image)
     
-    # Find enclosed white/light areas (potential ring holes)
+    # Find the center of the image
+    height, width = data.shape[:2]
+    center_y, center_x = height // 2, width // 2
+    
     # Convert to grayscale for analysis
     gray = np.mean(data[:,:,:3], axis=2)
     
-    # Threshold for white/light areas
-    white_mask = gray > 240
+    # 1. Detect ring holes using multiple methods
+    
+    # Method 1: Find bright enclosed areas
+    bright_mask = gray > 240
     
     # Use flood fill to find enclosed areas
-    from scipy import ndimage
-    labeled, num_features = ndimage.label(white_mask)
+    labeled, num_features = ndimage.label(bright_mask)
     
     # Check each labeled region
     for i in range(1, num_features + 1):
         region = labeled == i
-        # If region is small and surrounded (not touching edges)
-        if not (region[0,:].any() or region[-1,:].any() or 
-                region[:,0].any() or region[:,-1].any()):
-            # Make this region transparent
-            data[region] = [255, 255, 255, 0]
+        
+        # Get region properties
+        region_coords = np.where(region)
+        if len(region_coords[0]) > 0:
+            # Calculate region center
+            region_center_y = np.mean(region_coords[0])
+            region_center_x = np.mean(region_coords[1])
+            
+            # Check if region is near image center (likely ring hole)
+            dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
+            
+            # If region is enclosed and near center, make transparent
+            if not (region[0,:].any() or region[-1,:].any() or 
+                    region[:,0].any() or region[:,-1].any()):
+                # Additional check: if near center, more likely to be ring hole
+                if dist_from_center < min(height, width) * 0.3:
+                    data[region] = [255, 255, 255, 0]
+                    print(f"Removed enclosed bright region near center")
+    
+    # Method 2: Detect circular holes using edge detection
+    # Edge detection to find ring boundaries
+    edges = ndimage.sobel(gray)
+    edge_mask = edges > 30
+    
+    # Fill holes to find potential ring centers
+    filled = ndimage.binary_fill_holes(edge_mask)
+    holes = filled & ~edge_mask
+    
+    # Label potential holes
+    hole_labels, num_holes = ndimage.label(holes)
+    
+    for i in range(1, num_holes + 1):
+        hole_region = hole_labels == i
+        hole_coords = np.where(hole_region)
+        
+        if len(hole_coords[0]) > 10:  # Minimum size
+            # Check if hole is roughly circular and centered
+            hole_center_y = np.mean(hole_coords[0])
+            hole_center_x = np.mean(hole_coords[1])
+            
+            # Make hole transparent if it's likely a ring center
+            data[hole_region] = [255, 255, 255, 0]
+            print(f"Removed detected hole region")
     
     return Image.fromarray(data, 'RGBA')
 
@@ -477,12 +519,12 @@ def create_color_options_section(ring_image=None):
             print(f"Failed to remove background: {e}")
             ring_no_bg = ring_image.convert('RGBA') if ring_image else None
     
-    # Enhanced color definitions with stronger tints
+    # Enhanced color definitions with adjusted strengths
     colors = [
-        ("yellow", "옐로우골드", (255, 185, 0), 0.4),      # Stronger gold
-        ("rose", "로즈골드", (220, 90, 110), 0.4),         # Stronger rose gold
-        ("white", "화이트골드", (245, 245, 255), 0.1),     # Subtle white gold
-        ("antique", "무도금화이트", (255, 255, 255), 0.0) # Pure white
+        ("yellow", "옐로우골드", (255, 170, 0), 0.5),      # Darker gold (더 진하게)
+        ("rose", "로즈골드", (230, 130, 140), 0.25),       # Lighter rose gold (연하게)
+        ("white", "화이트골드", (250, 250, 255), 0.05),    # More white (더 하얗게)
+        ("antique", "무도금화이트", (255, 255, 255), 0.0)  # Pure white
     ]
     
     # Grid layout
@@ -681,6 +723,16 @@ def get_image_from_input(input_data):
         print(f"Error getting image: {str(e)}")
         raise
 
+def parse_semicolon_separated_urls(url_string):
+    """Parse semicolon-separated URLs from Google Script"""
+    if not url_string:
+        return []
+    
+    # Split by semicolon and clean each URL
+    urls = [url.strip() for url in url_string.split(';') if url.strip()]
+    print(f"Parsed {len(urls)} URLs from semicolon-separated string")
+    return urls
+
 def process_single_image(input_data, group_number):
     """Process individual images (groups 1, 2)"""
     print(f"Processing single image for group {group_number}")
@@ -722,32 +774,80 @@ def process_single_image(input_data, group_number):
     return detail_page
 
 def process_combined_images(input_data, group_number):
-    """Process combined images (groups 3, 4, 5) - FIXED for proper 2-image handling"""
+    """Process combined images (groups 3, 4, 5) - FIXED for semicolon-separated URLs"""
     print(f"Processing combined images for group {group_number}")
     
     # Get exactly 2 images based on group number
     images = []
     
-    if group_number == 3:
-        # Try to get image3 and image4
-        for key in ['image3', 'image4']:
-            if key in input_data and input_data[key]:
-                temp_data = {key: input_data[key]}
-                images.append(get_image_from_input(temp_data))
-    elif group_number == 4:
-        # Try to get image5 and image6
-        for key in ['image5', 'image6']:
-            if key in input_data and input_data[key]:
-                temp_data = {key: input_data[key]}
-                images.append(get_image_from_input(temp_data))
-    elif group_number == 5:
-        # Try to get image7 and image8
-        for key in ['image7', 'image8']:
-            if key in input_data and input_data[key]:
-                temp_data = {key: input_data[key]}
-                images.append(get_image_from_input(temp_data))
+    # Map group numbers to expected keys from Google Script
+    group_to_key_map = {
+        3: 'image3',  # Google Script sends combined URLs as image3
+        4: 'image4',  # Google Script sends combined URLs as image4
+        5: 'image5'   # Google Script sends combined URLs as image5
+    }
     
-    # If specific keys not found, try images array
+    # First, check if we have semicolon-separated URLs from Google Script
+    main_key = group_to_key_map.get(group_number)
+    if main_key and main_key in input_data and input_data[main_key]:
+        url_string = input_data[main_key]
+        if isinstance(url_string, str) and ';' in url_string:
+            # Parse semicolon-separated URLs
+            urls = parse_semicolon_separated_urls(url_string)
+            print(f"Found {len(urls)} URLs in semicolon-separated string for group {group_number}")
+            
+            for url in urls[:2]:  # Take only first 2
+                try:
+                    img = download_image_from_google_drive(url)
+                    images.append(img)
+                except Exception as e:
+                    print(f"Failed to download image from URL: {url}, Error: {e}")
+        else:
+            # Single URL case
+            try:
+                temp_data = {main_key: url_string}
+                img = get_image_from_input(temp_data)
+                images.append(img)
+            except Exception as e:
+                print(f"Failed to get image from {main_key}: {e}")
+    
+    # If we don't have 2 images yet, try individual keys
+    if len(images) < 2:
+        if group_number == 3:
+            # Try to get image3 and image4 individually
+            for key in ['image3', 'image4']:
+                if len(images) >= 2:
+                    break
+                if key in input_data and input_data[key]:
+                    try:
+                        temp_data = {key: input_data[key]}
+                        images.append(get_image_from_input(temp_data))
+                    except Exception as e:
+                        print(f"Failed to get {key}: {e}")
+        elif group_number == 4:
+            # Try to get image5 and image6 individually
+            for key in ['image5', 'image6']:
+                if len(images) >= 2:
+                    break
+                if key in input_data and input_data[key]:
+                    try:
+                        temp_data = {key: input_data[key]}
+                        images.append(get_image_from_input(temp_data))
+                    except Exception as e:
+                        print(f"Failed to get {key}: {e}")
+        elif group_number == 5:
+            # Try to get image7 and image8 individually
+            for key in ['image7', 'image8']:
+                if len(images) >= 2:
+                    break
+                if key in input_data and input_data[key]:
+                    try:
+                        temp_data = {key: input_data[key]}
+                        images.append(get_image_from_input(temp_data))
+                    except Exception as e:
+                        print(f"Failed to get {key}: {e}")
+    
+    # If still not enough images, try images array
     if len(images) < 2 and 'images' in input_data:
         images_data = input_data['images']
         if isinstance(images_data, list):
@@ -762,9 +862,12 @@ def process_combined_images(input_data, group_number):
                         img = get_image_from_input(temp_data)
                     images.append(img)
                 except Exception as e:
-                    print(f"Failed to get image: {e}")
+                    print(f"Failed to get image from array: {e}")
     
     if len(images) != 2:
+        print(f"ERROR: Group {group_number} found {len(images)} images")
+        print(f"Input data keys: {list(input_data.keys())}")
+        print(f"Main key '{main_key}' value: {input_data.get(main_key, 'NOT FOUND')}")
         raise ValueError(f"Group {group_number} requires exactly 2 images, but {len(images)} found")
     
     print(f"Successfully loaded 2 images for group {group_number}")
@@ -870,16 +973,20 @@ def process_text_section(input_data, group_number):
     return text_section, section_type
 
 def detect_group_number_from_input(input_data):
-    """Detect group number from input data"""
+    """Detect group number from input data with enhanced logic"""
     # Priority 1: Explicit route_number
     route_number = input_data.get('route_number', 0)
     if route_number and str(route_number).isdigit():
-        return int(route_number)
+        group_num = int(route_number)
+        print(f"Found explicit route_number: {group_num}")
+        return group_num
     
     # Priority 2: group_number
     group_number = input_data.get('group_number', 0)
     if group_number and str(group_number).isdigit():
-        return int(group_number)
+        group_num = int(group_number)
+        print(f"Found explicit group_number: {group_num}")
+        return group_num
     
     # Priority 3: Text type hints
     text_type = input_data.get('text_type', '').lower()
@@ -888,7 +995,16 @@ def detect_group_number_from_input(input_data):
     elif 'design_point' in text_type:
         return 8
     
-    # Priority 4: Specific image keys
+    # Priority 4: Check for Google Script format (semicolon-separated URLs)
+    # This helps identify groups 3, 4, 5 from Google Script
+    for key, group in [('image3', 3), ('image4', 4), ('image5', 5)]:
+        if key in input_data and input_data[key]:
+            value = input_data[key]
+            if isinstance(value, str) and ';' in value:
+                print(f"Detected group {group} from semicolon-separated URLs in {key}")
+                return group
+    
+    # Priority 5: Specific image keys
     if 'image1' in input_data:
         return 1
     elif 'image2' in input_data:
@@ -902,7 +1018,7 @@ def detect_group_number_from_input(input_data):
     elif 'image9' in input_data:
         return 6
     
-    # Priority 5: Check for color indicators
+    # Priority 6: Check for color indicators
     if any(key in str(input_data).lower() for key in ['color', 'colour']):
         return 6
     
