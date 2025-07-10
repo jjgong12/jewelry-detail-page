@@ -176,14 +176,14 @@ def clean_claude_text(text):
     return text.strip()
 
 def remove_background_from_image(image):
-    """Remove background including ring center holes"""
+    """Remove background including ring center holes - ENHANCED"""
     try:
-        # Method 1: Try local rembg first
+        # Method 1: Try local rembg first with more aggressive settings
         if REMBG_AVAILABLE:
             try:
-                print("Removing background using local rembg...")
+                print("Removing background using local rembg with enhanced settings...")
                 
-                # Initialize session
+                # Initialize session with best model
                 if not hasattr(remove_background_from_image, 'session'):
                     remove_background_from_image.session = new_session('u2netp')
                 
@@ -192,14 +192,15 @@ def remove_background_from_image(image):
                 image.save(buffered, format="PNG")
                 buffered.seek(0)
                 
-                # Remove background with aggressive settings
+                # Remove background with very aggressive settings for jewelry
                 output = remove(
                     buffered.getvalue(),
                     session=remove_background_from_image.session,
                     alpha_matting=True,
-                    alpha_matting_foreground_threshold=240,
-                    alpha_matting_background_threshold=50,
-                    alpha_matting_erode_size=2
+                    alpha_matting_foreground_threshold=250,  # Very high threshold
+                    alpha_matting_background_threshold=30,   # Very low threshold
+                    alpha_matting_erode_size=1,
+                    only_mask=False
                 )
                 
                 result_image = Image.open(BytesIO(output))
@@ -213,10 +214,10 @@ def remove_background_from_image(image):
             except Exception as e:
                 print(f"Local rembg failed: {e}")
         
-        # Method 2: Try Replicate API
+        # Method 2: Try Replicate API with enhanced settings
         if REPLICATE_AVAILABLE and REPLICATE_CLIENT:
             try:
-                print("Removing background using Replicate API...")
+                print("Removing background using Replicate API with enhanced settings...")
                 
                 buffered = BytesIO()
                 image.save(buffered, format="PNG")
@@ -230,9 +231,9 @@ def remove_background_from_image(image):
                         "image": img_data_url,
                         "model": "u2netp",
                         "alpha_matting": True,
-                        "alpha_matting_foreground_threshold": 240,
-                        "alpha_matting_background_threshold": 50,
-                        "alpha_matting_erode_size": 2
+                        "alpha_matting_foreground_threshold": 250,
+                        "alpha_matting_background_threshold": 30,
+                        "alpha_matting_erode_size": 1
                     }
                 )
                 
@@ -254,18 +255,20 @@ def remove_background_from_image(image):
         
         # Method 3: Enhanced manual background removal
         print("Using enhanced manual background removal")
-        return manual_remove_background(image)
+        result = manual_remove_background_enhanced(image)
+        return post_process_ring_transparency(result)
         
     except Exception as e:
         print(f"All background removal methods failed: {e}")
         return image
 
 def post_process_ring_transparency(image):
-    """Enhanced post-process to detect and remove ring center holes"""
+    """Enhanced post-process to aggressively detect and remove ring center holes"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
     data = np.array(image)
+    alpha_channel = data[:,:,3]
     
     # Find the center of the image
     height, width = data.shape[:2]
@@ -274,65 +277,89 @@ def post_process_ring_transparency(image):
     # Convert to grayscale for analysis
     gray = np.mean(data[:,:,:3], axis=2)
     
-    # 1. Detect ring holes using multiple methods
+    # Method 1: Find bright/white enclosed areas more aggressively
+    bright_threshold = 235  # Lower threshold to catch more areas
+    bright_mask = gray > bright_threshold
     
-    # Method 1: Find bright enclosed areas
-    bright_mask = gray > 240
+    # Also check alpha channel - areas that weren't made transparent yet
+    opaque_bright = bright_mask & (alpha_channel > 200)
     
-    # Use flood fill to find enclosed areas
-    labeled, num_features = ndimage.label(bright_mask)
+    # Label connected components
+    labeled, num_features = ndimage.label(opaque_bright)
     
-    # Check each labeled region
+    # Analyze each component
     for i in range(1, num_features + 1):
         region = labeled == i
-        
-        # Get region properties
         region_coords = np.where(region)
-        if len(region_coords[0]) > 0:
-            # Calculate region center
+        
+        if len(region_coords[0]) > 5:  # Minimum size
+            # Calculate region properties
             region_center_y = np.mean(region_coords[0])
             region_center_x = np.mean(region_coords[1])
+            region_size = len(region_coords[0])
             
-            # Check if region is near image center (likely ring hole)
+            # Check if region is roughly in the center
             dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
             
-            # If region is enclosed and near center, make transparent
-            if not (region[0,:].any() or region[-1,:].any() or 
-                    region[:,0].any() or region[:,-1].any()):
-                # Additional check: if near center, more likely to be ring hole
-                if dist_from_center < min(height, width) * 0.3:
-                    data[region] = [255, 255, 255, 0]
-                    print(f"Removed enclosed bright region near center")
+            # More aggressive criteria for ring holes
+            is_centered = dist_from_center < min(height, width) * 0.4
+            is_reasonable_size = region_size < (height * width * 0.2)  # Not too big
+            
+            # Check if surrounded by non-transparent pixels (enclosed)
+            # Expand region slightly and check if it hits edges
+            dilated = ndimage.binary_dilation(region, iterations=5)
+            touches_edge = (dilated[0,:].any() or dilated[-1,:].any() or 
+                           dilated[:,0].any() or dilated[:,-1].any())
+            
+            if is_centered and is_reasonable_size and not touches_edge:
+                data[region] = [255, 255, 255, 0]
+                print(f"Removed enclosed bright region (size: {region_size}, dist from center: {dist_from_center:.1f})")
     
-    # Method 2: Detect circular holes using edge detection
-    # Edge detection to find ring boundaries
-    edges = ndimage.sobel(gray)
-    edge_mask = edges > 30
+    # Method 2: Morphological approach to find holes
+    # Find opaque regions
+    opaque_mask = alpha_channel > 200
     
-    # Fill holes to find potential ring centers
-    filled = ndimage.binary_fill_holes(edge_mask)
-    holes = filled & ~edge_mask
+    # Fill holes to find the outer ring
+    filled = ndimage.binary_fill_holes(opaque_mask)
     
-    # Label potential holes
-    hole_labels, num_holes = ndimage.label(holes)
+    # Holes are the difference
+    holes = filled & ~opaque_mask
+    
+    # Also consider bright areas within the filled region
+    interior_bright = filled & bright_mask
+    
+    # Label and process holes
+    hole_labels, num_holes = ndimage.label(holes | interior_bright)
     
     for i in range(1, num_holes + 1):
         hole_region = hole_labels == i
         hole_coords = np.where(hole_region)
         
-        if len(hole_coords[0]) > 10:  # Minimum size
-            # Check if hole is roughly circular and centered
-            hole_center_y = np.mean(hole_coords[0])
-            hole_center_x = np.mean(hole_coords[1])
-            
-            # Make hole transparent if it's likely a ring center
+        if len(hole_coords[0]) > 10:
+            # Make hole transparent
             data[hole_region] = [255, 255, 255, 0]
-            print(f"Removed detected hole region")
+            print(f"Removed hole region using morphological method")
+    
+    # Method 3: Circle detection for ring holes
+    # This is specifically for detecting circular holes in rings
+    if width > 50 and height > 50:  # Only for reasonably sized images
+        # Create a circular mask for the center area
+        Y, X = np.ogrid[:height, :width]
+        center_area_radius = min(height, width) * 0.3
+        center_mask = (X - center_x)**2 + (Y - center_y)**2 <= center_area_radius**2
+        
+        # Check for bright areas in the center
+        center_bright = center_mask & (gray > 230) & (alpha_channel > 200)
+        
+        if center_bright.any():
+            # Make the bright center area transparent
+            data[center_bright] = [255, 255, 255, 0]
+            print("Removed bright center area using circular detection")
     
     return Image.fromarray(data, 'RGBA')
 
 def manual_remove_background(image):
-    """Enhanced manual background removal for rings"""
+    """Basic manual background removal for rings"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -356,6 +383,38 @@ def manual_remove_background(image):
     data[background_mask] = [255, 255, 255, 0]
     
     return Image.fromarray(data.astype(np.uint8), 'RGBA')
+
+def manual_remove_background_enhanced(image):
+    """Enhanced manual background removal specifically for jewelry/rings"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    data = np.array(image, dtype=np.float32)
+    
+    # Multiple aggressive threshold approaches
+    # 1. Pure white and near-white background
+    white_mask = (data[:,:,0] > 245) & (data[:,:,1] > 245) & (data[:,:,2] > 245)
+    near_white = (data[:,:,0] > 235) & (data[:,:,1] > 235) & (data[:,:,2] > 235)
+    
+    # 2. Gray background detection (all channels similar)
+    max_diff = 15  # Stricter threshold
+    color_diff = np.abs(data[:,:,0] - data[:,:,1]) + np.abs(data[:,:,1] - data[:,:,2])
+    gray_mask = color_diff < max_diff
+    
+    # 3. Light gray detection
+    light_gray = (data[:,:,0] > 220) & (data[:,:,1] > 220) & (data[:,:,2] > 220) & gray_mask
+    
+    # Combine all masks
+    background_mask = white_mask | near_white | light_gray
+    
+    # Make background transparent
+    data[background_mask] = [255, 255, 255, 0]
+    
+    # Additional step: find and remove enclosed light areas (ring holes)
+    result = Image.fromarray(data.astype(np.uint8), 'RGBA')
+    result = post_process_ring_transparency(result)
+    
+    return result
 
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     """Create MD Talk section with proper Korean text rendering"""
@@ -521,8 +580,8 @@ def create_color_options_section(ring_image=None):
     
     # Enhanced color definitions with adjusted strengths
     colors = [
-        ("yellow", "옐로우골드", (255, 170, 0), 0.5),      # Darker gold (더 진하게)
-        ("rose", "로즈골드", (230, 130, 140), 0.25),       # Lighter rose gold (연하게)
+        ("yellow", "옐로우골드", (255, 200, 50), 0.3),      # Lighter gold (연하게)
+        ("rose", "로즈골드", (235, 155, 155), 0.2),        # Less saturated rose gold (채도 낮춤)
         ("white", "화이트골드", (250, 250, 255), 0.05),    # More white (더 하얗게)
         ("antique", "무도금화이트", (255, 255, 255), 0.0)  # Pure white
     ]
@@ -552,7 +611,8 @@ def create_color_options_section(ring_image=None):
         if ring_no_bg:
             try:
                 ring_copy = ring_no_bg.copy()
-                ring_copy.thumbnail((int(grid_size * 0.8), int(grid_size * 0.8)), 
+                # Increase ring size from 0.8 to 0.9
+                ring_copy.thumbnail((int(grid_size * 0.9), int(grid_size * 0.9)), 
                                   Image.Resampling.LANCZOS)
                 
                 # Apply enhanced metal color effect
@@ -776,6 +836,7 @@ def process_single_image(input_data, group_number):
 def process_combined_images(input_data, group_number):
     """Process combined images (groups 3, 4, 5) - FIXED for semicolon-separated URLs"""
     print(f"Processing combined images for group {group_number}")
+    print(f"Input data for debugging: {input_data}")
     
     # Get exactly 2 images based on group number
     images = []
@@ -791,83 +852,39 @@ def process_combined_images(input_data, group_number):
     main_key = group_to_key_map.get(group_number)
     if main_key and main_key in input_data and input_data[main_key]:
         url_string = input_data[main_key]
+        print(f"Found {main_key} with value: {url_string[:100]}...")  # Debug log
+        
         if isinstance(url_string, str) and ';' in url_string:
             # Parse semicolon-separated URLs
             urls = parse_semicolon_separated_urls(url_string)
-            print(f"Found {len(urls)} URLs in semicolon-separated string for group {group_number}")
+            print(f"Parsed {len(urls)} URLs from semicolon-separated string")
             
-            for url in urls[:2]:  # Take only first 2
+            for i, url in enumerate(urls[:2]):  # Take only first 2
                 try:
+                    print(f"Downloading image {i+1} from: {url[:80]}...")
                     img = download_image_from_google_drive(url)
                     images.append(img)
+                    print(f"Successfully downloaded image {i+1}")
                 except Exception as e:
-                    print(f"Failed to download image from URL: {url}, Error: {e}")
+                    print(f"Failed to download image {i+1}: {e}")
         else:
-            # Single URL case
+            # Single URL case (shouldn't happen for groups 3-5 from Google Script)
+            print(f"WARNING: Expected semicolon-separated URLs but got single URL")
             try:
-                temp_data = {main_key: url_string}
-                img = get_image_from_input(temp_data)
+                img = download_image_from_google_drive(url_string)
                 images.append(img)
             except Exception as e:
                 print(f"Failed to get image from {main_key}: {e}")
+    else:
+        print(f"ERROR: Key '{main_key}' not found or empty in input_data")
+        print(f"Available keys: {list(input_data.keys())}")
     
-    # If we don't have 2 images yet, try individual keys
-    if len(images) < 2:
-        if group_number == 3:
-            # Try to get image3 and image4 individually
-            for key in ['image3', 'image4']:
-                if len(images) >= 2:
-                    break
-                if key in input_data and input_data[key]:
-                    try:
-                        temp_data = {key: input_data[key]}
-                        images.append(get_image_from_input(temp_data))
-                    except Exception as e:
-                        print(f"Failed to get {key}: {e}")
-        elif group_number == 4:
-            # Try to get image5 and image6 individually
-            for key in ['image5', 'image6']:
-                if len(images) >= 2:
-                    break
-                if key in input_data and input_data[key]:
-                    try:
-                        temp_data = {key: input_data[key]}
-                        images.append(get_image_from_input(temp_data))
-                    except Exception as e:
-                        print(f"Failed to get {key}: {e}")
-        elif group_number == 5:
-            # Try to get image7 and image8 individually
-            for key in ['image7', 'image8']:
-                if len(images) >= 2:
-                    break
-                if key in input_data and input_data[key]:
-                    try:
-                        temp_data = {key: input_data[key]}
-                        images.append(get_image_from_input(temp_data))
-                    except Exception as e:
-                        print(f"Failed to get {key}: {e}")
-    
-    # If still not enough images, try images array
-    if len(images) < 2 and 'images' in input_data:
-        images_data = input_data['images']
-        if isinstance(images_data, list):
-            for img_data in images_data[:2]:  # Take first 2
-                if len(images) >= 2:
-                    break
-                try:
-                    if isinstance(img_data, dict):
-                        img = get_image_from_input(img_data)
-                    else:
-                        temp_data = {'image': img_data}
-                        img = get_image_from_input(temp_data)
-                    images.append(img)
-                except Exception as e:
-                    print(f"Failed to get image from array: {e}")
-    
+    # If we don't have exactly 2 images, there's a problem
     if len(images) != 2:
         print(f"ERROR: Group {group_number} found {len(images)} images")
         print(f"Input data keys: {list(input_data.keys())}")
-        print(f"Main key '{main_key}' value: {input_data.get(main_key, 'NOT FOUND')}")
+        if main_key in input_data:
+            print(f"Main key '{main_key}' value: {input_data.get(main_key, 'NOT FOUND')[:200]}")
         raise ValueError(f"Group {group_number} requires exactly 2 images, but {len(images)} found")
     
     print(f"Successfully loaded 2 images for group {group_number}")
@@ -1068,7 +1085,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V115 Enhanced Detail Page Handler ===")
+        print(f"=== V116 Fixed Detail Page Handler ===")
         
         # Get input data
         input_data = event.get('input', event)
@@ -1131,7 +1148,7 @@ def handler(event):
             "has_text_overlay": group_number in [7, 8],
             "has_background_removal": group_number == 6,
             "format": "base64_no_padding",
-            "version": "V115_ENHANCED"
+            "version": "V116_FIXED"
         }
         
         # Send to webhook
@@ -1152,11 +1169,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V115_ENHANCED"
+                "version": "V116_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V115 Enhanced Detail Handler Started!")
+    print("V116 Fixed Detail Handler Started!")
     runpod.serverless.start({"handler": handler})
