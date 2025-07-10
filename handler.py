@@ -645,12 +645,12 @@ def create_color_options_section(ring_image=None):
             print(f"Failed to remove background: {e}")
             ring_no_bg = ring_image.convert('RGBA') if ring_image else None
     
-    # Updated color definitions with English labels
+    # Updated color definitions with English labels and distinct antique color
     colors = [
         ("yellow", "YELLOW", (255, 200, 50), 0.3),           # Golden yellow
         ("rose", "ROSE", (255, 160, 120), 0.35),            # More orange-tinted rose gold
         ("white", "WHITE", (255, 255, 255), 0.0),           # Pure white
-        ("antique", "ANTIQUE", (255, 255, 255), 0.0)        # Pure white for antique too
+        ("antique", "ANTIQUE", (245, 235, 225), 0.1)        # Warm ivory/grayish tone with slight tint
     ]
     
     # Tighter grid layout
@@ -727,9 +727,9 @@ def apply_enhanced_metal_color(image, metal_color, strength=0.3, color_id=""):
         # Normalize metal color
         metal_r, metal_g, metal_b = [c/255.0 for c in metal_color]
         
-        # Special handling for white/antique - make it pure white
-        if color_id in ["white", "antique"]:
-            # Make everything bright white while preserving some shading
+        # Special handling for white
+        if color_id == "white":
+            # Pure bright white
             brightness_boost = 1.15
             r_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
             g_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
@@ -908,48 +908,278 @@ def parse_semicolon_separated_urls(url_string):
     
     return urls
 
-def process_single_image(input_data, group_number):
-    """Process individual images (groups 1, 2)"""
-    print(f"Processing single image for group {group_number}")
+def process_wearing_shots(input_data):
+    """Process group 2 - Generate wearing shots using Stable Diffusion"""
+    print("=== Processing Wearing Shots Generation ===")
     
-    # Get image
-    img = get_image_from_input(input_data)
+    # Get ring images from input_data
+    ring_images = []
+    for key in ['image1', 'image2', 'image']:
+        if key in input_data and input_data[key]:
+            try:
+                img = get_image_from_input({key: input_data[key]})
+                ring_images.append(img)
+                if len(ring_images) >= 2:
+                    break
+            except:
+                continue
     
-    # Calculate dimensions
-    if group_number == 1:
-        new_height = int(FIXED_WIDTH * 1.375)  # 1200 x 1650
+    if len(ring_images) < 2:
+        raise ValueError("Need at least 2 ring images for wearing shot generation")
+    
+    # Remove backgrounds from rings
+    print("Removing backgrounds from rings for wearing shots...")
+    ring1_no_bg = remove_background_from_image(ring_images[0])
+    ring2_no_bg = remove_background_from_image(ring_images[1])
+    
+    # Generate wearing shots using Replicate
+    wearing_shots = []
+    
+    if REPLICATE_AVAILABLE and REPLICATE_CLIENT:
+        try:
+            print("Generating wearing shots with Stable Diffusion...")
+            
+            # Convert rings to base64 for prompts
+            def ring_to_base64(ring_img):
+                buffered = BytesIO()
+                ring_img.save(buffered, format="PNG")
+                buffered.seek(0)
+                return base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            ring1_b64 = ring_to_base64(ring1_no_bg)
+            ring2_b64 = ring_to_base64(ring2_no_bg)
+            
+            # Define prompts for each shot
+            shot_configs = [
+                {
+                    "prompt": "Professional jewelry product photography, elegant male hand wearing a gold wedding ring on ring finger, clean manicured hand, soft studio lighting, pure white background, close-up shot from wrist forward showing palm and fingers clearly, high detail, commercial photography style, shallow depth of field",
+                    "title": "Male Hand",
+                    "ring_type": "male"
+                },
+                {
+                    "prompt": "Professional jewelry product photography, elegant female hand wearing a delicate gold wedding ring on ring finger, beautiful french manicure, soft studio lighting, pure white background, close-up shot from wrist forward showing palm and fingers clearly, high detail, commercial photography style, shallow depth of field",
+                    "title": "Female Hand",
+                    "ring_type": "female"
+                },
+                {
+                    "prompt": "Professional jewelry product photography, romantic couple holding hands showing matching gold wedding rings clearly visible, male and female hands interlocked, soft studio lighting, pure white background, close-up shot focusing on the rings, high detail, commercial photography style",
+                    "title": "Couple Hands",
+                    "ring_type": "both"
+                }
+            ]
+            
+            for i, config in enumerate(shot_configs):
+                try:
+                    print(f"Generating shot {i+1}: {config['title']}")
+                    
+                    # Use SDXL for better quality
+                    output = REPLICATE_CLIENT.run(
+                        "stability-ai/sdxl:39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
+                        input={
+                            "prompt": config["prompt"],
+                            "negative_prompt": "deformed hands, extra fingers, missing fingers, bad anatomy, ugly hands, low quality, blurry, distorted, amateur photo, dark lighting, colored background",
+                            "width": 1024,
+                            "height": 768,
+                            "num_outputs": 1,
+                            "scheduler": "KarrasDPM",
+                            "num_inference_steps": 30,
+                            "guidance_scale": 7.5,
+                            "apply_watermark": False,
+                            "high_noise_frac": 0.8,
+                            "prompt_strength": 0.9
+                        }
+                    )
+                    
+                    if output and len(output) > 0:
+                        # Download generated image
+                        response = requests.get(output[0])
+                        hand_img = Image.open(BytesIO(response.content))
+                        
+                        # Resize to target width maintaining aspect ratio
+                        aspect_ratio = hand_img.height / hand_img.width
+                        new_height = int(FIXED_WIDTH * aspect_ratio)
+                        hand_img = hand_img.resize((FIXED_WIDTH, new_height), Image.Resampling.LANCZOS)
+                        
+                        # Crop to standard height if needed
+                        if new_height > 900:
+                            hand_img = hand_img.crop((0, 0, FIXED_WIDTH, 900))
+                        
+                        wearing_shots.append({
+                            "image": hand_img,
+                            "title": config["title"]
+                        })
+                        
+                        print(f"Successfully generated {config['title']}")
+                    else:
+                        raise Exception("No output from Stable Diffusion")
+                    
+                except Exception as e:
+                    print(f"Failed to generate shot {i+1}: {e}")
+                    # Create fallback image
+                    fallback = create_fallback_wearing_shot(config['title'], ring_images[0] if config['ring_type'] == 'male' else ring_images[1])
+                    wearing_shots.append({
+                        "image": fallback,
+                        "title": config['title']
+                    })
+            
+        except Exception as e:
+            print(f"Stable Diffusion generation failed: {e}")
+            # Create all fallback images with actual rings
+            titles = ["Male Hand", "Female Hand", "Couple Hands"]
+            for i, title in enumerate(titles):
+                ring_to_use = ring_images[0] if i == 0 else ring_images[1]
+                fallback = create_fallback_wearing_shot(title, ring_to_use)
+                wearing_shots.append({
+                    "image": fallback,
+                    "title": title
+                })
     else:
-        new_height = int(FIXED_WIDTH * 1.15)   # 1200 x 1383
+        print("Replicate not available, creating placeholder wearing shots")
+        # Create placeholder images with actual rings
+        titles = ["Male Hand", "Female Hand", "Couple Hands"]
+        for i, title in enumerate(titles):
+            ring_to_use = ring_images[0] if i == 0 else ring_images[1]
+            placeholder = create_fallback_wearing_shot(title, ring_to_use)
+            wearing_shots.append({
+                "image": placeholder,
+                "title": title
+            })
     
-    # Resize
-    resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
-    img_resized = img.resize((FIXED_WIDTH, new_height), resample_filter)
+    # Clean up
+    for img in ring_images:
+        img.close()
     
-    # Create page
-    TOP_MARGIN = 50
-    BOTTOM_MARGIN = 50
-    total_height = new_height + TOP_MARGIN + BOTTOM_MARGIN
+    # Combine all wearing shots into final layout
+    return create_wearing_shots_layout(wearing_shots)
+
+def create_fallback_wearing_shot(title, ring_image=None):
+    """Create a fallback/placeholder wearing shot with actual ring"""
+    width = FIXED_WIDTH
+    height = 900
     
-    detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
-    detail_page.paste(img_resized, (0, TOP_MARGIN))
+    # Create gradient background
+    img = Image.new('RGB', (width, height), '#FFFFFF')
+    draw = ImageDraw.Draw(img)
     
-    img.close()
+    # Add subtle gradient
+    for y in range(height):
+        gray_value = 255 - int((y / height) * 10)  # Very subtle gradient
+        draw.rectangle([0, y, width, y+1], fill=(gray_value, gray_value, gray_value))
+    
+    # If we have a ring image, place it in center
+    if ring_image:
+        try:
+            # Remove background from ring if not already done
+            if ring_image.mode != 'RGBA':
+                ring_no_bg = remove_background_from_image(ring_image)
+            else:
+                ring_no_bg = ring_image
+            
+            # Resize ring to appropriate size
+            ring_size = 300
+            ring_no_bg.thumbnail((ring_size, ring_size), Image.Resampling.LANCZOS)
+            
+            # Place ring in center
+            ring_x = (width - ring_no_bg.width) // 2
+            ring_y = (height - ring_no_bg.height) // 2 - 50
+            
+            img.paste(ring_no_bg, (ring_x, ring_y), ring_no_bg)
+        except Exception as e:
+            print(f"Failed to add ring to fallback image: {e}")
+    
+    # Draw title and subtitle
+    korean_font_path = download_korean_font()
+    title_font = get_font(42, korean_font_path)
+    subtitle_font = get_font(28, korean_font_path)
+    
+    # Title
+    title_width, _ = get_text_size(draw, title, title_font)
+    safe_draw_text(draw, (width//2 - title_width//2, height - 200), 
+                  title, title_font, (60, 60, 60))
+    
+    # Subtitle
+    subtitle = "Wearing Shot Preview"
+    subtitle_width, _ = get_text_size(draw, subtitle, subtitle_font)
+    safe_draw_text(draw, (width//2 - subtitle_width//2, height - 150), 
+                  subtitle, subtitle_font, (120, 120, 120))
+    
+    # Add decorative elements
+    draw.ellipse([width//2 - 100, 50, width//2 - 90, 60], fill=(220, 220, 220))
+    draw.ellipse([width//2 - 5, 50, width//2 + 5, 60], fill=(220, 220, 220))
+    draw.ellipse([width//2 + 90, 50, width//2 + 100, 60], fill=(220, 220, 220))
+    
+    return img
+
+def create_wearing_shots_layout(wearing_shots):
+    """Create final layout with all 3 wearing shots"""
+    width = FIXED_WIDTH
+    shot_height = 900  # Height for each shot
+    spacing = 100  # Space between shots
+    top_margin = 80
+    bottom_margin = 80
+    
+    # Calculate total height
+    total_height = top_margin + (shot_height * 3) + (spacing * 2) + bottom_margin
+    
+    # Create final image
+    final_img = Image.new('RGB', (width, total_height), '#FFFFFF')
+    draw = ImageDraw.Draw(final_img)
+    
+    # Add title
+    korean_font_path = download_korean_font()
+    title_font = get_font(56, korean_font_path)
+    subtitle_font = get_font(20, korean_font_path)
+    
+    title = "WEARING SHOTS"
+    title_width, _ = get_text_size(draw, title, title_font)
+    safe_draw_text(draw, (width//2 - title_width//2, 30), title, title_font, (40, 40, 40))
+    
+    # Place each wearing shot
+    current_y = top_margin
+    
+    for i, shot_data in enumerate(wearing_shots):
+        shot_img = shot_data["image"]
+        shot_title = shot_data["title"]
+        
+        # Resize shot to fit if needed
+        if shot_img.width != width:
+            aspect_ratio = shot_img.height / shot_img.width
+            new_height = int(width * aspect_ratio)
+            shot_img = shot_img.resize((width, new_height), Image.Resampling.LANCZOS)
+        
+        # Crop to exact height if needed
+        if shot_img.height > shot_height:
+            shot_img = shot_img.crop((0, 0, width, shot_height))
+        
+        # Paste wearing shot
+        final_img.paste(shot_img, (0, current_y))
+        
+        # Add shot label
+        label_y = current_y + shot_height - 40
+        label_width, _ = get_text_size(draw, shot_title, subtitle_font)
+        
+        # Draw label background
+        label_bg_rect = [width//2 - label_width//2 - 20, label_y - 5,
+                        width//2 + label_width//2 + 20, label_y + 25]
+        draw.rectangle(label_bg_rect, fill=(255, 255, 255, 200))
+        
+        # Draw label text
+        safe_draw_text(draw, (width//2 - label_width//2, label_y), 
+                      shot_title, subtitle_font, (80, 80, 80))
+        
+        current_y += shot_height + spacing
     
     # Add page indicator
-    draw = ImageDraw.Draw(detail_page)
-    page_text = f"- Image {group_number} -"
-    
-    korean_font_path = download_korean_font()
+    page_text = "- Wearing Shots -"
     small_font = get_font(16, korean_font_path)
-    
     text_width, _ = get_text_size(draw, page_text, small_font)
-    safe_draw_text(draw, (FIXED_WIDTH//2 - text_width//2, total_height - 30), 
-                 page_text, small_font, (200, 200, 200))
+    safe_draw_text(draw, (width//2 - text_width//2, total_height - 30), 
+                  page_text, small_font, (200, 200, 200))
     
-    return detail_page
+    return final_img
 
 def process_combined_images(input_data, group_number):
-    """Process combined images (groups 3, 4, 5) - ENHANCED PARSING"""
+    """Process combined images (groups 1, 3, 4, 5) - ENHANCED PARSING"""
     print(f"Processing combined images for group {group_number}")
     print(f"Available input keys: {list(input_data.keys())}")
     
@@ -957,8 +1187,9 @@ def process_combined_images(input_data, group_number):
     images = []
     
     # First priority: Check for semicolon-separated URLs
-    # Google Script sends combined URLs as image3, image4, or image5
+    # Updated mapping for new group structure
     main_keys = {
+        1: ['image1', 'image2', 'image'],  # Group 1 now uses image1+2
         3: ['image3', 'image'],
         4: ['image4', 'image'],
         5: ['image5', 'image']
@@ -998,7 +1229,7 @@ def process_combined_images(input_data, group_number):
                     else:
                         print(f"WARNING: Expected 2 URLs but found {len(urls)}")
                 else:
-                    # Single URL - shouldn't happen for groups 3-5 but handle it
+                    # Single URL - look for second image
                     print(f"Found single URL in {key}, looking for second image...")
                     try:
                         img = download_image_from_google_drive(value)
@@ -1011,6 +1242,7 @@ def process_combined_images(input_data, group_number):
         print("No semicolon-separated URLs found, trying individual keys...")
         
         key_pairs = {
+            1: ['image1', 'image2'],  # Group 1 uses image1+2
             3: ['image3', 'image4'],
             4: ['image5', 'image6'],
             5: ['image7', 'image8']
@@ -1035,7 +1267,7 @@ def process_combined_images(input_data, group_number):
         print(f"  - Images found: {len(images)}")
         
         # Print what we found in input_data
-        for key in ['image', 'image3', 'image4', 'image5']:
+        for key in ['image', 'image1', 'image2', 'image3', 'image4', 'image5']:
             if key in input_data:
                 value = input_data[key]
                 if isinstance(value, str):
@@ -1089,6 +1321,7 @@ def process_combined_images(input_data, group_number):
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
     page_texts = {
+        1: "- Images 1-2 -",  # Updated
         3: "- Images 3-4 -",
         4: "- Images 5-6 -", 
         5: "- Images 7-8 -"
@@ -1163,14 +1396,18 @@ def detect_group_number_from_input(input_data):
         print(f"Found explicit group_number: {group_num}")
         return group_num
     
-    # Priority 3: Text type hints
+    # Priority 3: Check for wearing shot indicators
+    if any(key in str(input_data).lower() for key in ['wearing', 'wear', 'shot', 'hand']):
+        return 2
+    
+    # Priority 4: Text type hints
     text_type = input_data.get('text_type', '').lower()
     if 'md_talk' in text_type:
         return 7
     elif 'design_point' in text_type:
         return 8
     
-    # Priority 4: Check for Google Script format (semicolon-separated URLs)
+    # Priority 5: Check for Google Script format (semicolon-separated URLs)
     # This helps identify groups 3, 4, 5 from Google Script
     for key, group in [('image3', 3), ('image4', 4), ('image5', 5)]:
         if key in input_data and input_data[key]:
@@ -1179,15 +1416,14 @@ def detect_group_number_from_input(input_data):
                 print(f"Detected group {group} from semicolon-separated URLs in {key}")
                 return group
     
-    # Priority 5: Check for color section indicators
+    # Priority 6: Check for color section indicators
     if 'image6' in input_data or 'image9' in input_data:
         return 6
     
-    # Priority 6: Specific image keys
-    if 'image1' in input_data:
+    # Priority 7: Specific image keys
+    # Group 1 is now default for image1/image2
+    if 'image1' in input_data or 'image2' in input_data:
         return 1
-    elif 'image2' in input_data:
-        return 2
     elif 'image3' in input_data:
         return 3
     elif 'image4' in input_data:
@@ -1195,7 +1431,7 @@ def detect_group_number_from_input(input_data):
     elif 'image5' in input_data:
         return 5
     
-    # Priority 7: Check for color indicators in any field
+    # Priority 8: Check for color indicators in any field
     if any(key in str(input_data).lower() for key in ['color', 'colour', 'gold']):
         return 6
     
@@ -1245,7 +1481,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V119 ULTRA PRECISE Detail Page Handler ===")
+        print(f"=== V120 Detail Page Handler with Wearing Shots ===")
         
         # Get input data
         input_data = event.get('input', event)
@@ -1259,7 +1495,22 @@ def handler(event):
             raise ValueError(f"Invalid group number: {group_number}")
         
         # Process based on group
-        if group_number == 6:
+        if group_number == 1:
+            print("=== Processing Group 1: Combined images 1-2 ===")
+            detail_page = process_combined_images(input_data, group_number)
+            page_type = "combined_main"
+            
+        elif group_number == 2:
+            print("=== Processing Group 2: Wearing shots generation ===")
+            detail_page = process_wearing_shots(input_data)
+            page_type = "wearing_shots"
+            
+        elif group_number in [3, 4, 5]:
+            print(f"=== Processing Group {group_number}: Combined images ===")
+            detail_page = process_combined_images(input_data, group_number)
+            page_type = "combined"
+            
+        elif group_number == 6:
             print("=== Processing Group 6: COLOR section ===")
             detail_page = process_color_section(input_data)
             page_type = "color_section"
@@ -1268,16 +1519,6 @@ def handler(event):
             print(f"=== Processing Group {group_number}: Text section ===")
             detail_page, section_type = process_text_section(input_data, group_number)
             page_type = f"text_section_{section_type}"
-            
-        elif group_number in [1, 2]:
-            print(f"=== Processing Group {group_number}: Single image ===")
-            detail_page = process_single_image(input_data, group_number)
-            page_type = "individual"
-            
-        elif group_number in [3, 4, 5]:
-            print(f"=== Processing Group {group_number}: Combined images ===")
-            detail_page = process_combined_images(input_data, group_number)
-            page_type = "combined"
         
         else:
             raise ValueError(f"Unknown group number: {group_number}")
@@ -1306,9 +1547,10 @@ def handler(event):
                 "height": detail_page.height
             },
             "has_text_overlay": group_number in [7, 8],
-            "has_background_removal": group_number == 6,
+            "has_background_removal": group_number in [2, 6],  # Wearing shots also remove bg
+            "has_ai_generation": group_number == 2,  # New flag for AI generated content
             "format": "base64_no_padding",
-            "version": "V119_ULTRA_PRECISE"
+            "version": "V120_WEARING_SHOTS"
         }
         
         # Send to webhook
@@ -1329,11 +1571,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V119_ULTRA_PRECISE"
+                "version": "V120_WEARING_SHOTS"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V119 ULTRA PRECISE Detail Handler Started!")
+    print("V120 Detail Handler with Wearing Shots Started!")
     runpod.serverless.start({"handler": handler})
