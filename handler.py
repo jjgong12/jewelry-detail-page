@@ -175,13 +175,37 @@ def clean_claude_text(text):
     
     return text.strip()
 
-def remove_background_from_image(image):
-    """Remove background including ring center holes - ULTRA PRECISE"""
+def check_if_already_transparent(image):
+    """Check if image already has transparency (properly removed background)"""
+    if image.mode != 'RGBA':
+        return False
+    
+    # Get alpha channel
+    alpha = np.array(image.split()[3])
+    
+    # Check if there are transparent pixels
+    transparent_pixels = np.sum(alpha < 250)
+    total_pixels = alpha.size
+    
+    # If more than 10% of pixels are transparent, consider it already processed
+    transparency_ratio = transparent_pixels / total_pixels
+    
+    print(f"Transparency check: {transparency_ratio:.2%} of pixels are transparent")
+    
+    return transparency_ratio > 0.1
+
+def remove_background_from_image(image, skip_if_transparent=False):
+    """Remove background including ring center holes - with option to skip if already transparent"""
     try:
-        # Method 1: Try local rembg first with ultra aggressive settings
+        # NEW: Check if already transparent and skip if requested
+        if skip_if_transparent and check_if_already_transparent(image):
+            print("Image already has transparency, skipping background removal")
+            return image
+        
+        # Method 1: Try local rembg first
         if REMBG_AVAILABLE:
             try:
-                print("Removing background using local rembg with ULTRA PRECISE settings...")
+                print("Removing background using local rembg...")
                 
                 # Initialize session with best model
                 if not hasattr(remove_background_from_image, 'session'):
@@ -192,32 +216,32 @@ def remove_background_from_image(image):
                 image.save(buffered, format="PNG")
                 buffered.seek(0)
                 
-                # Remove background with ultra aggressive settings
+                # Remove background with balanced settings
                 output = remove(
                     buffered.getvalue(),
                     session=remove_background_from_image.session,
                     alpha_matting=True,
-                    alpha_matting_foreground_threshold=240,  # Lower for more aggressive
-                    alpha_matting_background_threshold=10,   # Very low for aggressive removal
-                    alpha_matting_erode_size=2,
+                    alpha_matting_foreground_threshold=270,  # Higher for less aggressive
+                    alpha_matting_background_threshold=50,   # Balanced
+                    alpha_matting_erode_size=1,
                     only_mask=False
                 )
                 
                 result_image = Image.open(BytesIO(output))
                 
-                # Ultra aggressive post-process
-                result_image = ultra_precise_ring_transparency(result_image)
+                # Moderate post-process (not ultra aggressive)
+                result_image = moderate_ring_transparency(result_image)
                 
-                print("Background removed successfully with ULTRA PRECISE method")
+                print("Background removed successfully")
                 return result_image
                 
             except Exception as e:
                 print(f"Local rembg failed: {e}")
         
-        # Method 2: Try Replicate API with ultra settings
+        # Method 2: Try Replicate API
         if REPLICATE_AVAILABLE and REPLICATE_CLIENT:
             try:
-                print("Removing background using Replicate API with ULTRA PRECISE settings...")
+                print("Removing background using Replicate API...")
                 
                 buffered = BytesIO()
                 image.save(buffered, format="PNG")
@@ -231,9 +255,9 @@ def remove_background_from_image(image):
                         "image": img_data_url,
                         "model": "u2netp",
                         "alpha_matting": True,
-                        "alpha_matting_foreground_threshold": 240,
-                        "alpha_matting_background_threshold": 10,
-                        "alpha_matting_erode_size": 2
+                        "alpha_matting_foreground_threshold": 270,
+                        "alpha_matting_background_threshold": 50,
+                        "alpha_matting_erode_size": 1
                     }
                 )
                 
@@ -244,26 +268,26 @@ def remove_background_from_image(image):
                     else:
                         result_image = Image.open(BytesIO(base64.b64decode(output)))
                     
-                    # Ultra precise post-process
-                    result_image = ultra_precise_ring_transparency(result_image)
+                    # Moderate post-process
+                    result_image = moderate_ring_transparency(result_image)
                     
-                    print("Background removed successfully with Replicate ULTRA PRECISE")
+                    print("Background removed successfully with Replicate")
                     return result_image
                     
             except Exception as e:
                 print(f"Replicate background removal failed: {e}")
         
-        # Method 3: Ultra precise manual background removal
-        print("Using ULTRA PRECISE manual background removal")
-        result = ultra_precise_manual_remove_background(image)
-        return ultra_precise_ring_transparency(result)
+        # Method 3: Manual background removal
+        print("Using manual background removal")
+        result = manual_remove_background(image)
+        return moderate_ring_transparency(result)
         
     except Exception as e:
         print(f"All background removal methods failed: {e}")
         return image
 
-def ultra_precise_ring_transparency(image):
-    """ULTRA PRECISE post-process for ring center hole detection"""
+def moderate_ring_transparency(image):
+    """MODERATE post-process for ring center hole detection (not ultra aggressive)"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -277,150 +301,71 @@ def ultra_precise_ring_transparency(image):
     # Convert to grayscale for analysis
     gray = np.mean(data[:,:,:3], axis=2)
     
-    # Method 1: Ultra aggressive bright area detection
-    bright_thresholds = [250, 245, 240, 235, 230, 225]  # Multiple thresholds
+    # Only process very bright areas that are likely holes
+    bright_threshold = 245  # Higher threshold, less aggressive
+    bright_mask = gray > bright_threshold
+    opaque_bright = bright_mask & (alpha_channel > 200)  # Higher alpha threshold
     
-    for threshold in bright_thresholds:
-        bright_mask = gray > threshold
-        opaque_bright = bright_mask & (alpha_channel > 100)  # Lower alpha threshold
+    # Label connected components
+    labeled, num_features = ndimage.label(opaque_bright)
+    
+    # Analyze each component
+    for i in range(1, num_features + 1):
+        region = labeled == i
+        region_coords = np.where(region)
         
-        # Label connected components
-        labeled, num_features = ndimage.label(opaque_bright)
-        
-        # Analyze each component
-        for i in range(1, num_features + 1):
-            region = labeled == i
-            region_coords = np.where(region)
+        if len(region_coords[0]) > 10:  # Minimum size to consider
+            # Calculate region properties
+            region_center_y = np.mean(region_coords[0])
+            region_center_x = np.mean(region_coords[1])
+            region_size = len(region_coords[0])
             
-            if len(region_coords[0]) > 3:  # Even smaller regions
-                # Calculate region properties
-                region_center_y = np.mean(region_coords[0])
-                region_center_x = np.mean(region_coords[1])
-                region_size = len(region_coords[0])
+            # Check if region is roughly in the center
+            dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
+            
+            # More conservative criteria
+            is_centered = dist_from_center < min(height, width) * 0.3
+            is_reasonable_size = region_size < (height * width * 0.1)  # Smaller threshold
+            
+            # Check if surrounded by non-transparent pixels
+            dilated = ndimage.binary_dilation(region, iterations=5)
+            touches_edge = (dilated[0,:].any() or dilated[-1,:].any() or 
+                           dilated[:,0].any() or dilated[:,-1].any())
+            
+            if is_centered and is_reasonable_size and not touches_edge:
+                # Check color uniformity before removing
+                region_colors = data[region][:,:3]
+                color_std = np.std(region_colors)
                 
-                # Check if region is roughly in the center
-                dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
-                
-                # Ultra aggressive criteria
-                is_centered = dist_from_center < min(height, width) * 0.5  # Larger area
-                is_reasonable_size = region_size < (height * width * 0.3)  # Bigger threshold
-                
-                # Check if surrounded by non-transparent pixels
-                dilated = ndimage.binary_dilation(region, iterations=10)  # More iterations
-                touches_edge = (dilated[0,:].any() or dilated[-1,:].any() or 
-                               dilated[:,0].any() or dilated[:,-1].any())
-                
-                if is_centered and is_reasonable_size and not touches_edge:
+                if color_std < 10:  # Very uniform color
                     data[region] = [255, 255, 255, 0]
-                    print(f"Removed bright region at threshold {threshold} (size: {region_size})")
-    
-    # Method 2: Edge detection for ring holes
-    # Detect edges using gradient
-    grad_x = np.gradient(gray, axis=1)
-    grad_y = np.gradient(gray, axis=0)
-    grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
-    
-    # Find strong edges
-    edge_mask = grad_magnitude > 10
-    
-    # Find enclosed areas using flood fill from edges
-    # This helps identify the ring hole boundaries
-    filled_from_edges = ndimage.binary_fill_holes(edge_mask)
-    potential_holes = filled_from_edges & ~edge_mask
-    
-    # Check for bright areas within potential holes
-    hole_bright = potential_holes & (gray > 220)
-    
-    if hole_bright.any():
-        data[hole_bright] = [255, 255, 255, 0]
-        print("Removed hole regions using edge detection")
-    
-    # Method 3: Color uniformity detection
-    # Ring holes often have uniform color
-    color_std = np.std(data[:,:,:3], axis=2)
-    uniform_mask = color_std < 5  # Very uniform color
-    bright_uniform = uniform_mask & (gray > 220) & (alpha_channel > 100)
-    
-    # Label and check uniform bright regions
-    uniform_labeled, num_uniform = ndimage.label(bright_uniform)
-    
-    for i in range(1, num_uniform + 1):
-        uniform_region = uniform_labeled == i
-        if uniform_region.sum() > 5:
-            # Check if it's in center area
-            coords = np.where(uniform_region)
-            region_center_y = np.mean(coords[0])
-            region_center_x = np.mean(coords[1])
-            dist = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
-            
-            if dist < min(height, width) * 0.4:
-                data[uniform_region] = [255, 255, 255, 0]
-                print("Removed uniform color region")
-    
-    # Method 4: Circular hole detection with multiple radii
-    if width > 30 and height > 30:
-        Y, X = np.ogrid[:height, :width]
-        
-        # Try multiple radius percentages
-        for radius_percent in [0.15, 0.2, 0.25, 0.3, 0.35]:
-            center_area_radius = min(height, width) * radius_percent
-            center_mask = (X - center_x)**2 + (Y - center_y)**2 <= center_area_radius**2
-            
-            # Check average brightness in this circular area
-            center_brightness = np.mean(gray[center_mask & (alpha_channel > 100)])
-            
-            if center_brightness > 225:  # If center is bright
-                center_bright = center_mask & (gray > 220) & (alpha_channel > 50)
-                if center_bright.any():
-                    data[center_bright] = [255, 255, 255, 0]
-                    print(f"Removed bright center at radius {radius_percent}")
-                    break
+                    print(f"Removed uniform bright region (size: {region_size})")
     
     return Image.fromarray(data, 'RGBA')
 
-def ultra_precise_manual_remove_background(image):
-    """ULTRA PRECISE manual background removal for jewelry"""
+def manual_remove_background(image):
+    """Manual background removal for jewelry (moderate version)"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
     data = np.array(image, dtype=np.float32)
     
-    # Ultra aggressive multi-threshold approach
-    # 1. Pure white
-    white_mask = (data[:,:,0] > 252) & (data[:,:,1] > 252) & (data[:,:,2] > 252)
+    # Less aggressive thresholds
+    white_mask = (data[:,:,0] > 250) & (data[:,:,1] > 250) & (data[:,:,2] > 250)
     
-    # 2. Near white with multiple thresholds
-    near_white_masks = []
-    for threshold in [245, 240, 235, 230, 225]:
-        mask = (data[:,:,0] > threshold) & (data[:,:,1] > threshold) & (data[:,:,2] > threshold)
-        near_white_masks.append(mask)
+    # Near white with moderate threshold
+    near_white = (data[:,:,0] > 240) & (data[:,:,1] > 240) & (data[:,:,2] > 240)
     
-    # 3. Gray detection with tighter tolerance
-    max_diff = 10  # Very strict
+    # Gray detection with moderate tolerance
+    max_diff = 15
     color_diff = np.abs(data[:,:,0] - data[:,:,1]) + np.abs(data[:,:,1] - data[:,:,2])
     gray_mask = color_diff < max_diff
     
-    # 4. Light colors (any channel bright)
-    any_bright = (data[:,:,0] > 240) | (data[:,:,1] > 240) | (data[:,:,2] > 240)
-    
-    # Combine all masks progressively
-    background_mask = white_mask
-    
-    for near_white in near_white_masks:
-        # Add near white that's also gray
-        background_mask |= (near_white & gray_mask)
-    
-    # Add any bright areas that are also uniform in color
-    background_mask |= (any_bright & gray_mask)
+    # Combine masks conservatively
+    background_mask = white_mask | (near_white & gray_mask)
     
     # Make background transparent
     data[background_mask] = [255, 255, 255, 0]
-    
-    # Edge cleaning - remove semi-transparent edges
-    alpha = data[:,:,3]
-    edge_mask = (alpha > 0) & (alpha < 200)  # Semi-transparent pixels
-    gray_edges = edge_mask & (gray_mask | (data[:,:,0] > 230))
-    data[gray_edges] = [255, 255, 255, 0]
     
     return Image.fromarray(data.astype(np.uint8), 'RGBA')
 
@@ -628,21 +573,22 @@ def create_color_options_section(ring_image=None):
     title_width, _ = get_text_size(draw, title, title_font)
     safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
     
-    # Remove background from ring with ultra precise detection
+    # Remove background from ring - BUT CHECK IF ALREADY TRANSPARENT
     ring_no_bg = None
     if ring_image:
         try:
-            print("Removing background from ring for color section with ULTRA PRECISION")
-            ring_no_bg = remove_background_from_image(ring_image)
+            print("Processing ring for color section")
+            # NEW: Skip background removal if already transparent
+            ring_no_bg = remove_background_from_image(ring_image, skip_if_transparent=True)
             
             if ring_no_bg.mode != 'RGBA':
                 ring_no_bg = ring_no_bg.convert('RGBA')
             
-            # Additional aggressive crop
+            # Auto crop
             ring_no_bg = auto_crop_transparent(ring_no_bg)
                 
         except Exception as e:
-            print(f"Failed to remove background: {e}")
+            print(f"Failed to process ring: {e}")
             ring_no_bg = ring_image.convert('RGBA') if ring_image else None
     
     # Updated color definitions with English labels and distinct antique color
@@ -727,13 +673,13 @@ def apply_enhanced_metal_color(image, metal_color, strength=0.3, color_id=""):
         # Normalize metal color
         metal_r, metal_g, metal_b = [c/255.0 for c in metal_color]
         
-        # Special handling for white
+        # Special handling for white - IMPROVED
         if color_id == "white":
-            # Pure bright white
-            brightness_boost = 1.15
-            r_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
-            g_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
-            b_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
+            # Less aggressive brightening
+            brightness_boost = 1.05  # Reduced from 1.15
+            r_array[mask] = np.clip(r_array[mask] * brightness_boost, 0, 255)
+            g_array[mask] = np.clip(g_array[mask] * brightness_boost, 0, 255)
+            b_array[mask] = np.clip(b_array[mask] * brightness_boost, 0, 255)
         
         # Special handling for rose gold - more orange tint
         elif color_id == "rose":
@@ -762,7 +708,7 @@ def apply_enhanced_metal_color(image, metal_color, strength=0.3, color_id=""):
                 b_array[shadow_mask] = b_array[shadow_mask] * 0.8 + 20 * 0.2
         
         else:
-            # Standard metal color application (for yellow gold)
+            # Standard metal color application (for yellow and antique)
             highlight_mask = luminance > 0.85
             shadow_mask = luminance < 0.15
             midtone_mask = ~highlight_mask & ~shadow_mask & mask
@@ -909,20 +855,39 @@ def parse_semicolon_separated_urls(url_string):
     return urls
 
 def process_wearing_shots(input_data):
-    """Process group 2 - Generate wearing shots using Stable Diffusion"""
+    """Process group 2 - Generate wearing shots using Stable Diffusion - FIXED"""
     print("=== Processing Wearing Shots Generation ===")
     
-    # Get ring images from input_data
+    # Get ring images from input_data - FIXED TO USE SEMICOLON URLS
     ring_images = []
+    
+    # Check for semicolon-separated URLs in image1 or image2
     for key in ['image1', 'image2', 'image']:
         if key in input_data and input_data[key]:
-            try:
-                img = get_image_from_input({key: input_data[key]})
-                ring_images.append(img)
-                if len(ring_images) >= 2:
+            value = input_data[key]
+            if isinstance(value, str) and ';' in value:
+                print(f"Found semicolon-separated URLs in {key}")
+                urls = parse_semicolon_separated_urls(value)
+                if len(urls) >= 2:
+                    # Download both images
+                    for i, url in enumerate(urls[:2]):
+                        try:
+                            img = download_image_from_google_drive(url)
+                            ring_images.append(img)
+                            print(f"Downloaded ring image {i+1} for wearing shots")
+                        except Exception as e:
+                            print(f"Failed to download ring {i+1}: {e}")
                     break
-            except:
-                continue
+    
+    # Fallback: Try individual keys
+    if len(ring_images) < 2:
+        for key in ['image1', 'image2']:
+            if key in input_data and input_data[key] and len(ring_images) < 2:
+                try:
+                    img = get_image_from_input({key: input_data[key]})
+                    ring_images.append(img)
+                except:
+                    continue
     
     if len(ring_images) < 2:
         raise ValueError("Need at least 2 ring images for wearing shot generation")
@@ -1481,7 +1446,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V120 Detail Page Handler with Wearing Shots ===")
+        print(f"=== V121 Detail Page Handler - Fixed Color & Wearing Shots ===")
         
         # Get input data
         input_data = event.get('input', event)
@@ -1550,7 +1515,7 @@ def handler(event):
             "has_background_removal": group_number in [2, 6],  # Wearing shots also remove bg
             "has_ai_generation": group_number == 2,  # New flag for AI generated content
             "format": "base64_no_padding",
-            "version": "V120_WEARING_SHOTS"
+            "version": "V121_FIXED"
         }
         
         # Send to webhook
@@ -1571,11 +1536,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V120_WEARING_SHOTS"
+                "version": "V121_FIXED"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V120 Detail Handler with Wearing Shots Started!")
+    print("V121 Detail Handler - Fixed Color & Wearing Shots Started!")
     runpod.serverless.start({"handler": handler})
