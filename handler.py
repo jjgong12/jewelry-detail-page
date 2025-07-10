@@ -176,12 +176,12 @@ def clean_claude_text(text):
     return text.strip()
 
 def remove_background_from_image(image):
-    """Remove background including ring center holes - ENHANCED"""
+    """Remove background including ring center holes - ULTRA PRECISE"""
     try:
-        # Method 1: Try local rembg first with more aggressive settings
+        # Method 1: Try local rembg first with ultra aggressive settings
         if REMBG_AVAILABLE:
             try:
-                print("Removing background using local rembg with enhanced settings...")
+                print("Removing background using local rembg with ULTRA PRECISE settings...")
                 
                 # Initialize session with best model
                 if not hasattr(remove_background_from_image, 'session'):
@@ -192,32 +192,32 @@ def remove_background_from_image(image):
                 image.save(buffered, format="PNG")
                 buffered.seek(0)
                 
-                # Remove background with very aggressive settings for jewelry
+                # Remove background with ultra aggressive settings
                 output = remove(
                     buffered.getvalue(),
                     session=remove_background_from_image.session,
                     alpha_matting=True,
-                    alpha_matting_foreground_threshold=250,  # Very high threshold
-                    alpha_matting_background_threshold=30,   # Very low threshold
-                    alpha_matting_erode_size=1,
+                    alpha_matting_foreground_threshold=240,  # Lower for more aggressive
+                    alpha_matting_background_threshold=10,   # Very low for aggressive removal
+                    alpha_matting_erode_size=2,
                     only_mask=False
                 )
                 
                 result_image = Image.open(BytesIO(output))
                 
-                # Post-process to ensure ring holes are transparent
-                result_image = post_process_ring_transparency(result_image)
+                # Ultra aggressive post-process
+                result_image = ultra_precise_ring_transparency(result_image)
                 
-                print("Background removed successfully with local rembg")
+                print("Background removed successfully with ULTRA PRECISE method")
                 return result_image
                 
             except Exception as e:
                 print(f"Local rembg failed: {e}")
         
-        # Method 2: Try Replicate API with enhanced settings
+        # Method 2: Try Replicate API with ultra settings
         if REPLICATE_AVAILABLE and REPLICATE_CLIENT:
             try:
-                print("Removing background using Replicate API with enhanced settings...")
+                print("Removing background using Replicate API with ULTRA PRECISE settings...")
                 
                 buffered = BytesIO()
                 image.save(buffered, format="PNG")
@@ -231,9 +231,9 @@ def remove_background_from_image(image):
                         "image": img_data_url,
                         "model": "u2netp",
                         "alpha_matting": True,
-                        "alpha_matting_foreground_threshold": 250,
-                        "alpha_matting_background_threshold": 30,
-                        "alpha_matting_erode_size": 1
+                        "alpha_matting_foreground_threshold": 240,
+                        "alpha_matting_background_threshold": 10,
+                        "alpha_matting_erode_size": 2
                     }
                 )
                 
@@ -244,26 +244,26 @@ def remove_background_from_image(image):
                     else:
                         result_image = Image.open(BytesIO(base64.b64decode(output)))
                     
-                    # Post-process for ring holes
-                    result_image = post_process_ring_transparency(result_image)
+                    # Ultra precise post-process
+                    result_image = ultra_precise_ring_transparency(result_image)
                     
-                    print("Background removed successfully with Replicate")
+                    print("Background removed successfully with Replicate ULTRA PRECISE")
                     return result_image
                     
             except Exception as e:
                 print(f"Replicate background removal failed: {e}")
         
-        # Method 3: Enhanced manual background removal
-        print("Using enhanced manual background removal")
-        result = manual_remove_background_enhanced(image)
-        return post_process_ring_transparency(result)
+        # Method 3: Ultra precise manual background removal
+        print("Using ULTRA PRECISE manual background removal")
+        result = ultra_precise_manual_remove_background(image)
+        return ultra_precise_ring_transparency(result)
         
     except Exception as e:
         print(f"All background removal methods failed: {e}")
         return image
 
-def post_process_ring_transparency(image):
-    """Enhanced post-process to aggressively detect and remove ring center holes"""
+def ultra_precise_ring_transparency(image):
+    """ULTRA PRECISE post-process for ring center hole detection"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -277,89 +277,155 @@ def post_process_ring_transparency(image):
     # Convert to grayscale for analysis
     gray = np.mean(data[:,:,:3], axis=2)
     
-    # Method 1: Find bright/white enclosed areas more aggressively
-    bright_threshold = 235  # Lower threshold to catch more areas
-    bright_mask = gray > bright_threshold
+    # Method 1: Ultra aggressive bright area detection
+    bright_thresholds = [250, 245, 240, 235, 230, 225]  # Multiple thresholds
     
-    # Also check alpha channel - areas that weren't made transparent yet
-    opaque_bright = bright_mask & (alpha_channel > 200)
-    
-    # Label connected components
-    labeled, num_features = ndimage.label(opaque_bright)
-    
-    # Analyze each component
-    for i in range(1, num_features + 1):
-        region = labeled == i
-        region_coords = np.where(region)
+    for threshold in bright_thresholds:
+        bright_mask = gray > threshold
+        opaque_bright = bright_mask & (alpha_channel > 100)  # Lower alpha threshold
         
-        if len(region_coords[0]) > 5:  # Minimum size
-            # Calculate region properties
-            region_center_y = np.mean(region_coords[0])
-            region_center_x = np.mean(region_coords[1])
-            region_size = len(region_coords[0])
-            
-            # Check if region is roughly in the center
-            dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
-            
-            # More aggressive criteria for ring holes
-            is_centered = dist_from_center < min(height, width) * 0.4
-            is_reasonable_size = region_size < (height * width * 0.2)  # Not too big
-            
-            # Check if surrounded by non-transparent pixels (enclosed)
-            # Expand region slightly and check if it hits edges
-            dilated = ndimage.binary_dilation(region, iterations=5)
-            touches_edge = (dilated[0,:].any() or dilated[-1,:].any() or 
-                           dilated[:,0].any() or dilated[:,-1].any())
-            
-            if is_centered and is_reasonable_size and not touches_edge:
-                data[region] = [255, 255, 255, 0]
-                print(f"Removed enclosed bright region (size: {region_size}, dist from center: {dist_from_center:.1f})")
-    
-    # Method 2: Morphological approach to find holes
-    # Find opaque regions
-    opaque_mask = alpha_channel > 200
-    
-    # Fill holes to find the outer ring
-    filled = ndimage.binary_fill_holes(opaque_mask)
-    
-    # Holes are the difference
-    holes = filled & ~opaque_mask
-    
-    # Also consider bright areas within the filled region
-    interior_bright = filled & bright_mask
-    
-    # Label and process holes
-    hole_labels, num_holes = ndimage.label(holes | interior_bright)
-    
-    for i in range(1, num_holes + 1):
-        hole_region = hole_labels == i
-        hole_coords = np.where(hole_region)
+        # Label connected components
+        labeled, num_features = ndimage.label(opaque_bright)
         
-        if len(hole_coords[0]) > 10:
-            # Make hole transparent
-            data[hole_region] = [255, 255, 255, 0]
-            print(f"Removed hole region using morphological method")
+        # Analyze each component
+        for i in range(1, num_features + 1):
+            region = labeled == i
+            region_coords = np.where(region)
+            
+            if len(region_coords[0]) > 3:  # Even smaller regions
+                # Calculate region properties
+                region_center_y = np.mean(region_coords[0])
+                region_center_x = np.mean(region_coords[1])
+                region_size = len(region_coords[0])
+                
+                # Check if region is roughly in the center
+                dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
+                
+                # Ultra aggressive criteria
+                is_centered = dist_from_center < min(height, width) * 0.5  # Larger area
+                is_reasonable_size = region_size < (height * width * 0.3)  # Bigger threshold
+                
+                # Check if surrounded by non-transparent pixels
+                dilated = ndimage.binary_dilation(region, iterations=10)  # More iterations
+                touches_edge = (dilated[0,:].any() or dilated[-1,:].any() or 
+                               dilated[:,0].any() or dilated[:,-1].any())
+                
+                if is_centered and is_reasonable_size and not touches_edge:
+                    data[region] = [255, 255, 255, 0]
+                    print(f"Removed bright region at threshold {threshold} (size: {region_size})")
     
-    # Method 3: Circle detection for ring holes
-    # This is specifically for detecting circular holes in rings
-    if width > 50 and height > 50:  # Only for reasonably sized images
-        # Create a circular mask for the center area
+    # Method 2: Edge detection for ring holes
+    # Detect edges using gradient
+    grad_x = np.gradient(gray, axis=1)
+    grad_y = np.gradient(gray, axis=0)
+    grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+    
+    # Find strong edges
+    edge_mask = grad_magnitude > 10
+    
+    # Find enclosed areas using flood fill from edges
+    # This helps identify the ring hole boundaries
+    filled_from_edges = ndimage.binary_fill_holes(edge_mask)
+    potential_holes = filled_from_edges & ~edge_mask
+    
+    # Check for bright areas within potential holes
+    hole_bright = potential_holes & (gray > 220)
+    
+    if hole_bright.any():
+        data[hole_bright] = [255, 255, 255, 0]
+        print("Removed hole regions using edge detection")
+    
+    # Method 3: Color uniformity detection
+    # Ring holes often have uniform color
+    color_std = np.std(data[:,:,:3], axis=2)
+    uniform_mask = color_std < 5  # Very uniform color
+    bright_uniform = uniform_mask & (gray > 220) & (alpha_channel > 100)
+    
+    # Label and check uniform bright regions
+    uniform_labeled, num_uniform = ndimage.label(bright_uniform)
+    
+    for i in range(1, num_uniform + 1):
+        uniform_region = uniform_labeled == i
+        if uniform_region.sum() > 5:
+            # Check if it's in center area
+            coords = np.where(uniform_region)
+            region_center_y = np.mean(coords[0])
+            region_center_x = np.mean(coords[1])
+            dist = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
+            
+            if dist < min(height, width) * 0.4:
+                data[uniform_region] = [255, 255, 255, 0]
+                print("Removed uniform color region")
+    
+    # Method 4: Circular hole detection with multiple radii
+    if width > 30 and height > 30:
         Y, X = np.ogrid[:height, :width]
-        center_area_radius = min(height, width) * 0.3
-        center_mask = (X - center_x)**2 + (Y - center_y)**2 <= center_area_radius**2
         
-        # Check for bright areas in the center
-        center_bright = center_mask & (gray > 230) & (alpha_channel > 200)
-        
-        if center_bright.any():
-            # Make the bright center area transparent
-            data[center_bright] = [255, 255, 255, 0]
-            print("Removed bright center area using circular detection")
+        # Try multiple radius percentages
+        for radius_percent in [0.15, 0.2, 0.25, 0.3, 0.35]:
+            center_area_radius = min(height, width) * radius_percent
+            center_mask = (X - center_x)**2 + (Y - center_y)**2 <= center_area_radius**2
+            
+            # Check average brightness in this circular area
+            center_brightness = np.mean(gray[center_mask & (alpha_channel > 100)])
+            
+            if center_brightness > 225:  # If center is bright
+                center_bright = center_mask & (gray > 220) & (alpha_channel > 50)
+                if center_bright.any():
+                    data[center_bright] = [255, 255, 255, 0]
+                    print(f"Removed bright center at radius {radius_percent}")
+                    break
     
     return Image.fromarray(data, 'RGBA')
 
+def ultra_precise_manual_remove_background(image):
+    """ULTRA PRECISE manual background removal for jewelry"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    data = np.array(image, dtype=np.float32)
+    
+    # Ultra aggressive multi-threshold approach
+    # 1. Pure white
+    white_mask = (data[:,:,0] > 252) & (data[:,:,1] > 252) & (data[:,:,2] > 252)
+    
+    # 2. Near white with multiple thresholds
+    near_white_masks = []
+    for threshold in [245, 240, 235, 230, 225]:
+        mask = (data[:,:,0] > threshold) & (data[:,:,1] > threshold) & (data[:,:,2] > threshold)
+        near_white_masks.append(mask)
+    
+    # 3. Gray detection with tighter tolerance
+    max_diff = 10  # Very strict
+    color_diff = np.abs(data[:,:,0] - data[:,:,1]) + np.abs(data[:,:,1] - data[:,:,2])
+    gray_mask = color_diff < max_diff
+    
+    # 4. Light colors (any channel bright)
+    any_bright = (data[:,:,0] > 240) | (data[:,:,1] > 240) | (data[:,:,2] > 240)
+    
+    # Combine all masks progressively
+    background_mask = white_mask
+    
+    for near_white in near_white_masks:
+        # Add near white that's also gray
+        background_mask |= (near_white & gray_mask)
+    
+    # Add any bright areas that are also uniform in color
+    background_mask |= (any_bright & gray_mask)
+    
+    # Make background transparent
+    data[background_mask] = [255, 255, 255, 0]
+    
+    # Edge cleaning - remove semi-transparent edges
+    alpha = data[:,:,3]
+    edge_mask = (alpha > 0) & (alpha < 200)  # Semi-transparent pixels
+    gray_edges = edge_mask & (gray_mask | (data[:,:,0] > 230))
+    data[gray_edges] = [255, 255, 255, 0]
+    
+    return Image.fromarray(data.astype(np.uint8), 'RGBA')
+
 def auto_crop_transparent(image):
-    """Auto-crop transparent borders from image"""
+    """Auto-crop transparent borders from image with padding"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -380,7 +446,7 @@ def auto_crop_transparent(image):
     max_x = non_transparent[1].max()
     
     # Add small padding
-    padding = 5
+    padding = 10  # Increased padding
     min_y = max(0, min_y - padding)
     max_y = min(data.shape[0] - 1, max_y + padding)
     min_x = max(0, min_x - padding)
@@ -390,79 +456,20 @@ def auto_crop_transparent(image):
     cropped = image.crop((min_x, min_y, max_x + 1, max_y + 1))
     return cropped
 
-def manual_remove_background(image):
-    """Basic manual background removal for rings"""
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    
-    data = np.array(image, dtype=np.float32)
-    
-    # Multiple threshold approach
-    # 1. Pure white background
-    white_mask = (data[:,:,0] > 240) & (data[:,:,1] > 240) & (data[:,:,2] > 240)
-    
-    # 2. Near white with some tolerance
-    near_white = (data[:,:,0] > 230) & (data[:,:,1] > 230) & (data[:,:,2] > 230)
-    
-    # 3. Check color similarity (all channels similar = gray/white)
-    color_diff = np.abs(data[:,:,0] - data[:,:,1]) + np.abs(data[:,:,1] - data[:,:,2])
-    gray_mask = color_diff < 20
-    
-    # Combine masks
-    background_mask = white_mask | (near_white & gray_mask)
-    
-    # Make background transparent
-    data[background_mask] = [255, 255, 255, 0]
-    
-    return Image.fromarray(data.astype(np.uint8), 'RGBA')
-
-def manual_remove_background_enhanced(image):
-    """Enhanced manual background removal specifically for jewelry/rings"""
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    
-    data = np.array(image, dtype=np.float32)
-    
-    # Multiple aggressive threshold approaches
-    # 1. Pure white and near-white background
-    white_mask = (data[:,:,0] > 245) & (data[:,:,1] > 245) & (data[:,:,2] > 245)
-    near_white = (data[:,:,0] > 235) & (data[:,:,1] > 235) & (data[:,:,2] > 235)
-    
-    # 2. Gray background detection (all channels similar)
-    max_diff = 15  # Stricter threshold
-    color_diff = np.abs(data[:,:,0] - data[:,:,1]) + np.abs(data[:,:,1] - data[:,:,2])
-    gray_mask = color_diff < max_diff
-    
-    # 3. Light gray detection
-    light_gray = (data[:,:,0] > 220) & (data[:,:,1] > 220) & (data[:,:,2] > 220) & gray_mask
-    
-    # Combine all masks
-    background_mask = white_mask | near_white | light_gray
-    
-    # Make background transparent
-    data[background_mask] = [255, 255, 255, 0]
-    
-    # Additional step: find and remove enclosed light areas (ring holes)
-    result = Image.fromarray(data.astype(np.uint8), 'RGBA')
-    result = post_process_ring_transparency(result)
-    
-    return result
-
 def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
-    """Create MD Talk section with proper Korean text rendering and increased line spacing"""
-    section_height = 650  # Increased height
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
+    """Create MD Talk section with dynamic height based on content"""
     # Get Korean font
     korean_font_path = download_korean_font()
     title_font = get_font(48, korean_font_path)
     body_font = get_font(28, korean_font_path)
     
+    # Create temporary image for text measurement
+    temp_img = Image.new('RGB', (width, 1000), '#FFFFFF')
+    draw = ImageDraw.Draw(temp_img)
+    
     # Title
     title = "MD TALK"
     title_width, title_height = get_text_size(draw, title, title_font)
-    safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
     
     # Process Claude text
     if claude_text:
@@ -488,8 +495,6 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
         
         if current_line:
             lines.append(current_line)
-        
-        lines = lines[:8]  # Limit lines
     else:
         lines = [
             "이 제품은 일상에서도 부담없이",
@@ -501,9 +506,24 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
             "당신만의 특별한 주얼리입니다."
         ]
     
-    # Draw content with increased line spacing
-    y_pos = 200  # Increased gap between title and content
-    line_height = 50  # Increased from 40 to 50
+    # Calculate dynamic height
+    top_margin = 60
+    title_bottom_margin = 140  # Gap between title and content
+    line_height = 50
+    bottom_margin = 80
+    
+    content_height = len(lines) * line_height
+    total_height = top_margin + title_height + title_bottom_margin + content_height + bottom_margin
+    
+    # Create actual image with calculated height
+    section_img = Image.new('RGB', (width, total_height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    # Draw title
+    safe_draw_text(draw, (width//2 - title_width//2, top_margin), title, title_font, (40, 40, 40))
+    
+    # Draw content
+    y_pos = top_margin + title_height + title_bottom_margin
     
     for line in lines:
         if line:
@@ -514,20 +534,19 @@ def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
     return section_img
 
 def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
-    """Create Design Point section with proper Korean text rendering and increased line spacing"""
-    section_height = 750  # Increased height
-    section_img = Image.new('RGB', (width, section_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
+    """Create Design Point section with dynamic height based on content"""
     # Get Korean font
     korean_font_path = download_korean_font()
     title_font = get_font(48, korean_font_path)
     body_font = get_font(24, korean_font_path)
     
+    # Create temporary image for text measurement
+    temp_img = Image.new('RGB', (width, 1000), '#FFFFFF')
+    draw = ImageDraw.Draw(temp_img)
+    
     # Title
     title = "DESIGN POINT"
     title_width, title_height = get_text_size(draw, title, title_font)
-    safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
     
     # Process Claude text
     if claude_text:
@@ -553,8 +572,6 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
         
         if current_line:
             lines.append(current_line)
-        
-        lines = lines[:10]
     else:
         lines = [
             "남성 단품은 무광 텍스처와 유광 라인의 조화가",
@@ -563,9 +580,24 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
             "화려하면서도 고급스러운 반영을 표현합니다"
         ]
     
-    # Draw content with increased line spacing
-    y_pos = 220  # Increased gap between title and content
-    line_height = 55  # Increased from 45 to 55
+    # Calculate dynamic height
+    top_margin = 60
+    title_bottom_margin = 160  # Gap between title and content
+    line_height = 55
+    bottom_margin = 100  # Extra space for decorative line
+    
+    content_height = len(lines) * line_height
+    total_height = top_margin + title_height + title_bottom_margin + content_height + bottom_margin
+    
+    # Create actual image with calculated height
+    section_img = Image.new('RGB', (width, total_height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    # Draw title
+    safe_draw_text(draw, (width//2 - title_width//2, top_margin), title, title_font, (40, 40, 40))
+    
+    # Draw content
+    y_pos = top_margin + title_height + title_bottom_margin
     
     for line in lines:
         if line:
@@ -579,9 +611,9 @@ def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
     return section_img
 
 def create_color_options_section(ring_image=None):
-    """Create COLOR section with improved layout and ring detection"""
+    """Create COLOR section with English labels and enhanced colors"""
     width = FIXED_WIDTH
-    height = 850  # Adjusted height
+    height = 850  # Fixed height for color section
     
     section_img = Image.new('RGB', (width, height), '#FFFFFF')
     draw = ImageDraw.Draw(section_img)
@@ -596,43 +628,43 @@ def create_color_options_section(ring_image=None):
     title_width, _ = get_text_size(draw, title, title_font)
     safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
     
-    # Remove background from ring with enhanced detection
+    # Remove background from ring with ultra precise detection
     ring_no_bg = None
     if ring_image:
         try:
-            print("Removing background from ring for color section")
+            print("Removing background from ring for color section with ULTRA PRECISION")
             ring_no_bg = remove_background_from_image(ring_image)
             
             if ring_no_bg.mode != 'RGBA':
                 ring_no_bg = ring_no_bg.convert('RGBA')
             
-            # Additional crop to remove any border artifacts
+            # Additional aggressive crop
             ring_no_bg = auto_crop_transparent(ring_no_bg)
                 
         except Exception as e:
             print(f"Failed to remove background: {e}")
             ring_no_bg = ring_image.convert('RGBA') if ring_image else None
     
-    # Updated color definitions with better tones
+    # Updated color definitions with English labels
     colors = [
-        ("yellow", "옐로우골드", (255, 200, 50), 0.3),      # Golden yellow
-        ("rose", "로즈골드", (235, 170, 140), 0.25),       # Orange-tinted rose gold (주황색 느낌)
-        ("white", "화이트골드", (255, 255, 255), 0.02),    # Almost pure white (새하얀색)
-        ("antique", "무도금화이트", (255, 255, 255), 0.0)  # Pure white
+        ("yellow", "YELLOW", (255, 200, 50), 0.3),           # Golden yellow
+        ("rose", "ROSE", (255, 160, 120), 0.35),            # More orange-tinted rose gold
+        ("white", "WHITE", (255, 255, 255), 0.0),           # Pure white
+        ("antique", "ANTIQUE", (255, 255, 255), 0.0)        # Pure white for antique too
     ]
     
     # Tighter grid layout
-    grid_size = 260  # Reduced from 300
-    padding = 60     # Reduced from 80
+    grid_size = 260
+    padding = 60
     start_x = (width - (grid_size * 2 + padding)) // 2
-    start_y = 160    # Moved up slightly
+    start_y = 160
     
     for i, (color_id, label, color_rgb, strength) in enumerate(colors):
         row = i // 2
         col = i % 2
         
         x = start_x + col * (grid_size + padding)
-        y = start_y + row * (grid_size + 100)  # Reduced vertical spacing
+        y = start_y + row * (grid_size + 100)
         
         # Create container with subtle background
         container = Image.new('RGBA', (grid_size, grid_size), (252, 252, 252, 255))
@@ -647,11 +679,11 @@ def create_color_options_section(ring_image=None):
             try:
                 ring_copy = ring_no_bg.copy()
                 # Smaller ring size for clearer boundaries
-                max_size = int(grid_size * 0.7)  # Reduced from 0.85 to 0.7
+                max_size = int(grid_size * 0.7)
                 ring_copy.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
                 
                 # Apply enhanced metal color effect
-                ring_tinted = apply_enhanced_metal_color(ring_copy, color_rgb, strength)
+                ring_tinted = apply_enhanced_metal_color(ring_copy, color_rgb, strength, color_id)
                 
                 # Center and paste with padding
                 paste_x = (grid_size - ring_tinted.width) // 2
@@ -664,15 +696,15 @@ def create_color_options_section(ring_image=None):
         # Paste container
         section_img.paste(container, (x, y))
         
-        # Draw label
+        # Draw label in English
         label_width, _ = get_text_size(draw, label, label_font)
         safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 20), 
                      label, label_font, (80, 80, 80))
     
     return section_img
 
-def apply_enhanced_metal_color(image, metal_color, strength=0.3):
-    """Apply enhanced metal color effect for jewelry with better color accuracy"""
+def apply_enhanced_metal_color(image, metal_color, strength=0.3, color_id=""):
+    """Apply enhanced metal color effect with special handling for white and rose"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -695,35 +727,61 @@ def apply_enhanced_metal_color(image, metal_color, strength=0.3):
         # Normalize metal color
         metal_r, metal_g, metal_b = [c/255.0 for c in metal_color]
         
-        # For white gold, preserve more of original brightness
-        if metal_color[0] == 255 and metal_color[1] == 255 and metal_color[2] == 255:
-            # White gold - just brighten slightly
-            brightness_boost = 1.05
-            r_array[mask] = np.clip(r_array[mask] * brightness_boost, 0, 255)
-            g_array[mask] = np.clip(g_array[mask] * brightness_boost, 0, 255)
-            b_array[mask] = np.clip(b_array[mask] * brightness_boost, 0, 255)
+        # Special handling for white/antique - make it pure white
+        if color_id in ["white", "antique"]:
+            # Make everything bright white while preserving some shading
+            brightness_boost = 1.15
+            r_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
+            g_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
+            b_array[mask] = np.clip(luminance[mask] * 255 * brightness_boost, 240, 255)
+        
+        # Special handling for rose gold - more orange tint
+        elif color_id == "rose":
+            # Apply stronger orange-pink tint
+            highlight_mask = luminance > 0.85
+            shadow_mask = luminance < 0.15
+            midtone_mask = ~highlight_mask & ~shadow_mask & mask
+            
+            # Stronger orange tint for midtones
+            if midtone_mask.any():
+                blend_factor = 0.5  # Stronger blend
+                r_array[midtone_mask] = r_array[midtone_mask] * (1 - blend_factor) + (255 * luminance[midtone_mask]) * blend_factor
+                g_array[midtone_mask] = g_array[midtone_mask] * (1 - blend_factor) + (160 * luminance[midtone_mask]) * blend_factor
+                b_array[midtone_mask] = b_array[midtone_mask] * (1 - blend_factor) + (120 * luminance[midtone_mask]) * blend_factor
+            
+            # Orange tint for highlights
+            if highlight_mask.any():
+                r_array[highlight_mask] = np.clip(r_array[highlight_mask] * 0.5 + 255 * 0.5, 0, 255)
+                g_array[highlight_mask] = np.clip(g_array[highlight_mask] * 0.5 + 160 * 0.5, 0, 255)
+                b_array[highlight_mask] = np.clip(b_array[highlight_mask] * 0.5 + 120 * 0.5, 0, 255)
+            
+            # Preserve shadows with orange tint
+            if shadow_mask.any():
+                r_array[shadow_mask] = r_array[shadow_mask] * 0.8 + 50 * 0.2
+                g_array[shadow_mask] = g_array[shadow_mask] * 0.8 + 30 * 0.2
+                b_array[shadow_mask] = b_array[shadow_mask] * 0.8 + 20 * 0.2
+        
         else:
-            # Apply color with luminance preservation
+            # Standard metal color application (for yellow gold)
             highlight_mask = luminance > 0.85
             shadow_mask = luminance < 0.15
             midtone_mask = ~highlight_mask & ~shadow_mask & mask
             
             # Apply color more strongly to midtones
             if midtone_mask.any():
-                # Blend with original color
-                blend_factor = strength * 2.0  # Stronger effect
+                blend_factor = strength * 2.0
                 r_array[midtone_mask] = r_array[midtone_mask] * (1 - blend_factor) + (metal_r * 255 * luminance[midtone_mask]) * blend_factor
                 g_array[midtone_mask] = g_array[midtone_mask] * (1 - blend_factor) + (metal_g * 255 * luminance[midtone_mask]) * blend_factor
                 b_array[midtone_mask] = b_array[midtone_mask] * (1 - blend_factor) + (metal_b * 255 * luminance[midtone_mask]) * blend_factor
             
-            # Lighter tint for highlights to preserve shine
+            # Lighter tint for highlights
             if highlight_mask.any():
                 tint_factor = strength * 0.5
                 r_array[highlight_mask] = r_array[highlight_mask] * (1 - tint_factor) + (metal_r * 255) * tint_factor
                 g_array[highlight_mask] = g_array[highlight_mask] * (1 - tint_factor) + (metal_g * 255) * tint_factor
                 b_array[highlight_mask] = b_array[highlight_mask] * (1 - tint_factor) + (metal_b * 255) * tint_factor
             
-            # Preserve shadows with very light tint
+            # Preserve shadows with light tint
             if shadow_mask.any():
                 shadow_tint = strength * 0.2
                 r_array[shadow_mask] = r_array[shadow_mask] * (1 - shadow_tint) + (metal_r * r_array[shadow_mask]) * shadow_tint
@@ -1187,7 +1245,7 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
 def handler(event):
     """Main handler for detail page creation"""
     try:
-        print(f"=== V118 Enhanced Color Section Detail Page Handler ===")
+        print(f"=== V119 ULTRA PRECISE Detail Page Handler ===")
         
         # Get input data
         input_data = event.get('input', event)
@@ -1250,7 +1308,7 @@ def handler(event):
             "has_text_overlay": group_number in [7, 8],
             "has_background_removal": group_number == 6,
             "format": "base64_no_padding",
-            "version": "V118_ENHANCED_COLOR"
+            "version": "V119_ULTRA_PRECISE"
         }
         
         # Send to webhook
@@ -1271,11 +1329,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V118_ENHANCED_COLOR"
+                "version": "V119_ULTRA_PRECISE"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V118 Enhanced Color Section Detail Handler Started!")
+    print("V119 ULTRA PRECISE Detail Handler Started!")
     runpod.serverless.start({"handler": handler})
