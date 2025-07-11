@@ -13,6 +13,10 @@ import concurrent.futures
 from typing import List, Dict, Tuple, Optional
 import time
 
+# Claude API configuration
+CLAUDE_API_KEY = os.environ.get('CLAUDE_API_KEY', '')
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+
 # REPLICATE API for background removal
 try:
     import replicate
@@ -51,12 +55,9 @@ def download_korean_font():
     try:
         font_path = '/tmp/NanumGothic.ttf'
         
-        # Check if font already exists and is valid
         if os.path.exists(font_path):
             try:
-                # Test if font loads properly
                 test_font = ImageFont.truetype(font_path, 20)
-                # Test Korean character rendering
                 img_test = Image.new('RGB', (100, 100), 'white')
                 draw_test = ImageDraw.Draw(img_test)
                 draw_test.text((10, 10), "테스트", font=test_font, fill='black')
@@ -66,7 +67,6 @@ def download_korean_font():
                 print(f"Korean font exists but has issues: {e}")
                 os.remove(font_path)
         
-        # Download font
         font_urls = [
             'https://github.com/naver/nanumfont/raw/master/fonts/NanumFontSetup_TTF_GOTHIC/NanumGothic.ttf',
             'https://cdn.jsdelivr.net/gh/naver/nanumfont@master/fonts/NanumFontSetup_TTF_GOTHIC/NanumGothic.ttf',
@@ -84,7 +84,6 @@ def download_korean_font():
                     with open(font_path, 'wb') as f:
                         f.write(response.content)
                     
-                    # Verify font works
                     test_font = ImageFont.truetype(font_path, 20)
                     img_test = Image.new('RGB', (100, 100), 'white')
                     draw_test = ImageDraw.Draw(img_test)
@@ -106,25 +105,22 @@ def get_font(size, korean_font_path=None):
     """Get font with proper fallback handling"""
     fonts_to_try = []
     
-    # Add Korean font if available
     if korean_font_path and os.path.exists(korean_font_path):
         fonts_to_try.append(korean_font_path)
     
-    # Add system fonts
     fonts_to_try.extend([
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/AppleSDGothicNeo.ttc",  # macOS Korean font
-        "C:/Windows/Fonts/malgun.ttf",  # Windows Korean font
-        "C:/Windows/Fonts/NanumGothic.ttf"  # Windows Nanum font
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        "C:/Windows/Fonts/malgun.ttf",
+        "C:/Windows/Fonts/NanumGothic.ttf"
     ])
     
     for font_path in fonts_to_try:
         if os.path.exists(font_path):
             try:
                 font = ImageFont.truetype(font_path, size)
-                # Test if font can render Korean
                 img_test = Image.new('RGB', (100, 100), 'white')
                 draw_test = ImageDraw.Draw(img_test)
                 draw_test.text((10, 10), "한글", font=font, fill='black')
@@ -133,21 +129,17 @@ def get_font(size, korean_font_path=None):
                 print(f"Failed to load font {font_path}: {e}")
                 continue
     
-    # Last resort - default font
     print("Using default font as last resort")
     return ImageFont.load_default()
 
 def safe_draw_text(draw, position, text, font, fill):
     """Safely draw text with proper encoding"""
     try:
-        # Ensure text is properly encoded
         if text:
             text = str(text)
-            # Draw text directly without additional encoding
             draw.text(position, text, font=font, fill=fill)
     except Exception as e:
         print(f"Error drawing text '{text}': {str(e)}")
-        # Fallback to safe characters only
         try:
             safe_text = ''.join(c if ord(c) < 128 or 0xAC00 <= ord(c) <= 0xD7A3 else '?' for c in text)
             draw.text(position, safe_text or "[Error]", font=font, fill=fill)
@@ -157,12 +149,104 @@ def safe_draw_text(draw, position, text, font, fill):
 def get_text_size(draw, text, font):
     """Get text size compatible with different PIL versions"""
     try:
-        # Try newer method first
         bbox = draw.textbbox((0, 0), text, font=font)
         return bbox[2] - bbox[0], bbox[3] - bbox[1]
     except AttributeError:
-        # Fallback to older method
         return draw.textsize(text, font=font)
+
+def call_claude_api(image_base64, prompt):
+    """Call Claude API to generate text based on image"""
+    if not CLAUDE_API_KEY:
+        print("WARNING: CLAUDE_API_KEY not set")
+        return None
+    
+    try:
+        headers = {
+            "x-api-key": CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+        
+        data = {
+            "model": "claude-3-5-sonnet-20241022",
+            "max_tokens": 500,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": image_base64
+                        }
+                    }
+                ]
+            }]
+        }
+        
+        response = requests.post(CLAUDE_API_URL, headers=headers, json=data, timeout=30)
+        
+        if response.status_code == 200:
+            result = response.json()
+            return result.get('content', [{}])[0].get('text', '')
+        else:
+            print(f"Claude API error: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"Error calling Claude API: {str(e)}")
+        return None
+
+def generate_product_name_and_description(image):
+    """Generate product name and beautiful description using Claude"""
+    try:
+        # Convert image to base64
+        buffered = BytesIO()
+        image.save(buffered, format="PNG")
+        img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+        
+        # Prompt for Claude
+        prompt = """이 주얼리 이미지를 보고 다음 두 가지를 생성해주세요:
+
+1. 제품명: 이 주얼리에 어울리는 아름답고 우아한 이름 (한글 또는 영어, 2-3단어)
+2. 아름다운 해석: 제품명에 담긴 의미를 시적이고 감성적으로 설명 (한국어, 1-2문장)
+
+다음 형식으로 응답해주세요:
+제품명: [여기에 제품명]
+해석: [여기에 아름다운 해석]
+
+예시:
+제품명: Eternal Bloom
+해석: 영원히 피어나는 꽃처럼, 변하지 않는 사랑과 아름다움을 담은 주얼리입니다."""
+        
+        # Call Claude API
+        response = call_claude_api(img_base64, prompt)
+        
+        if response:
+            # Parse response
+            lines = response.strip().split('\n')
+            product_name = ""
+            description = ""
+            
+            for line in lines:
+                if line.startswith("제품명:"):
+                    product_name = line.replace("제품명:", "").strip()
+                elif line.startswith("해석:"):
+                    description = line.replace("해석:", "").strip()
+            
+            return product_name, description
+        else:
+            # Fallback values
+            return "Signature Ring", "당신만의 특별한 순간을 영원히 간직하는 시그니처 링"
+            
+    except Exception as e:
+        print(f"Error generating product name: {str(e)}")
+        return "Signature Ring", "당신만의 특별한 순간을 영원히 간직하는 시그니처 링"
 
 def clean_claude_text(text):
     """Clean text for safe rendering"""
@@ -170,589 +254,12 @@ def clean_claude_text(text):
         return ""
     
     text = str(text) if text is not None else ""
-    
-    # Remove escape sequences
     text = text.replace('\\n', ' ').replace('\\r', ' ').replace('\\t', ' ')
     text = text.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
-    
-    # Remove markdown
     text = re.sub(r'[#*_`]', '', text)
-    
-    # Clean multiple spaces
     text = ' '.join(text.split())
     
     return text.strip()
-
-def check_if_already_transparent(image):
-    """Check if image already has transparency (properly removed background)"""
-    if image.mode != 'RGBA':
-        return False
-    
-    # Get alpha channel
-    alpha = np.array(image.split()[3])
-    
-    # Check if there are transparent pixels
-    transparent_pixels = np.sum(alpha < 250)
-    total_pixels = alpha.size
-    
-    # If more than 10% of pixels are transparent, consider it already processed
-    transparency_ratio = transparent_pixels / total_pixels
-    
-    print(f"Transparency check: {transparency_ratio:.2%} of pixels are transparent")
-    
-    return transparency_ratio > 0.1
-
-def remove_background_from_image(image, skip_if_transparent=False):
-    """Remove background including ring center holes - with option to skip if already transparent"""
-    try:
-        # NEW: Check if already transparent and skip if requested
-        if skip_if_transparent and check_if_already_transparent(image):
-            print("Image already has transparency, skipping background removal")
-            return image
-        
-        # Method 1: Try local rembg first
-        if REMBG_AVAILABLE:
-            try:
-                print("Removing background using local rembg...")
-                
-                # Initialize session with best model
-                if not hasattr(remove_background_from_image, 'session'):
-                    remove_background_from_image.session = new_session('u2netp')
-                
-                # Convert to bytes
-                buffered = BytesIO()
-                image.save(buffered, format="PNG")
-                buffered.seek(0)
-                
-                # Remove background with balanced settings
-                output = remove(
-                    buffered.getvalue(),
-                    session=remove_background_from_image.session,
-                    alpha_matting=True,
-                    alpha_matting_foreground_threshold=270,  # Higher for less aggressive
-                    alpha_matting_background_threshold=50,   # Balanced
-                    alpha_matting_erode_size=1,
-                    only_mask=False
-                )
-                
-                result_image = Image.open(BytesIO(output))
-                
-                # Moderate post-process (not ultra aggressive)
-                result_image = moderate_ring_transparency(result_image)
-                
-                print("Background removed successfully")
-                return result_image
-                
-            except Exception as e:
-                print(f"Local rembg failed: {e}")
-        
-        # Method 2: Try Replicate API
-        if REPLICATE_AVAILABLE and REPLICATE_CLIENT:
-            try:
-                print("Removing background using Replicate API...")
-                
-                buffered = BytesIO()
-                image.save(buffered, format="PNG")
-                buffered.seek(0)
-                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                img_data_url = f"data:image/png;base64,{img_base64}"
-                
-                output = REPLICATE_CLIENT.run(
-                    "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
-                    input={
-                        "image": img_data_url,
-                        "model": "u2netp",
-                        "alpha_matting": True,
-                        "alpha_matting_foreground_threshold": 270,
-                        "alpha_matting_background_threshold": 50,
-                        "alpha_matting_erode_size": 1
-                    }
-                )
-                
-                if output:
-                    if isinstance(output, str):
-                        response = requests.get(output)
-                        result_image = Image.open(BytesIO(response.content))
-                    else:
-                        result_image = Image.open(BytesIO(base64.b64decode(output)))
-                    
-                    # Moderate post-process
-                    result_image = moderate_ring_transparency(result_image)
-                    
-                    print("Background removed successfully with Replicate")
-                    return result_image
-                    
-            except Exception as e:
-                print(f"Replicate background removal failed: {e}")
-        
-        # Method 3: Manual background removal
-        print("Using manual background removal")
-        result = manual_remove_background(image)
-        return moderate_ring_transparency(result)
-        
-    except Exception as e:
-        print(f"All background removal methods failed: {e}")
-        return image
-
-def moderate_ring_transparency(image):
-    """MODERATE post-process for ring center hole detection (not ultra aggressive)"""
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    
-    data = np.array(image)
-    alpha_channel = data[:,:,3]
-    
-    # Find the center of the image
-    height, width = data.shape[:2]
-    center_y, center_x = height // 2, width // 2
-    
-    # Convert to grayscale for analysis
-    gray = np.mean(data[:,:,:3], axis=2)
-    
-    # Only process very bright areas that are likely holes
-    bright_threshold = 245  # Higher threshold, less aggressive
-    bright_mask = gray > bright_threshold
-    opaque_bright = bright_mask & (alpha_channel > 200)  # Higher alpha threshold
-    
-    # Label connected components
-    labeled, num_features = ndimage.label(opaque_bright)
-    
-    # Analyze each component
-    for i in range(1, num_features + 1):
-        region = labeled == i
-        region_coords = np.where(region)
-        
-        if len(region_coords[0]) > 10:  # Minimum size to consider
-            # Calculate region properties
-            region_center_y = np.mean(region_coords[0])
-            region_center_x = np.mean(region_coords[1])
-            region_size = len(region_coords[0])
-            
-            # Check if region is roughly in the center
-            dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
-            
-            # More conservative criteria
-            is_centered = dist_from_center < min(height, width) * 0.3
-            is_reasonable_size = region_size < (height * width * 0.1)  # Smaller threshold
-            
-            # Check if surrounded by non-transparent pixels
-            dilated = ndimage.binary_dilation(region, iterations=5)
-            touches_edge = (dilated[0,:].any() or dilated[-1,:].any() or 
-                           dilated[:,0].any() or dilated[:,-1].any())
-            
-            if is_centered and is_reasonable_size and not touches_edge:
-                # Check color uniformity before removing
-                region_colors = data[region][:,:3]
-                color_std = np.std(region_colors)
-                
-                if color_std < 10:  # Very uniform color
-                    data[region] = [255, 255, 255, 0]
-                    print(f"Removed uniform bright region (size: {region_size})")
-    
-    return Image.fromarray(data, 'RGBA')
-
-def manual_remove_background(image):
-    """Manual background removal for jewelry (moderate version)"""
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    
-    data = np.array(image, dtype=np.float32)
-    
-    # Less aggressive thresholds
-    white_mask = (data[:,:,0] > 250) & (data[:,:,1] > 250) & (data[:,:,2] > 250)
-    
-    # Near white with moderate threshold
-    near_white = (data[:,:,0] > 240) & (data[:,:,1] > 240) & (data[:,:,2] > 240)
-    
-    # Gray detection with moderate tolerance
-    max_diff = 15
-    color_diff = np.abs(data[:,:,0] - data[:,:,1]) + np.abs(data[:,:,1] - data[:,:,2])
-    gray_mask = color_diff < max_diff
-    
-    # Combine masks conservatively
-    background_mask = white_mask | (near_white & gray_mask)
-    
-    # Make background transparent
-    data[background_mask] = [255, 255, 255, 0]
-    
-    return Image.fromarray(data.astype(np.uint8), 'RGBA')
-
-def auto_crop_transparent(image):
-    """Auto-crop transparent borders from image with padding"""
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    
-    # Get image data
-    data = np.array(image)
-    alpha = data[:,:,3]
-    
-    # Find non-transparent pixels
-    non_transparent = np.where(alpha > 10)  # Threshold for transparency
-    
-    if len(non_transparent[0]) == 0:
-        return image  # Return original if all transparent
-    
-    # Get bounding box
-    min_y = non_transparent[0].min()
-    max_y = non_transparent[0].max()
-    min_x = non_transparent[1].min()
-    max_x = non_transparent[1].max()
-    
-    # Add small padding
-    padding = 10  # Increased padding
-    min_y = max(0, min_y - padding)
-    max_y = min(data.shape[0] - 1, max_y + padding)
-    min_x = max(0, min_x - padding)
-    max_x = min(data.shape[1] - 1, max_x + padding)
-    
-    # Crop
-    cropped = image.crop((min_x, min_y, max_x + 1, max_y + 1))
-    return cropped
-
-def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
-    """Create MD Talk section with dynamic height based on content"""
-    # Get Korean font
-    korean_font_path = download_korean_font()
-    title_font = get_font(48, korean_font_path)
-    body_font = get_font(28, korean_font_path)
-    
-    # Create temporary image for text measurement
-    temp_img = Image.new('RGB', (width, 1000), '#FFFFFF')
-    draw = ImageDraw.Draw(temp_img)
-    
-    # Title
-    title = "MD TALK"
-    title_width, title_height = get_text_size(draw, title, title_font)
-    
-    # Process Claude text
-    if claude_text:
-        text = clean_claude_text(claude_text)
-        text = text.replace('MD TALK', '').replace('MD Talk', '').strip()
-        
-        # Word wrap
-        words = text.split()
-        lines = []
-        current_line = ""
-        max_line_width = width - 120
-        
-        for word in words:
-            test_line = current_line + " " + word if current_line else word
-            test_width, _ = get_text_size(draw, test_line, body_font)
-            
-            if test_width > max_line_width:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-            else:
-                current_line = test_line
-        
-        if current_line:
-            lines.append(current_line)
-    else:
-        lines = [
-            "이 제품은 일상에서도 부담없이",
-            "착용할 수 있는 편안한 디자인으로",
-            "매일의 스타일링에 포인트를 더해줍니다.",
-            "",
-            "특별한 날은 물론 평범한 일상까지",
-            "모든 순간을 빛나게 만들어주는",
-            "당신만의 특별한 주얼리입니다."
-        ]
-    
-    # Calculate dynamic height
-    top_margin = 60
-    title_bottom_margin = 140  # Gap between title and content
-    line_height = 50
-    bottom_margin = 80
-    
-    content_height = len(lines) * line_height
-    total_height = top_margin + title_height + title_bottom_margin + content_height + bottom_margin
-    
-    # Create actual image with calculated height
-    section_img = Image.new('RGB', (width, total_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    # Draw title
-    safe_draw_text(draw, (width//2 - title_width//2, top_margin), title, title_font, (40, 40, 40))
-    
-    # Draw content
-    y_pos = top_margin + title_height + title_bottom_margin
-    
-    for line in lines:
-        if line:
-            line_width, _ = get_text_size(draw, line, body_font)
-            safe_draw_text(draw, (width//2 - line_width//2, y_pos), line, body_font, (80, 80, 80))
-        y_pos += line_height
-    
-    return section_img
-
-def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
-    """Create Design Point section with dynamic height based on content"""
-    # Get Korean font
-    korean_font_path = download_korean_font()
-    title_font = get_font(48, korean_font_path)
-    body_font = get_font(24, korean_font_path)
-    
-    # Create temporary image for text measurement
-    temp_img = Image.new('RGB', (width, 1000), '#FFFFFF')
-    draw = ImageDraw.Draw(temp_img)
-    
-    # Title
-    title = "DESIGN POINT"
-    title_width, title_height = get_text_size(draw, title, title_font)
-    
-    # Process Claude text
-    if claude_text:
-        text = clean_claude_text(claude_text)
-        text = text.replace('DESIGN POINT', '').replace('Design Point', '').strip()
-        
-        # Word wrap
-        words = text.split()
-        lines = []
-        current_line = ""
-        max_line_width = width - 100
-        
-        for word in words:
-            test_line = current_line + " " + word if current_line else word
-            test_width, _ = get_text_size(draw, test_line, body_font)
-            
-            if test_width > max_line_width:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-            else:
-                current_line = test_line
-        
-        if current_line:
-            lines.append(current_line)
-    else:
-        lines = [
-            "남성 단품은 무광 텍스처와 유광 라인의 조화가",
-            "견고한 감성을 전하고 여자 단품은",
-            "파베 세팅과 섬세한 밀그레인의 디테일",
-            "화려하면서도 고급스러운 반영을 표현합니다"
-        ]
-    
-    # Calculate dynamic height
-    top_margin = 60
-    title_bottom_margin = 160  # Gap between title and content
-    line_height = 55
-    bottom_margin = 100  # Extra space for decorative line
-    
-    content_height = len(lines) * line_height
-    total_height = top_margin + title_height + title_bottom_margin + content_height + bottom_margin
-    
-    # Create actual image with calculated height
-    section_img = Image.new('RGB', (width, total_height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    # Draw title
-    safe_draw_text(draw, (width//2 - title_width//2, top_margin), title, title_font, (40, 40, 40))
-    
-    # Draw content
-    y_pos = top_margin + title_height + title_bottom_margin
-    
-    for line in lines:
-        if line:
-            line_width, _ = get_text_size(draw, line, body_font)
-            safe_draw_text(draw, (width//2 - line_width//2, y_pos), line, body_font, (80, 80, 80))
-        y_pos += line_height
-    
-    # Decorative line
-    draw.rectangle([100, y_pos + 30, width - 100, y_pos + 32], fill=(220, 220, 220))
-    
-    return section_img
-
-def create_color_options_section(ring_image=None):
-    """Create COLOR section with English labels and enhanced colors"""
-    width = FIXED_WIDTH
-    height = 850  # Fixed height for color section
-    
-    section_img = Image.new('RGB', (width, height), '#FFFFFF')
-    draw = ImageDraw.Draw(section_img)
-    
-    # Get fonts
-    korean_font_path = download_korean_font()
-    title_font = get_font(56, korean_font_path)
-    label_font = get_font(24, korean_font_path)
-    
-    # Draw title
-    title = "COLOR"
-    title_width, _ = get_text_size(draw, title, title_font)
-    safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
-    
-    # Remove background from ring - BUT CHECK IF ALREADY TRANSPARENT
-    ring_no_bg = None
-    if ring_image:
-        try:
-            print("Processing ring for color section")
-            # NEW: Skip background removal if already transparent
-            ring_no_bg = remove_background_from_image(ring_image, skip_if_transparent=True)
-            
-            if ring_no_bg.mode != 'RGBA':
-                ring_no_bg = ring_no_bg.convert('RGBA')
-            
-            # Auto crop
-            ring_no_bg = auto_crop_transparent(ring_no_bg)
-                
-        except Exception as e:
-            print(f"Failed to process ring: {e}")
-            ring_no_bg = ring_image.convert('RGBA') if ring_image else None
-    
-    # Updated color definitions with English labels and distinct antique color
-    colors = [
-        ("yellow", "YELLOW", (255, 200, 50), 0.3),           # Golden yellow
-        ("rose", "ROSE", (255, 160, 120), 0.35),            # More orange-tinted rose gold
-        ("white", "WHITE", (255, 255, 255), 0.0),           # Pure white
-        ("antique", "ANTIQUE", (245, 235, 225), 0.1)        # Warm ivory/grayish tone with slight tint
-    ]
-    
-    # Tighter grid layout
-    grid_size = 260
-    padding = 60
-    start_x = (width - (grid_size * 2 + padding)) // 2
-    start_y = 160
-    
-    for i, (color_id, label, color_rgb, strength) in enumerate(colors):
-        row = i // 2
-        col = i % 2
-        
-        x = start_x + col * (grid_size + padding)
-        y = start_y + row * (grid_size + 100)
-        
-        # Create container with subtle background
-        container = Image.new('RGBA', (grid_size, grid_size), (252, 252, 252, 255))
-        container_draw = ImageDraw.Draw(container)
-        
-        # Draw softer border
-        container_draw.rectangle([0, 0, grid_size-1, grid_size-1], 
-                                fill=None, outline=(240, 240, 240), width=1)
-        
-        # Apply ring with color
-        if ring_no_bg:
-            try:
-                ring_copy = ring_no_bg.copy()
-                # Smaller ring size for clearer boundaries
-                max_size = int(grid_size * 0.7)
-                ring_copy.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
-                
-                # Apply enhanced metal color effect
-                ring_tinted = apply_enhanced_metal_color(ring_copy, color_rgb, strength, color_id)
-                
-                # Center and paste with padding
-                paste_x = (grid_size - ring_tinted.width) // 2
-                paste_y = (grid_size - ring_tinted.height) // 2
-                container.paste(ring_tinted, (paste_x, paste_y), ring_tinted)
-                
-            except Exception as e:
-                print(f"Error applying color {color_id}: {e}")
-        
-        # Paste container
-        section_img.paste(container, (x, y))
-        
-        # Draw label in English
-        label_width, _ = get_text_size(draw, label, label_font)
-        safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 20), 
-                     label, label_font, (80, 80, 80))
-    
-    return section_img
-
-def apply_enhanced_metal_color(image, metal_color, strength=0.3, color_id=""):
-    """Apply enhanced metal color effect with special handling for white and rose"""
-    if image.mode != 'RGBA':
-        image = image.convert('RGBA')
-    
-    # Split channels
-    r, g, b, a = image.split()
-    
-    # Convert to arrays
-    r_array = np.array(r, dtype=np.float32)
-    g_array = np.array(g, dtype=np.float32)
-    b_array = np.array(b, dtype=np.float32)
-    a_array = np.array(a)
-    
-    # Only apply to non-transparent pixels
-    mask = a_array > 0
-    
-    if mask.any():
-        # Calculate luminance
-        luminance = (0.299 * r_array + 0.587 * g_array + 0.114 * b_array) / 255.0
-        
-        # Normalize metal color
-        metal_r, metal_g, metal_b = [c/255.0 for c in metal_color]
-        
-        # Special handling for white - IMPROVED
-        if color_id == "white":
-            # Less aggressive brightening
-            brightness_boost = 1.05  # Reduced from 1.15
-            r_array[mask] = np.clip(r_array[mask] * brightness_boost, 0, 255)
-            g_array[mask] = np.clip(g_array[mask] * brightness_boost, 0, 255)
-            b_array[mask] = np.clip(b_array[mask] * brightness_boost, 0, 255)
-        
-        # Special handling for rose gold - more orange tint
-        elif color_id == "rose":
-            # Apply stronger orange-pink tint
-            highlight_mask = luminance > 0.85
-            shadow_mask = luminance < 0.15
-            midtone_mask = ~highlight_mask & ~shadow_mask & mask
-            
-            # Stronger orange tint for midtones
-            if midtone_mask.any():
-                blend_factor = 0.5  # Stronger blend
-                r_array[midtone_mask] = r_array[midtone_mask] * (1 - blend_factor) + (255 * luminance[midtone_mask]) * blend_factor
-                g_array[midtone_mask] = g_array[midtone_mask] * (1 - blend_factor) + (160 * luminance[midtone_mask]) * blend_factor
-                b_array[midtone_mask] = b_array[midtone_mask] * (1 - blend_factor) + (120 * luminance[midtone_mask]) * blend_factor
-            
-            # Orange tint for highlights
-            if highlight_mask.any():
-                r_array[highlight_mask] = np.clip(r_array[highlight_mask] * 0.5 + 255 * 0.5, 0, 255)
-                g_array[highlight_mask] = np.clip(g_array[highlight_mask] * 0.5 + 160 * 0.5, 0, 255)
-                b_array[highlight_mask] = np.clip(b_array[highlight_mask] * 0.5 + 120 * 0.5, 0, 255)
-            
-            # Preserve shadows with orange tint
-            if shadow_mask.any():
-                r_array[shadow_mask] = r_array[shadow_mask] * 0.8 + 50 * 0.2
-                g_array[shadow_mask] = g_array[shadow_mask] * 0.8 + 30 * 0.2
-                b_array[shadow_mask] = b_array[shadow_mask] * 0.8 + 20 * 0.2
-        
-        else:
-            # Standard metal color application (for yellow and antique)
-            highlight_mask = luminance > 0.85
-            shadow_mask = luminance < 0.15
-            midtone_mask = ~highlight_mask & ~shadow_mask & mask
-            
-            # Apply color more strongly to midtones
-            if midtone_mask.any():
-                blend_factor = strength * 2.0
-                r_array[midtone_mask] = r_array[midtone_mask] * (1 - blend_factor) + (metal_r * 255 * luminance[midtone_mask]) * blend_factor
-                g_array[midtone_mask] = g_array[midtone_mask] * (1 - blend_factor) + (metal_g * 255 * luminance[midtone_mask]) * blend_factor
-                b_array[midtone_mask] = b_array[midtone_mask] * (1 - blend_factor) + (metal_b * 255 * luminance[midtone_mask]) * blend_factor
-            
-            # Lighter tint for highlights
-            if highlight_mask.any():
-                tint_factor = strength * 0.5
-                r_array[highlight_mask] = r_array[highlight_mask] * (1 - tint_factor) + (metal_r * 255) * tint_factor
-                g_array[highlight_mask] = g_array[highlight_mask] * (1 - tint_factor) + (metal_g * 255) * tint_factor
-                b_array[highlight_mask] = b_array[highlight_mask] * (1 - tint_factor) + (metal_b * 255) * tint_factor
-            
-            # Preserve shadows with light tint
-            if shadow_mask.any():
-                shadow_tint = strength * 0.2
-                r_array[shadow_mask] = r_array[shadow_mask] * (1 - shadow_tint) + (metal_r * r_array[shadow_mask]) * shadow_tint
-                g_array[shadow_mask] = g_array[shadow_mask] * (1 - shadow_tint) + (metal_g * g_array[shadow_mask]) * shadow_tint
-                b_array[shadow_mask] = b_array[shadow_mask] * (1 - shadow_tint) + (metal_b * b_array[shadow_mask]) * shadow_tint
-    
-    # Ensure valid range
-    r_array = np.clip(r_array, 0, 255)
-    g_array = np.clip(g_array, 0, 255)
-    b_array = np.clip(b_array, 0, 255)
-    
-    # Convert back
-    r_new = Image.fromarray(r_array.astype(np.uint8))
-    g_new = Image.fromarray(g_array.astype(np.uint8))
-    b_new = Image.fromarray(b_array.astype(np.uint8))
-    
-    return Image.merge('RGBA', (r_new, g_new, b_new, a))
 
 def extract_file_id_from_url(url):
     """Extract Google Drive file ID from URL"""
@@ -819,7 +326,6 @@ def download_image_from_google_drive(url):
 def get_image_from_input(input_data):
     """Get image from various input formats"""
     try:
-        # Try different keys
         for key in ['image', 'url', 'enhanced_image', 'image1', 'image2', 'image3', 
                    'image4', 'image5', 'image6', 'image7', 'image8', 'image9']:
             if key in input_data and input_data[key]:
@@ -832,7 +338,6 @@ def get_image_from_input(input_data):
                         header, data = image_data.split(',', 1)
                         return Image.open(BytesIO(base64.b64decode(data)))
                     else:
-                        # Assume base64
                         return Image.open(BytesIO(base64.b64decode(image_data)))
         
         raise ValueError("No valid image data found in input")
@@ -841,8 +346,104 @@ def get_image_from_input(input_data):
         print(f"Error getting image: {str(e)}")
         raise
 
+def add_text_overlay_group1(image):
+    """Add 'twinkring' text overlay for Group 1"""
+    img_copy = image.copy()
+    draw = ImageDraw.Draw(img_copy)
+    
+    korean_font_path = download_korean_font()
+    
+    # Text settings
+    text = "twinkring"
+    font_size = 72
+    font = get_font(font_size, korean_font_path)
+    
+    # Calculate text position (centered horizontally, near top)
+    text_width, text_height = get_text_size(draw, text, font)
+    x_position = (img_copy.width - text_width) // 2
+    y_position = 100
+    
+    # Draw text with outline for visibility
+    outline_width = 3
+    for adj_x in range(-outline_width, outline_width + 1):
+        for adj_y in range(-outline_width, outline_width + 1):
+            if adj_x != 0 or adj_y != 0:
+                safe_draw_text(draw, (x_position + adj_x, y_position + adj_y), text, font, (255, 255, 255))
+    
+    safe_draw_text(draw, (x_position, y_position), text, font, (40, 40, 40))
+    
+    return img_copy
+
+def add_text_overlay_group2(image, product_name, description):
+    """Add product name and description text overlay for Group 2"""
+    img_copy = image.copy()
+    draw = ImageDraw.Draw(img_copy)
+    
+    korean_font_path = download_korean_font()
+    
+    # Font settings
+    title_font = get_font(64, korean_font_path)
+    desc_font = get_font(36, korean_font_path)
+    
+    # Calculate positions
+    y_position = 100
+    
+    # Draw product name
+    if product_name:
+        text_width, text_height = get_text_size(draw, product_name, title_font)
+        x_position = (img_copy.width - text_width) // 2
+        
+        # White outline
+        outline_width = 3
+        for adj_x in range(-outline_width, outline_width + 1):
+            for adj_y in range(-outline_width, outline_width + 1):
+                if adj_x != 0 or adj_y != 0:
+                    safe_draw_text(draw, (x_position + adj_x, y_position + adj_y), product_name, title_font, (255, 255, 255))
+        
+        safe_draw_text(draw, (x_position, y_position), product_name, title_font, (40, 40, 40))
+        y_position += text_height + 40
+    
+    # Draw description (with word wrap)
+    if description:
+        # Word wrap for description
+        words = description.split()
+        lines = []
+        current_line = ""
+        max_line_width = img_copy.width - 200
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            test_width, _ = get_text_size(draw, test_line, desc_font)
+            
+            if test_width > max_line_width:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+            else:
+                current_line = test_line
+        
+        if current_line:
+            lines.append(current_line)
+        
+        # Draw each line
+        for line in lines:
+            if line:
+                text_width, text_height = get_text_size(draw, line, desc_font)
+                x_position = (img_copy.width - text_width) // 2
+                
+                # White outline
+                for adj_x in range(-2, 3):
+                    for adj_y in range(-2, 3):
+                        if adj_x != 0 or adj_y != 0:
+                            safe_draw_text(draw, (x_position + adj_x, y_position + adj_y), line, desc_font, (255, 255, 255))
+                
+                safe_draw_text(draw, (x_position, y_position), line, desc_font, (80, 80, 80))
+                y_position += text_height + 20
+    
+    return img_copy
+
 def process_single_image(input_data, group_number):
-    """Process single image (groups 1, 2)"""
+    """Process single image with text overlay for groups 1 and 2"""
     print(f"Processing single image for group {group_number}")
     
     # Get the image based on group number
@@ -855,7 +456,7 @@ def process_single_image(input_data, group_number):
     
     # Calculate dimensions
     target_width = FIXED_WIDTH
-    image_height = int(target_width * 1.3)  # 1200 x 1560
+    image_height = int(target_width * 1.3)
     
     # Layout parameters
     TOP_MARGIN = 50
@@ -866,16 +467,27 @@ def process_single_image(input_data, group_number):
     # Create page
     detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
     
-    # Resize and place image
+    # Resize image
     try:
         resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
         img_resized = img.resize((target_width, image_height), resample_filter)
         
+        # Add text overlay based on group
+        if group_number == 1:
+            # Add 'twinkring' text
+            img_with_text = add_text_overlay_group1(img_resized)
+        elif group_number == 2:
+            # Generate product name and description using Claude
+            product_name, description = generate_product_name_and_description(img)
+            img_with_text = add_text_overlay_group2(img_resized, product_name, description)
+        else:
+            img_with_text = img_resized
+        
         # Paste image
-        detail_page.paste(img_resized, (0, TOP_MARGIN))
+        detail_page.paste(img_with_text, (0, TOP_MARGIN))
         
         img.close()
-        print(f"Placed single image at y={TOP_MARGIN}")
+        print(f"Placed single image with text overlay at y={TOP_MARGIN}")
         
     except Exception as e:
         print(f"Error processing image: {str(e)}")
@@ -885,8 +497,8 @@ def process_single_image(input_data, group_number):
     # Add page indicator
     draw = ImageDraw.Draw(detail_page)
     page_texts = {
-        1: "- Image 1 -",
-        2: "- Image 2 -"
+        1: "- twinkring -",
+        2: "- product name -"
     }
     page_text = page_texts.get(group_number, f"- Image {group_number} -")
     
@@ -904,14 +516,11 @@ def parse_semicolon_separated_urls(url_string):
     if not url_string:
         return []
     
-    # Remove any whitespace and split by semicolon
     url_string = url_string.strip()
-    
-    # Split by semicolon and clean each URL
     urls = []
     for url in url_string.split(';'):
         url = url.strip()
-        if url and url.startswith('http'):  # Make sure it's a valid URL
+        if url and url.startswith('http'):
             urls.append(url)
     
     print(f"Parsed {len(urls)} URLs from semicolon-separated string")
@@ -921,14 +530,11 @@ def parse_semicolon_separated_urls(url_string):
     return urls
 
 def process_combined_images(input_data, group_number):
-    """Process combined images (groups 3, 4, 5)"""
+    """Process combined images (groups 3, 4, 5) - unchanged"""
     print(f"Processing combined images for group {group_number}")
     print(f"Available input keys: {list(input_data.keys())}")
     
-    # Get exactly 2 images based on group number
     images = []
-    
-    # Updated mapping for new group structure
     main_keys = {
         3: ['image3', 'image'],
         4: ['image4', 'image'],
@@ -937,23 +543,19 @@ def process_combined_images(input_data, group_number):
     
     urls_found = False
     
-    # Try main keys for this group
     for key in main_keys.get(group_number, []):
         if key in input_data and input_data[key]:
             value = input_data[key]
             print(f"Checking key '{key}' with value type: {type(value)}")
             
             if isinstance(value, str):
-                # Clean the string
                 value = value.strip()
                 
-                # Check if it contains semicolon
                 if ';' in value:
                     print(f"Found semicolon-separated URLs in {key}")
                     urls = parse_semicolon_separated_urls(value)
                     
                     if len(urls) >= 2:
-                        # Download each URL
                         for i, url in enumerate(urls[:2]):
                             try:
                                 print(f"Downloading image {i+1} from URL...")
@@ -969,7 +571,6 @@ def process_combined_images(input_data, group_number):
                     else:
                         print(f"WARNING: Expected 2 URLs but found {len(urls)}")
                 else:
-                    # Single URL - look for second image
                     print(f"Found single URL in {key}, looking for second image...")
                     try:
                         img = download_image_from_google_drive(value)
@@ -977,7 +578,6 @@ def process_combined_images(input_data, group_number):
                     except Exception as e:
                         print(f"Failed to download single URL: {e}")
     
-    # Fallback: Look for individual image keys if no semicolon-separated URLs found
     if not urls_found and len(images) < 2:
         print("No semicolon-separated URLs found, trying individual keys...")
         
@@ -997,42 +597,34 @@ def process_combined_images(input_data, group_number):
                 except Exception as e:
                     print(f"Failed to get image from {key}: {e}")
     
-    # Validate we have exactly 2 images
     if len(images) != 2:
         print(f"ERROR: Group {group_number} requires exactly 2 images, but {len(images)} found")
         raise ValueError(f"Group {group_number} requires exactly 2 images, but {len(images)} found")
     
     print(f"Successfully loaded 2 images for group {group_number}")
     
-    # Calculate dimensions
     target_width = FIXED_WIDTH
-    image_height = int(target_width * 1.3)  # 1200 x 1560
+    image_height = int(target_width * 1.3)
     
-    # Layout parameters
     TOP_MARGIN = 50
     BOTTOM_MARGIN = 50
-    IMAGE_SPACING = 200  # 200px between images
+    IMAGE_SPACING = 200
     
     total_height = TOP_MARGIN + (2 * image_height) + IMAGE_SPACING + BOTTOM_MARGIN
     
-    # Create combined page
     detail_page = Image.new('RGB', (FIXED_WIDTH, total_height), '#FFFFFF')
     
-    # Place images
     current_y = TOP_MARGIN
     
     for idx, img in enumerate(images):
         try:
-            # Resize image
             resample_filter = Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS
             img_resized = img.resize((target_width, image_height), resample_filter)
             
-            # Paste image
             detail_page.paste(img_resized, (0, current_y))
             
-            # Update position for next image
             current_y += image_height
-            if idx == 0:  # Add spacing after first image
+            if idx == 0:
                 current_y += IMAGE_SPACING
             
             img.close()
@@ -1043,7 +635,6 @@ def process_combined_images(input_data, group_number):
             import traceback
             traceback.print_exc()
     
-    # Add page indicator
     draw = ImageDraw.Draw(detail_page)
     page_texts = {
         3: "- Images 3-4 -",
@@ -1061,16 +652,495 @@ def process_combined_images(input_data, group_number):
     
     return detail_page
 
+# ... (나머지 함수들은 동일하게 유지)
+
+def check_if_already_transparent(image):
+    """Check if image already has transparency"""
+    if image.mode != 'RGBA':
+        return False
+    
+    alpha = np.array(image.split()[3])
+    transparent_pixels = np.sum(alpha < 250)
+    total_pixels = alpha.size
+    transparency_ratio = transparent_pixels / total_pixels
+    
+    print(f"Transparency check: {transparency_ratio:.2%} of pixels are transparent")
+    return transparency_ratio > 0.1
+
+def remove_background_from_image(image, skip_if_transparent=False):
+    """Remove background from image"""
+    try:
+        if skip_if_transparent and check_if_already_transparent(image):
+            print("Image already has transparency, skipping background removal")
+            return image
+        
+        if REMBG_AVAILABLE:
+            try:
+                print("Removing background using local rembg...")
+                
+                if not hasattr(remove_background_from_image, 'session'):
+                    remove_background_from_image.session = new_session('u2netp')
+                
+                buffered = BytesIO()
+                image.save(buffered, format="PNG")
+                buffered.seek(0)
+                
+                output = remove(
+                    buffered.getvalue(),
+                    session=remove_background_from_image.session,
+                    alpha_matting=True,
+                    alpha_matting_foreground_threshold=270,
+                    alpha_matting_background_threshold=50,
+                    alpha_matting_erode_size=1,
+                    only_mask=False
+                )
+                
+                result_image = Image.open(BytesIO(output))
+                result_image = moderate_ring_transparency(result_image)
+                
+                print("Background removed successfully")
+                return result_image
+                
+            except Exception as e:
+                print(f"Local rembg failed: {e}")
+        
+        if REPLICATE_AVAILABLE and REPLICATE_CLIENT:
+            try:
+                print("Removing background using Replicate API...")
+                
+                buffered = BytesIO()
+                image.save(buffered, format="PNG")
+                buffered.seek(0)
+                img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                img_data_url = f"data:image/png;base64,{img_base64}"
+                
+                output = REPLICATE_CLIENT.run(
+                    "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
+                    input={
+                        "image": img_data_url,
+                        "model": "u2netp",
+                        "alpha_matting": True,
+                        "alpha_matting_foreground_threshold": 270,
+                        "alpha_matting_background_threshold": 50,
+                        "alpha_matting_erode_size": 1
+                    }
+                )
+                
+                if output:
+                    if isinstance(output, str):
+                        response = requests.get(output)
+                        result_image = Image.open(BytesIO(response.content))
+                    else:
+                        result_image = Image.open(BytesIO(base64.b64decode(output)))
+                    
+                    result_image = moderate_ring_transparency(result_image)
+                    
+                    print("Background removed successfully with Replicate")
+                    return result_image
+                    
+            except Exception as e:
+                print(f"Replicate background removal failed: {e}")
+        
+        print("Using manual background removal")
+        result = manual_remove_background(image)
+        return moderate_ring_transparency(result)
+        
+    except Exception as e:
+        print(f"All background removal methods failed: {e}")
+        return image
+
+def moderate_ring_transparency(image):
+    """Moderate post-process for ring center hole detection"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    data = np.array(image)
+    alpha_channel = data[:,:,3]
+    
+    height, width = data.shape[:2]
+    center_y, center_x = height // 2, width // 2
+    
+    gray = np.mean(data[:,:,:3], axis=2)
+    
+    bright_threshold = 245
+    bright_mask = gray > bright_threshold
+    opaque_bright = bright_mask & (alpha_channel > 200)
+    
+    labeled, num_features = ndimage.label(opaque_bright)
+    
+    for i in range(1, num_features + 1):
+        region = labeled == i
+        region_coords = np.where(region)
+        
+        if len(region_coords[0]) > 10:
+            region_center_y = np.mean(region_coords[0])
+            region_center_x = np.mean(region_coords[1])
+            region_size = len(region_coords[0])
+            
+            dist_from_center = np.sqrt((region_center_y - center_y)**2 + (region_center_x - center_x)**2)
+            
+            is_centered = dist_from_center < min(height, width) * 0.3
+            is_reasonable_size = region_size < (height * width * 0.1)
+            
+            dilated = ndimage.binary_dilation(region, iterations=5)
+            touches_edge = (dilated[0,:].any() or dilated[-1,:].any() or 
+                           dilated[:,0].any() or dilated[:,-1].any())
+            
+            if is_centered and is_reasonable_size and not touches_edge:
+                region_colors = data[region][:,:3]
+                color_std = np.std(region_colors)
+                
+                if color_std < 10:
+                    data[region] = [255, 255, 255, 0]
+                    print(f"Removed uniform bright region (size: {region_size})")
+    
+    return Image.fromarray(data, 'RGBA')
+
+def manual_remove_background(image):
+    """Manual background removal for jewelry"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    data = np.array(image, dtype=np.float32)
+    
+    white_mask = (data[:,:,0] > 250) & (data[:,:,1] > 250) & (data[:,:,2] > 250)
+    near_white = (data[:,:,0] > 240) & (data[:,:,1] > 240) & (data[:,:,2] > 240)
+    
+    max_diff = 15
+    color_diff = np.abs(data[:,:,0] - data[:,:,1]) + np.abs(data[:,:,1] - data[:,:,2])
+    gray_mask = color_diff < max_diff
+    
+    background_mask = white_mask | (near_white & gray_mask)
+    data[background_mask] = [255, 255, 255, 0]
+    
+    return Image.fromarray(data.astype(np.uint8), 'RGBA')
+
+def auto_crop_transparent(image):
+    """Auto-crop transparent borders from image with padding"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    data = np.array(image)
+    alpha = data[:,:,3]
+    
+    non_transparent = np.where(alpha > 10)
+    
+    if len(non_transparent[0]) == 0:
+        return image
+    
+    min_y = non_transparent[0].min()
+    max_y = non_transparent[0].max()
+    min_x = non_transparent[1].min()
+    max_x = non_transparent[1].max()
+    
+    padding = 10
+    min_y = max(0, min_y - padding)
+    max_y = min(data.shape[0] - 1, max_y + padding)
+    min_x = max(0, min_x - padding)
+    max_x = min(data.shape[1] - 1, max_x + padding)
+    
+    cropped = image.crop((min_x, min_y, max_x + 1, max_y + 1))
+    return cropped
+
+def create_ai_generated_md_talk(claude_text, width=FIXED_WIDTH):
+    """Create MD Talk section with dynamic height based on content"""
+    korean_font_path = download_korean_font()
+    title_font = get_font(48, korean_font_path)
+    body_font = get_font(28, korean_font_path)
+    
+    temp_img = Image.new('RGB', (width, 1000), '#FFFFFF')
+    draw = ImageDraw.Draw(temp_img)
+    
+    title = "MD TALK"
+    title_width, title_height = get_text_size(draw, title, title_font)
+    
+    if claude_text:
+        text = clean_claude_text(claude_text)
+        text = text.replace('MD TALK', '').replace('MD Talk', '').strip()
+        
+        words = text.split()
+        lines = []
+        current_line = ""
+        max_line_width = width - 120
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            test_width, _ = get_text_size(draw, test_line, body_font)
+            
+            if test_width > max_line_width:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+            else:
+                current_line = test_line
+        
+        if current_line:
+            lines.append(current_line)
+    else:
+        lines = [
+            "이 제품은 일상에서도 부담없이",
+            "착용할 수 있는 편안한 디자인으로",
+            "매일의 스타일링에 포인트를 더해줍니다.",
+            "",
+            "특별한 날은 물론 평범한 일상까지",
+            "모든 순간을 빛나게 만들어주는",
+            "당신만의 특별한 주얼리입니다."
+        ]
+    
+    top_margin = 60
+    title_bottom_margin = 140
+    line_height = 50
+    bottom_margin = 80
+    
+    content_height = len(lines) * line_height
+    total_height = top_margin + title_height + title_bottom_margin + content_height + bottom_margin
+    
+    section_img = Image.new('RGB', (width, total_height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    safe_draw_text(draw, (width//2 - title_width//2, top_margin), title, title_font, (40, 40, 40))
+    
+    y_pos = top_margin + title_height + title_bottom_margin
+    
+    for line in lines:
+        if line:
+            line_width, _ = get_text_size(draw, line, body_font)
+            safe_draw_text(draw, (width//2 - line_width//2, y_pos), line, body_font, (80, 80, 80))
+        y_pos += line_height
+    
+    return section_img
+
+def create_ai_generated_design_point(claude_text, width=FIXED_WIDTH):
+    """Create Design Point section with dynamic height based on content"""
+    korean_font_path = download_korean_font()
+    title_font = get_font(48, korean_font_path)
+    body_font = get_font(24, korean_font_path)
+    
+    temp_img = Image.new('RGB', (width, 1000), '#FFFFFF')
+    draw = ImageDraw.Draw(temp_img)
+    
+    title = "DESIGN POINT"
+    title_width, title_height = get_text_size(draw, title, title_font)
+    
+    if claude_text:
+        text = clean_claude_text(claude_text)
+        text = text.replace('DESIGN POINT', '').replace('Design Point', '').strip()
+        
+        words = text.split()
+        lines = []
+        current_line = ""
+        max_line_width = width - 100
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            test_width, _ = get_text_size(draw, test_line, body_font)
+            
+            if test_width > max_line_width:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+            else:
+                current_line = test_line
+        
+        if current_line:
+            lines.append(current_line)
+    else:
+        lines = [
+            "남성 단품은 무광 텍스처와 유광 라인의 조화가",
+            "견고한 감성을 전하고 여자 단품은",
+            "파베 세팅과 섬세한 밀그레인의 디테일",
+            "화려하면서도 고급스러운 반영을 표현합니다"
+        ]
+    
+    top_margin = 60
+    title_bottom_margin = 160
+    line_height = 55
+    bottom_margin = 100
+    
+    content_height = len(lines) * line_height
+    total_height = top_margin + title_height + title_bottom_margin + content_height + bottom_margin
+    
+    section_img = Image.new('RGB', (width, total_height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    safe_draw_text(draw, (width//2 - title_width//2, top_margin), title, title_font, (40, 40, 40))
+    
+    y_pos = top_margin + title_height + title_bottom_margin
+    
+    for line in lines:
+        if line:
+            line_width, _ = get_text_size(draw, line, body_font)
+            safe_draw_text(draw, (width//2 - line_width//2, y_pos), line, body_font, (80, 80, 80))
+        y_pos += line_height
+    
+    draw.rectangle([100, y_pos + 30, width - 100, y_pos + 32], fill=(220, 220, 220))
+    
+    return section_img
+
+def create_color_options_section(ring_image=None):
+    """Create COLOR section with English labels and enhanced colors"""
+    width = FIXED_WIDTH
+    height = 850
+    
+    section_img = Image.new('RGB', (width, height), '#FFFFFF')
+    draw = ImageDraw.Draw(section_img)
+    
+    korean_font_path = download_korean_font()
+    title_font = get_font(56, korean_font_path)
+    label_font = get_font(24, korean_font_path)
+    
+    title = "COLOR"
+    title_width, _ = get_text_size(draw, title, title_font)
+    safe_draw_text(draw, (width//2 - title_width//2, 60), title, title_font, (40, 40, 40))
+    
+    ring_no_bg = None
+    if ring_image:
+        try:
+            print("Processing ring for color section")
+            ring_no_bg = remove_background_from_image(ring_image, skip_if_transparent=True)
+            
+            if ring_no_bg.mode != 'RGBA':
+                ring_no_bg = ring_no_bg.convert('RGBA')
+            
+            ring_no_bg = auto_crop_transparent(ring_no_bg)
+                
+        except Exception as e:
+            print(f"Failed to process ring: {e}")
+            ring_no_bg = ring_image.convert('RGBA') if ring_image else None
+    
+    colors = [
+        ("yellow", "YELLOW", (255, 200, 50), 0.3),
+        ("rose", "ROSE", (255, 160, 120), 0.35),
+        ("white", "WHITE", (255, 255, 255), 0.0),
+        ("antique", "ANTIQUE", (245, 235, 225), 0.1)
+    ]
+    
+    grid_size = 260
+    padding = 60
+    start_x = (width - (grid_size * 2 + padding)) // 2
+    start_y = 160
+    
+    for i, (color_id, label, color_rgb, strength) in enumerate(colors):
+        row = i // 2
+        col = i % 2
+        
+        x = start_x + col * (grid_size + padding)
+        y = start_y + row * (grid_size + 100)
+        
+        container = Image.new('RGBA', (grid_size, grid_size), (252, 252, 252, 255))
+        container_draw = ImageDraw.Draw(container)
+        
+        container_draw.rectangle([0, 0, grid_size-1, grid_size-1], 
+                                fill=None, outline=(240, 240, 240), width=1)
+        
+        if ring_no_bg:
+            try:
+                ring_copy = ring_no_bg.copy()
+                max_size = int(grid_size * 0.7)
+                ring_copy.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+                
+                ring_tinted = apply_enhanced_metal_color(ring_copy, color_rgb, strength, color_id)
+                
+                paste_x = (grid_size - ring_tinted.width) // 2
+                paste_y = (grid_size - ring_tinted.height) // 2
+                container.paste(ring_tinted, (paste_x, paste_y), ring_tinted)
+                
+            except Exception as e:
+                print(f"Error applying color {color_id}: {e}")
+        
+        section_img.paste(container, (x, y))
+        
+        label_width, _ = get_text_size(draw, label, label_font)
+        safe_draw_text(draw, (x + grid_size//2 - label_width//2, y + grid_size + 20), 
+                     label, label_font, (80, 80, 80))
+    
+    return section_img
+
+def apply_enhanced_metal_color(image, metal_color, strength=0.3, color_id=""):
+    """Apply enhanced metal color effect with special handling for white and rose"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    r, g, b, a = image.split()
+    
+    r_array = np.array(r, dtype=np.float32)
+    g_array = np.array(g, dtype=np.float32)
+    b_array = np.array(b, dtype=np.float32)
+    a_array = np.array(a)
+    
+    mask = a_array > 0
+    
+    if mask.any():
+        luminance = (0.299 * r_array + 0.587 * g_array + 0.114 * b_array) / 255.0
+        
+        metal_r, metal_g, metal_b = [c/255.0 for c in metal_color]
+        
+        if color_id == "white":
+            brightness_boost = 1.05
+            r_array[mask] = np.clip(r_array[mask] * brightness_boost, 0, 255)
+            g_array[mask] = np.clip(g_array[mask] * brightness_boost, 0, 255)
+            b_array[mask] = np.clip(b_array[mask] * brightness_boost, 0, 255)
+        
+        elif color_id == "rose":
+            highlight_mask = luminance > 0.85
+            shadow_mask = luminance < 0.15
+            midtone_mask = ~highlight_mask & ~shadow_mask & mask
+            
+            if midtone_mask.any():
+                blend_factor = 0.5
+                r_array[midtone_mask] = r_array[midtone_mask] * (1 - blend_factor) + (255 * luminance[midtone_mask]) * blend_factor
+                g_array[midtone_mask] = g_array[midtone_mask] * (1 - blend_factor) + (160 * luminance[midtone_mask]) * blend_factor
+                b_array[midtone_mask] = b_array[midtone_mask] * (1 - blend_factor) + (120 * luminance[midtone_mask]) * blend_factor
+            
+            if highlight_mask.any():
+                r_array[highlight_mask] = np.clip(r_array[highlight_mask] * 0.5 + 255 * 0.5, 0, 255)
+                g_array[highlight_mask] = np.clip(g_array[highlight_mask] * 0.5 + 160 * 0.5, 0, 255)
+                b_array[highlight_mask] = np.clip(b_array[highlight_mask] * 0.5 + 120 * 0.5, 0, 255)
+            
+            if shadow_mask.any():
+                r_array[shadow_mask] = r_array[shadow_mask] * 0.8 + 50 * 0.2
+                g_array[shadow_mask] = g_array[shadow_mask] * 0.8 + 30 * 0.2
+                b_array[shadow_mask] = b_array[shadow_mask] * 0.8 + 20 * 0.2
+        
+        else:
+            highlight_mask = luminance > 0.85
+            shadow_mask = luminance < 0.15
+            midtone_mask = ~highlight_mask & ~shadow_mask & mask
+            
+            if midtone_mask.any():
+                blend_factor = strength * 2.0
+                r_array[midtone_mask] = r_array[midtone_mask] * (1 - blend_factor) + (metal_r * 255 * luminance[midtone_mask]) * blend_factor
+                g_array[midtone_mask] = g_array[midtone_mask] * (1 - blend_factor) + (metal_g * 255 * luminance[midtone_mask]) * blend_factor
+                b_array[midtone_mask] = b_array[midtone_mask] * (1 - blend_factor) + (metal_b * 255 * luminance[midtone_mask]) * blend_factor
+            
+            if highlight_mask.any():
+                tint_factor = strength * 0.5
+                r_array[highlight_mask] = r_array[highlight_mask] * (1 - tint_factor) + (metal_r * 255) * tint_factor
+                g_array[highlight_mask] = g_array[highlight_mask] * (1 - tint_factor) + (metal_g * 255) * tint_factor
+                b_array[highlight_mask] = b_array[highlight_mask] * (1 - tint_factor) + (metal_b * 255) * tint_factor
+            
+            if shadow_mask.any():
+                shadow_tint = strength * 0.2
+                r_array[shadow_mask] = r_array[shadow_mask] * (1 - shadow_tint) + (metal_r * r_array[shadow_mask]) * shadow_tint
+                g_array[shadow_mask] = g_array[shadow_mask] * (1 - shadow_tint) + (metal_g * g_array[shadow_mask]) * shadow_tint
+                b_array[shadow_mask] = b_array[shadow_mask] * (1 - shadow_tint) + (metal_b * b_array[shadow_mask]) * shadow_tint
+    
+    r_array = np.clip(r_array, 0, 255)
+    g_array = np.clip(g_array, 0, 255)
+    b_array = np.clip(b_array, 0, 255)
+    
+    r_new = Image.fromarray(r_array.astype(np.uint8))
+    g_new = Image.fromarray(g_array.astype(np.uint8))
+    b_new = Image.fromarray(b_array.astype(np.uint8))
+    
+    return Image.merge('RGBA', (r_new, g_new, b_new, a))
+
 def process_color_section(input_data):
     """Process group 6 - COLOR section"""
     print("Processing COLOR section")
     
-    # Get the ring image
     img = get_image_from_input(input_data)
-    
-    # Create color section
     color_section = create_color_options_section(ring_image=img)
-    
     img.close()
     
     return color_section
@@ -1079,13 +1149,11 @@ def process_text_section(input_data, group_number):
     """Process text-only sections (groups 7, 8)"""
     print(f"Processing text section for group {group_number}")
     
-    # Get Claude text
     claude_text = (input_data.get('claude_text') or 
                   input_data.get('text_content') or 
                   input_data.get('ai_text') or 
                   input_data.get('generated_text') or '')
     
-    # Clean text
     if claude_text:
         claude_text = clean_claude_text(claude_text)
     
@@ -1104,415 +1172,26 @@ def process_text_section(input_data, group_number):
     
     return text_section, section_type
 
-# ============ GROUP 9: WEARING SHOTS WITH MASKED TEMPLATES ============
-
-def load_wearing_shot_samples():
-    """Load pre-masked wearing shot samples"""
-    samples = []
-    sample_dir = "/tmp/wearing_samples"  # or wherever samples are stored
-    
-    # Try to load samples from various sources
-    try:
-        # Check if samples directory exists
-        if os.path.exists(sample_dir):
-            for i in range(10):  # Load up to 10 samples
-                sample_path = os.path.join(sample_dir, f"sample_{i+1:02d}")
-                if os.path.exists(sample_path):
-                    sample_data = {
-                        'original': Image.open(os.path.join(sample_path, 'original.jpg')),
-                        'mask': Image.open(os.path.join(sample_path, 'mask.png')),
-                        'metadata': {}
-                    }
-                    
-                    # Load metadata if exists
-                    metadata_path = os.path.join(sample_path, 'metadata.json')
-                    if os.path.exists(metadata_path):
-                        with open(metadata_path, 'r') as f:
-                            sample_data['metadata'] = json.load(f)
-                    
-                    samples.append(sample_data)
-        
-        print(f"Loaded {len(samples)} wearing shot samples")
-        
-    except Exception as e:
-        print(f"Error loading samples: {e}")
-    
-    # If no samples found, create placeholder samples
-    if len(samples) == 0:
-        print("No pre-loaded samples found, creating placeholders")
-        for i in range(3):  # Create 3 basic templates
-            samples.append(create_placeholder_sample(i))
-    
-    return samples
-
-def create_placeholder_sample(index):
-    """Create a placeholder sample when real samples aren't available"""
-    width = FIXED_WIDTH
-    height = 900
-    
-    # Create base image
-    img = Image.new('RGB', (width, height), '#F8F8F8')
-    draw = ImageDraw.Draw(img)
-    
-    # Add gradient background
-    for y in range(height):
-        gray_value = 248 - int((y / height) * 8)
-        draw.rectangle([0, y, width, y+1], fill=(gray_value, gray_value, gray_value))
-    
-    # Create mask with ring area
-    mask = Image.new('L', (width, height), 0)
-    mask_draw = ImageDraw.Draw(mask)
-    
-    # Define ring positions for different templates
-    ring_positions = [
-        {'center': (width//2, height//2 - 100), 'size': (200, 200), 'angle': 0},
-        {'center': (width//2 - 150, height//2), 'size': (180, 180), 'angle': -15},
-        {'center': (width//2, height//2 - 50), 'size': (220, 220), 'angle': 10}
-    ]
-    
-    pos = ring_positions[index % 3]
-    
-    # Draw ellipse for ring area in mask
-    bbox = [
-        pos['center'][0] - pos['size'][0]//2,
-        pos['center'][1] - pos['size'][1]//2,
-        pos['center'][0] + pos['size'][0]//2,
-        pos['center'][1] + pos['size'][1]//2
-    ]
-    mask_draw.ellipse(bbox, fill=255)
-    
-    # Create green mask overlay for visualization
-    mask_vis = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-    mask_vis_draw = ImageDraw.Draw(mask_vis)
-    mask_vis_draw.ellipse(bbox, fill=(0, 255, 0, 128))
-    
-    # Composite for preview
-    img.paste(mask_vis, (0, 0), mask_vis)
-    
-    return {
-        'original': img,
-        'mask': mask,
-        'metadata': {
-            'center': pos['center'],
-            'size': pos['size'],
-            'angle': pos['angle'],
-            'type': ['male', 'female', 'couple'][index % 3]
-        }
-    }
-
-def analyze_mask_region(mask_image):
-    """Analyze mask region to extract ring placement info"""
-    mask_array = np.array(mask_image)
-    
-    # Find mask region
-    mask_coords = np.where(mask_array > 128)
-    
-    if len(mask_coords[0]) == 0:
-        return None
-    
-    # Calculate center and bounds
-    center_y = int(np.mean(mask_coords[0]))
-    center_x = int(np.mean(mask_coords[1]))
-    
-    min_y = mask_coords[0].min()
-    max_y = mask_coords[0].max()
-    min_x = mask_coords[1].min()
-    max_x = mask_coords[1].max()
-    
-    width = max_x - min_x
-    height = max_y - min_y
-    
-    # Estimate angle from mask shape
-    # This is simplified - real implementation would use PCA or ellipse fitting
-    angle = 0
-    
-    return {
-        'center': (center_x, center_y),
-        'bounds': (min_x, min_y, max_x, max_y),
-        'size': (width, height),
-        'angle': angle
-    }
-
-def transform_ring_for_placement(ring_image, mask_data):
-    """Transform ring to fit the mask region"""
-    if not mask_data:
-        return ring_image
-    
-    # Get target size
-    target_width, target_height = mask_data['size']
-    
-    # Resize ring maintaining aspect ratio
-    ring_aspect = ring_image.width / ring_image.height
-    target_aspect = target_width / target_height
-    
-    if ring_aspect > target_aspect:
-        # Ring is wider
-        new_width = target_width
-        new_height = int(target_width / ring_aspect)
-    else:
-        # Ring is taller
-        new_height = target_height
-        new_width = int(target_height * ring_aspect)
-    
-    # Resize
-    ring_resized = ring_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    
-    # Rotate if needed
-    if mask_data['angle'] != 0:
-        ring_resized = ring_resized.rotate(-mask_data['angle'], expand=True, fillcolor=(0, 0, 0, 0))
-    
-    return ring_resized
-
-def composite_ring_on_sample(sample_data, ring_image):
-    """Composite ring onto sample using mask"""
-    try:
-        # Get original and mask
-        original = sample_data['original'].copy()
-        mask = sample_data['mask']
-        
-        # Analyze mask region
-        mask_data = analyze_mask_region(mask)
-        if not mask_data:
-            print("Failed to analyze mask region")
-            return original
-        
-        # Remove background from ring if needed
-        if ring_image.mode != 'RGBA' or not check_if_already_transparent(ring_image):
-            ring_no_bg = remove_background_from_image(ring_image)
-        else:
-            ring_no_bg = ring_image
-        
-        # Transform ring to fit mask
-        ring_transformed = transform_ring_for_placement(ring_no_bg, mask_data)
-        
-        # Create a new image for compositing
-        composite = original.copy()
-        
-        # Calculate paste position
-        paste_x = mask_data['center'][0] - ring_transformed.width // 2
-        paste_y = mask_data['center'][1] - ring_transformed.height // 2
-        
-        # Paste ring
-        composite.paste(ring_transformed, (paste_x, paste_y), ring_transformed)
-        
-        # Apply color/lighting matching
-        composite = apply_lighting_match(composite, original, mask_data['bounds'])
-        
-        return composite
-        
-    except Exception as e:
-        print(f"Error in composite_ring_on_sample: {e}")
-        return sample_data['original'].copy()
-
-def apply_lighting_match(composite, original, bounds):
-    """Match lighting and color between composite and original"""
-    # This is a simplified version - real implementation would use
-    # histogram matching, color transfer algorithms, etc.
-    
-    # For now, just apply slight color adjustment
-    from PIL import ImageEnhance
-    
-    # Slight brightness adjustment
-    enhancer = ImageEnhance.Brightness(composite)
-    composite = enhancer.enhance(0.95)
-    
-    # Slight color adjustment
-    enhancer = ImageEnhance.Color(composite)
-    composite = enhancer.enhance(1.02)
-    
-    return composite
-
-def select_best_sample_for_ring(ring_image, samples, ring_index):
-    """Select the best sample for a given ring"""
-    # Simple selection logic - can be enhanced with:
-    # - Ring type detection (male/female)
-    # - Size matching
-    # - Style matching
-    
-    # For now, cycle through samples
-    sample_index = ring_index % len(samples)
-    
-    # Special logic for couple shots (every 3rd image)
-    if ring_index % 3 == 2:
-        # Look for couple sample
-        for i, sample in enumerate(samples):
-            if sample.get('metadata', {}).get('type') == 'couple':
-                return i
-    
-    return sample_index
-
-def process_wearing_shots_masked(input_data):
-    """Process group 9 - Generate wearing shots using masked templates"""
-    print("=== Processing Group 9: Wearing Shots with Masked Templates ===")
-    start_time = time.time()
-    
-    # Get all 9 ring images
-    ring_images = []
-    
-    for i in range(1, 10):
-        key = f'image{i}'
-        if key in input_data and input_data[key]:
-            try:
-                img = get_image_from_input({key: input_data[key]})
-                ring_images.append(img)
-                print(f"Loaded ring image {i}")
-            except Exception as e:
-                print(f"Failed to load ring image {i}: {e}")
-    
-    if len(ring_images) < 9:
-        print(f"Warning: Only {len(ring_images)} ring images found, expected 9")
-    
-    # Load wearing shot samples
-    samples = load_wearing_shot_samples()
-    print(f"Loaded {len(samples)} wearing shot samples")
-    
-    # Process rings in parallel for speed
-    wearing_shots = []
-    
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        # Submit all ring processing tasks
-        future_to_ring = {}
-        
-        for i, ring_img in enumerate(ring_images):
-            # Select appropriate sample
-            sample_idx = select_best_sample_for_ring(ring_img, samples, i)
-            sample = samples[sample_idx]
-            
-            # Submit task
-            future = executor.submit(composite_ring_on_sample, sample, ring_img)
-            future_to_ring[future] = i
-        
-        # Collect results
-        for future in concurrent.futures.as_completed(future_to_ring):
-            ring_idx = future_to_ring[future]
-            try:
-                result = future.result()
-                wearing_shots.append({
-                    'image': result,
-                    'ring_index': ring_idx,
-                    'title': f"Ring {ring_idx + 1}"
-                })
-                print(f"Processed wearing shot for ring {ring_idx + 1}")
-            except Exception as e:
-                print(f"Failed to process ring {ring_idx + 1}: {e}")
-    
-    # Sort by ring index
-    wearing_shots.sort(key=lambda x: x['ring_index'])
-    
-    # Create final layout
-    final_image = create_wearing_shots_grid(wearing_shots)
-    
-    # Clean up
-    for img in ring_images:
-        img.close()
-    
-    print(f"Wearing shots processing completed in {time.time() - start_time:.2f}s")
-    
-    return final_image
-
-def create_wearing_shots_grid(wearing_shots):
-    """Create a grid layout for wearing shots"""
-    width = FIXED_WIDTH
-    
-    # Grid configuration - 3x3
-    cols = 3
-    rows = 3
-    
-    # Individual image size
-    img_width = 380
-    img_height = 380
-    
-    # Spacing
-    h_spacing = 30
-    v_spacing = 40
-    top_margin = 100
-    bottom_margin = 80
-    
-    # Calculate total height
-    grid_height = rows * img_height + (rows - 1) * v_spacing
-    total_height = top_margin + grid_height + bottom_margin
-    
-    # Create final image
-    final_img = Image.new('RGB', (width, total_height), '#FFFFFF')
-    draw = ImageDraw.Draw(final_img)
-    
-    # Add title
-    korean_font_path = download_korean_font()
-    title_font = get_font(56, korean_font_path)
-    label_font = get_font(16, korean_font_path)
-    
-    title = "WEARING SHOTS"
-    title_width, _ = get_text_size(draw, title, title_font)
-    safe_draw_text(draw, (width//2 - title_width//2, 30), title, title_font, (40, 40, 40))
-    
-    # Calculate grid starting position
-    grid_width = cols * img_width + (cols - 1) * h_spacing
-    start_x = (width - grid_width) // 2
-    
-    # Place each wearing shot
-    for i, shot_data in enumerate(wearing_shots[:9]):  # Max 9 images
-        row = i // cols
-        col = i % cols
-        
-        x = start_x + col * (img_width + h_spacing)
-        y = top_margin + row * (img_height + v_spacing)
-        
-        # Resize wearing shot
-        shot_img = shot_data['image']
-        shot_resized = shot_img.resize((img_width, img_height), Image.Resampling.LANCZOS)
-        
-        # Add subtle border
-        bordered = Image.new('RGB', (img_width + 2, img_height + 2), (240, 240, 240))
-        bordered.paste(shot_resized, (1, 1))
-        
-        # Paste to final image
-        final_img.paste(bordered, (x - 1, y - 1))
-        
-        # Add ring number label
-        label = f"Ring {i + 1}"
-        label_width, _ = get_text_size(draw, label, label_font)
-        safe_draw_text(draw, (x + img_width//2 - label_width//2, y + img_height + 5), 
-                      label, label_font, (120, 120, 120))
-    
-    # Add page indicator
-    page_text = "- Wearing Shots Collection -"
-    small_font = get_font(16, korean_font_path)
-    text_width, _ = get_text_size(draw, page_text, small_font)
-    safe_draw_text(draw, (width//2 - text_width//2, total_height - 30), 
-                  page_text, small_font, (200, 200, 200))
-    
-    return final_img
-
 def detect_group_number_from_input(input_data):
-    """Detect group number from input data - UPDATED FOR NEW STRUCTURE WITH GROUP 9"""
-    # Priority 1: Explicit route_number
+    """Detect group number from input data"""
     route_number = input_data.get('route_number', 0)
     if route_number and str(route_number).isdigit():
         group_num = int(route_number)
         print(f"Found explicit route_number: {group_num}")
         return group_num
     
-    # Priority 2: group_number
     group_number = input_data.get('group_number', 0)
     if group_number and str(group_number).isdigit():
         group_num = int(group_number)
         print(f"Found explicit group_number: {group_num}")
         return group_num
     
-    # Priority 3: Check if all 9 images are present (Group 9)
-    all_images_present = all(f'image{i}' in input_data for i in range(1, 10))
-    if all_images_present:
-        print("All 9 images present, detected as Group 9")
-        return 9
-    
-    # Priority 4: Text type hints
     text_type = input_data.get('text_type', '').lower()
     if 'md_talk' in text_type:
         return 7
     elif 'design_point' in text_type:
         return 8
     
-    # Priority 5: Check for Google Script format (semicolon-separated URLs)
     for key, group in [('image3', 3), ('image4', 4), ('image5', 5)]:
         if key in input_data and input_data[key]:
             value = input_data[key]
@@ -1520,13 +1199,9 @@ def detect_group_number_from_input(input_data):
                 print(f"Detected group {group} from semicolon-separated URLs in {key}")
                 return group
     
-    # Priority 6: Check for color section indicators
     if 'image6' in input_data or 'image9' in input_data:
-        # But not if all 9 images are present
-        if not all_images_present:
-            return 6
+        return 6
     
-    # Priority 7: Specific image keys - UPDATED FOR NEW STRUCTURE
     if 'image1' in input_data:
         return 1
     elif 'image2' in input_data:
@@ -1538,11 +1213,9 @@ def detect_group_number_from_input(input_data):
     elif 'image5' in input_data:
         return 5
     
-    # Priority 8: Check for color indicators in any field
     if any(key in str(input_data).lower() for key in ['color', 'colour', 'gold']):
         return 6
     
-    # Default
     print("No clear group indicators found, defaulting to group 1")
     return 1
 
@@ -1586,31 +1259,28 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def handler(event):
-    """Main handler for detail page creation - COMPLETE VERSION WITH GROUP 9"""
+    """Main handler for detail page creation - Updated for text overlay on groups 1 and 2"""
     try:
-        print(f"=== V123 Detail Page Handler - Complete with Masked Wearing Shots ===")
+        print(f"=== V124 Detail Page Handler - With Claude Text Generation ===")
         
-        # Get input data
         input_data = event.get('input', event)
         print(f"Input keys: {list(input_data.keys())}")
         
-        # Detect group number
         group_number = detect_group_number_from_input(input_data)
         print(f"Detected group number: {group_number}")
         
-        if group_number < 1 or group_number > 9:
+        if group_number < 1 or group_number > 8:
             raise ValueError(f"Invalid group number: {group_number}")
         
-        # Process based on group - COMPLETE STRUCTURE
         if group_number == 1:
-            print("=== Processing Group 1: Single image 1 ===")
+            print("=== Processing Group 1: Single image 1 with 'twinkring' text ===")
             detail_page = process_single_image(input_data, group_number)
-            page_type = "single_image_1"
+            page_type = "single_image_1_with_text"
             
         elif group_number == 2:
-            print("=== Processing Group 2: Single image 2 ===")
+            print("=== Processing Group 2: Single image 2 with Claude-generated text ===")
             detail_page = process_single_image(input_data, group_number)
-            page_type = "single_image_2"
+            page_type = "single_image_2_with_claude_text"
             
         elif group_number in [3, 4, 5]:
             print(f"=== Processing Group {group_number}: Combined images ===")
@@ -1626,28 +1296,20 @@ def handler(event):
             print(f"=== Processing Group {group_number}: Text section ===")
             detail_page, section_type = process_text_section(input_data, group_number)
             page_type = f"text_section_{section_type}"
-            
-        elif group_number == 9:
-            print("=== Processing Group 9: Wearing shots with masked templates ===")
-            detail_page = process_wearing_shots_masked(input_data)
-            page_type = "wearing_shots_masked"
         
         else:
             raise ValueError(f"Unknown group number: {group_number}")
         
-        # Convert to base64
         buffered = BytesIO()
         detail_page.save(buffered, format="PNG", optimize=True)
         img_str = base64.b64encode(buffered.getvalue())
         
-        # Remove padding for Make.com compatibility
         detail_base64 = img_str.decode('utf-8')
         detail_base64_no_padding = detail_base64.rstrip('=')
         
         print(f"Detail page created: {detail_page.size}")
         print(f"Base64 length: {len(detail_base64_no_padding)} chars")
         
-        # Prepare metadata
         metadata = {
             "enhanced_image": detail_base64_no_padding,
             "status": "success",
@@ -1658,18 +1320,16 @@ def handler(event):
                 "width": detail_page.width,
                 "height": detail_page.height
             },
-            "has_text_overlay": group_number in [7, 8],
-            "has_background_removal": group_number in [6, 9],
-            "has_masked_compositing": group_number == 9,
+            "has_text_overlay": group_number in [1, 2, 7, 8],
+            "has_background_removal": group_number == 6,
+            "has_claude_generation": group_number == 2,
             "format": "base64_no_padding",
-            "version": "V123_COMPLETE"
+            "version": "V124_WITH_CLAUDE"
         }
         
-        # Send to webhook
         file_name = f"detail_group_{group_number}_{page_type}.png"
         webhook_result = send_to_webhook(detail_base64_no_padding, "detail", file_name, group_number, metadata)
         
-        # Return with proper structure for Make.com
         return {
             "output": metadata
         }
@@ -1683,11 +1343,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V123_COMPLETE"
+                "version": "V124_WITH_CLAUDE"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V123 Detail Handler - Complete with Masked Wearing Shots Started!")
+    print("V124 Detail Handler - With Claude Text Generation Started!")
     runpod.serverless.start({"handler": handler})
