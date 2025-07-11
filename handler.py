@@ -346,66 +346,220 @@ def get_image_from_input(input_data):
         print(f"Error getting image: {str(e)}")
         raise
 
-def add_text_overlay_group1(image):
-    """Add 'twinkring' text overlay for Group 1"""
+def parse_figma_style_info(input_data):
+    """Parse Figma style information from input data"""
+    style_info = {
+        'text_position': {'x': None, 'y': None},
+        'font_size': 48,
+        'text_color': (40, 40, 40),
+        'background_color': None,
+        'text_align': 'center',
+        'has_background': False,
+        'background_padding': 20,
+        'background_opacity': 0.9
+    }
+    
+    # Check for Figma style data
+    figma_style = input_data.get('figma_style', {})
+    if isinstance(figma_style, str):
+        try:
+            figma_style = json.loads(figma_style)
+        except:
+            figma_style = {}
+    
+    # Parse position
+    if 'position' in figma_style:
+        style_info['text_position']['x'] = figma_style['position'].get('x')
+        style_info['text_position']['y'] = figma_style['position'].get('y')
+    
+    # Parse text style
+    if 'fontSize' in figma_style:
+        style_info['font_size'] = int(figma_style['fontSize'])
+    
+    if 'color' in figma_style:
+        # Convert hex to RGB
+        hex_color = figma_style['color'].lstrip('#')
+        if len(hex_color) == 6:
+            style_info['text_color'] = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    
+    # Parse background
+    if 'background' in figma_style:
+        style_info['has_background'] = True
+        bg_color = figma_style['background'].lstrip('#')
+        if len(bg_color) == 6:
+            style_info['background_color'] = tuple(int(bg_color[i:i+2], 16) for i in (0, 2, 4))
+    
+    return style_info
+
+def add_figma_style_background(draw, text_bbox, style_info):
+    """Add Figma-style background to text"""
+    if not style_info['has_background']:
+        return
+    
+    x1, y1, x2, y2 = text_bbox
+    padding = style_info['background_padding']
+    
+    # Expand bbox with padding
+    bg_bbox = [
+        x1 - padding,
+        y1 - padding,
+        x2 + padding,
+        y2 + padding
+    ]
+    
+    # Draw background
+    bg_color = style_info['background_color'] or (255, 255, 255)
+    if style_info['background_opacity'] < 1.0:
+        # Create semi-transparent background
+        overlay = Image.new('RGBA', draw.im.size, (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+        opacity = int(255 * style_info['background_opacity'])
+        overlay_draw.rectangle(bg_bbox, fill=(*bg_color, opacity))
+        draw.im.paste(overlay, (0, 0), overlay)
+    else:
+        draw.rectangle(bg_bbox, fill=bg_color)
+
+def add_text_overlay_with_figma_style(image, text, figma_style_info, is_group1=True):
+    """Add text overlay using Figma style information"""
     img_copy = image.copy()
+    
+    # Convert to RGBA for transparency support
+    if img_copy.mode != 'RGBA':
+        img_copy = img_copy.convert('RGBA')
+    
     draw = ImageDraw.Draw(img_copy)
     
     korean_font_path = download_korean_font()
+    font = get_font(figma_style_info['font_size'], korean_font_path)
     
-    # Text settings
-    text = "twinkring"
-    font_size = 72
-    font = get_font(font_size, korean_font_path)
+    # Calculate text dimensions
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
     
-    # Calculate text position (centered horizontally, near top)
-    text_width, text_height = get_text_size(draw, text, font)
-    x_position = (img_copy.width - text_width) // 2
-    y_position = 100
+    # Determine position
+    if figma_style_info['text_position']['x'] is not None:
+        x_position = figma_style_info['text_position']['x']
+    else:
+        # Default center alignment
+        x_position = (img_copy.width - text_width) // 2
     
-    # Draw text with outline for visibility
-    outline_width = 3
+    if figma_style_info['text_position']['y'] is not None:
+        y_position = figma_style_info['text_position']['y']
+    else:
+        # Default position based on group
+        y_position = 100 if is_group1 else 300
+    
+    # Create text bbox
+    text_bbox = [
+        x_position,
+        y_position,
+        x_position + text_width,
+        y_position + text_height
+    ]
+    
+    # Add background if specified
+    add_figma_style_background(draw, text_bbox, figma_style_info)
+    
+    # Draw text with outline for better visibility
+    outline_width = 2
+    outline_color = (255, 255, 255)  # White outline
+    
     for adj_x in range(-outline_width, outline_width + 1):
         for adj_y in range(-outline_width, outline_width + 1):
             if adj_x != 0 or adj_y != 0:
-                safe_draw_text(draw, (x_position + adj_x, y_position + adj_y), text, font, (255, 255, 255))
+                safe_draw_text(draw, (x_position + adj_x, y_position + adj_y), text, font, outline_color)
     
-    safe_draw_text(draw, (x_position, y_position), text, font, (40, 40, 40))
+    # Draw main text
+    safe_draw_text(draw, (x_position, y_position), text, font, figma_style_info['text_color'])
+    
+    # Convert back to RGB if needed
+    if image.mode == 'RGB':
+        img_copy = img_copy.convert('RGB')
     
     return img_copy
 
-def add_text_overlay_group2(image, product_name, description):
-    """Add product name and description text overlay for Group 2"""
+def add_text_overlay_group1(image, figma_info=None):
+    """Add 'twinkring' text overlay for Group 1 with Figma style"""
+    # Default text
+    text = "twinkring"
+    
+    # Check if custom text from Figma
+    if figma_info and figma_info.get('figma_text_content'):
+        custom_text = figma_info['figma_text_content']
+        if 'text_001' in figma_info and figma_info['text_001'] == 'TRUE':
+            text = custom_text.split(',')[0].strip() if ',' in custom_text else custom_text
+    
+    # Parse Figma style
+    style_info = parse_figma_style_info(figma_info or {})
+    
+    return add_text_overlay_with_figma_style(image, text, style_info, is_group1=True)
+
+def add_text_overlay_group2(image, product_name, description, figma_info=None):
+    """Add product name and description text overlay for Group 2 with Figma style"""
     img_copy = image.copy()
+    
+    # Convert to RGBA for transparency
+    if img_copy.mode != 'RGBA':
+        img_copy = img_copy.convert('RGBA')
+    
     draw = ImageDraw.Draw(img_copy)
+    
+    # Parse Figma style
+    style_info = parse_figma_style_info(figma_info or {})
     
     korean_font_path = download_korean_font()
     
-    # Font settings
-    title_font = get_font(64, korean_font_path)
-    desc_font = get_font(36, korean_font_path)
+    # Font settings from Figma or defaults
+    title_font_size = style_info['font_size']
+    desc_font_size = int(title_font_size * 0.7)  # Description font is 70% of title
     
-    # Calculate positions
-    y_position = 100
+    title_font = get_font(title_font_size, korean_font_path)
+    desc_font = get_font(desc_font_size, korean_font_path)
     
-    # Draw product name
+    # Starting position
+    if style_info['text_position']['y'] is not None:
+        y_position = style_info['text_position']['y']
+    else:
+        y_position = 300  # Default for group 2
+    
+    # Draw product name with background
     if product_name:
-        text_width, text_height = get_text_size(draw, product_name, title_font)
-        x_position = (img_copy.width - text_width) // 2
+        # Calculate text dimensions
+        bbox = draw.textbbox((0, 0), product_name, font=title_font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
         
-        # White outline
-        outline_width = 3
+        # X position
+        if style_info['text_position']['x'] is not None:
+            x_position = style_info['text_position']['x']
+        else:
+            x_position = (img_copy.width - text_width) // 2
+        
+        # Text bbox for background
+        text_bbox = [
+            x_position,
+            y_position,
+            x_position + text_width,
+            y_position + text_height
+        ]
+        
+        # Add background
+        add_figma_style_background(draw, text_bbox, style_info)
+        
+        # Draw text with outline
+        outline_width = 2
         for adj_x in range(-outline_width, outline_width + 1):
             for adj_y in range(-outline_width, outline_width + 1):
                 if adj_x != 0 or adj_y != 0:
                     safe_draw_text(draw, (x_position + adj_x, y_position + adj_y), product_name, title_font, (255, 255, 255))
         
-        safe_draw_text(draw, (x_position, y_position), product_name, title_font, (40, 40, 40))
+        safe_draw_text(draw, (x_position, y_position), product_name, title_font, style_info['text_color'])
         y_position += text_height + 40
     
-    # Draw description (with word wrap)
+    # Draw description with word wrap
     if description:
-        # Word wrap for description
+        # Word wrap
         words = description.split()
         lines = []
         current_line = ""
@@ -413,7 +567,7 @@ def add_text_overlay_group2(image, product_name, description):
         
         for word in words:
             test_line = current_line + " " + word if current_line else word
-            test_width, _ = get_text_size(draw, test_line, desc_font)
+            test_width = draw.textbbox((0, 0), test_line, font=desc_font)[2]
             
             if test_width > max_line_width:
                 if current_line:
@@ -425,20 +579,47 @@ def add_text_overlay_group2(image, product_name, description):
         if current_line:
             lines.append(current_line)
         
+        # Create background for all lines
+        if style_info['has_background'] and lines:
+            line_height = desc_font_size + 20
+            total_height = len(lines) * line_height
+            
+            # Find max width
+            max_width = 0
+            for line in lines:
+                line_width = draw.textbbox((0, 0), line, font=desc_font)[2]
+                max_width = max(max_width, line_width)
+            
+            # Background box
+            bg_x = (img_copy.width - max_width) // 2 - style_info['background_padding']
+            bg_bbox = [
+                bg_x,
+                y_position - style_info['background_padding'],
+                bg_x + max_width + 2 * style_info['background_padding'],
+                y_position + total_height
+            ]
+            
+            add_figma_style_background(draw, bg_bbox, style_info)
+        
         # Draw each line
         for line in lines:
             if line:
-                text_width, text_height = get_text_size(draw, line, desc_font)
+                bbox = draw.textbbox((0, 0), line, font=desc_font)
+                text_width = bbox[2] - bbox[0]
                 x_position = (img_copy.width - text_width) // 2
                 
-                # White outline
-                for adj_x in range(-2, 3):
-                    for adj_y in range(-2, 3):
+                # Outline
+                for adj_x in range(-1, 2):
+                    for adj_y in range(-1, 2):
                         if adj_x != 0 or adj_y != 0:
                             safe_draw_text(draw, (x_position + adj_x, y_position + adj_y), line, desc_font, (255, 255, 255))
                 
-                safe_draw_text(draw, (x_position, y_position), line, desc_font, (80, 80, 80))
-                y_position += text_height + 20
+                safe_draw_text(draw, (x_position, y_position), line, desc_font, style_info['text_color'])
+                y_position += desc_font_size + 20
+    
+    # Convert back to RGB if needed
+    if image.mode == 'RGB':
+        img_copy = img_copy.convert('RGB')
     
     return img_copy
 
@@ -453,6 +634,16 @@ def process_single_image(input_data, group_number):
         img = get_image_from_input({'image2': input_data.get('image2', input_data.get('image'))})
     else:
         raise ValueError(f"Invalid group number for single image: {group_number}")
+    
+    # Get Figma information from input
+    figma_info = {
+        'text_001': input_data.get('text_001', 'FALSE'),
+        'text_002': input_data.get('text_002', 'FALSE'),
+        'text_003': input_data.get('text_003', 'FALSE'),
+        'figma_text_content': input_data.get('figma_text_content', ''),
+        'figma_node_id': input_data.get('figma_node_id') or input_data.get('NodeID', ''),
+        'figma_style': input_data.get('figma_style', {})
+    }
     
     # Calculate dimensions
     target_width = FIXED_WIDTH
@@ -474,12 +665,24 @@ def process_single_image(input_data, group_number):
         
         # Add text overlay based on group
         if group_number == 1:
-            # Add 'twinkring' text
-            img_with_text = add_text_overlay_group1(img_resized)
+            # Add 'twinkring' text with Figma style
+            img_with_text = add_text_overlay_group1(img_resized, figma_info)
         elif group_number == 2:
-            # Generate product name and description using Claude
-            product_name, description = generate_product_name_and_description(img)
-            img_with_text = add_text_overlay_group2(img_resized, product_name, description)
+            # Check if we should use Figma text or generate with Claude
+            if figma_info.get('text_002') == 'TRUE' and figma_info.get('figma_text_content'):
+                # Use Figma text content
+                figma_texts = figma_info['figma_text_content'].split(',')
+                if len(figma_texts) >= 2:
+                    product_name = figma_texts[0].strip()
+                    description = figma_texts[1].strip() if len(figma_texts) > 1 else ""
+                else:
+                    product_name = figma_texts[0].strip()
+                    description = ""
+            else:
+                # Generate product name and description using Claude
+                product_name, description = generate_product_name_and_description(img)
+            
+            img_with_text = add_text_overlay_group2(img_resized, product_name, description, figma_info)
         else:
             img_with_text = img_resized
         
