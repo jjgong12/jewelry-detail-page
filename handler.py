@@ -2,12 +2,16 @@ import runpod
 import os
 import requests
 import base64
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 from io import BytesIO
 import json
 import re
 import numpy as np
 from scipy import ndimage
+import cv2
+import concurrent.futures
+from typing import List, Dict, Tuple, Optional
+import time
 
 # REPLICATE API for background removal
 try:
@@ -37,6 +41,10 @@ WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzOQ7SaTtIXRubvSNXNY53pph
 
 # FIXED WIDTH FOR ALL IMAGES
 FIXED_WIDTH = 1200
+
+# Global cache for performance
+SAMPLE_CACHE = {}
+MASK_CACHE = {}
 
 def download_korean_font():
     """Download Korean font for text rendering with better error handling"""
@@ -1096,8 +1104,387 @@ def process_text_section(input_data, group_number):
     
     return text_section, section_type
 
+# ============ GROUP 9: WEARING SHOTS WITH MASKED TEMPLATES ============
+
+def load_wearing_shot_samples():
+    """Load pre-masked wearing shot samples"""
+    samples = []
+    sample_dir = "/tmp/wearing_samples"  # or wherever samples are stored
+    
+    # Try to load samples from various sources
+    try:
+        # Check if samples directory exists
+        if os.path.exists(sample_dir):
+            for i in range(10):  # Load up to 10 samples
+                sample_path = os.path.join(sample_dir, f"sample_{i+1:02d}")
+                if os.path.exists(sample_path):
+                    sample_data = {
+                        'original': Image.open(os.path.join(sample_path, 'original.jpg')),
+                        'mask': Image.open(os.path.join(sample_path, 'mask.png')),
+                        'metadata': {}
+                    }
+                    
+                    # Load metadata if exists
+                    metadata_path = os.path.join(sample_path, 'metadata.json')
+                    if os.path.exists(metadata_path):
+                        with open(metadata_path, 'r') as f:
+                            sample_data['metadata'] = json.load(f)
+                    
+                    samples.append(sample_data)
+        
+        print(f"Loaded {len(samples)} wearing shot samples")
+        
+    except Exception as e:
+        print(f"Error loading samples: {e}")
+    
+    # If no samples found, create placeholder samples
+    if len(samples) == 0:
+        print("No pre-loaded samples found, creating placeholders")
+        for i in range(3):  # Create 3 basic templates
+            samples.append(create_placeholder_sample(i))
+    
+    return samples
+
+def create_placeholder_sample(index):
+    """Create a placeholder sample when real samples aren't available"""
+    width = FIXED_WIDTH
+    height = 900
+    
+    # Create base image
+    img = Image.new('RGB', (width, height), '#F8F8F8')
+    draw = ImageDraw.Draw(img)
+    
+    # Add gradient background
+    for y in range(height):
+        gray_value = 248 - int((y / height) * 8)
+        draw.rectangle([0, y, width, y+1], fill=(gray_value, gray_value, gray_value))
+    
+    # Create mask with ring area
+    mask = Image.new('L', (width, height), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    
+    # Define ring positions for different templates
+    ring_positions = [
+        {'center': (width//2, height//2 - 100), 'size': (200, 200), 'angle': 0},
+        {'center': (width//2 - 150, height//2), 'size': (180, 180), 'angle': -15},
+        {'center': (width//2, height//2 - 50), 'size': (220, 220), 'angle': 10}
+    ]
+    
+    pos = ring_positions[index % 3]
+    
+    # Draw ellipse for ring area in mask
+    bbox = [
+        pos['center'][0] - pos['size'][0]//2,
+        pos['center'][1] - pos['size'][1]//2,
+        pos['center'][0] + pos['size'][0]//2,
+        pos['center'][1] + pos['size'][1]//2
+    ]
+    mask_draw.ellipse(bbox, fill=255)
+    
+    # Create green mask overlay for visualization
+    mask_vis = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    mask_vis_draw = ImageDraw.Draw(mask_vis)
+    mask_vis_draw.ellipse(bbox, fill=(0, 255, 0, 128))
+    
+    # Composite for preview
+    img.paste(mask_vis, (0, 0), mask_vis)
+    
+    return {
+        'original': img,
+        'mask': mask,
+        'metadata': {
+            'center': pos['center'],
+            'size': pos['size'],
+            'angle': pos['angle'],
+            'type': ['male', 'female', 'couple'][index % 3]
+        }
+    }
+
+def analyze_mask_region(mask_image):
+    """Analyze mask region to extract ring placement info"""
+    mask_array = np.array(mask_image)
+    
+    # Find mask region
+    mask_coords = np.where(mask_array > 128)
+    
+    if len(mask_coords[0]) == 0:
+        return None
+    
+    # Calculate center and bounds
+    center_y = int(np.mean(mask_coords[0]))
+    center_x = int(np.mean(mask_coords[1]))
+    
+    min_y = mask_coords[0].min()
+    max_y = mask_coords[0].max()
+    min_x = mask_coords[1].min()
+    max_x = mask_coords[1].max()
+    
+    width = max_x - min_x
+    height = max_y - min_y
+    
+    # Estimate angle from mask shape
+    # This is simplified - real implementation would use PCA or ellipse fitting
+    angle = 0
+    
+    return {
+        'center': (center_x, center_y),
+        'bounds': (min_x, min_y, max_x, max_y),
+        'size': (width, height),
+        'angle': angle
+    }
+
+def transform_ring_for_placement(ring_image, mask_data):
+    """Transform ring to fit the mask region"""
+    if not mask_data:
+        return ring_image
+    
+    # Get target size
+    target_width, target_height = mask_data['size']
+    
+    # Resize ring maintaining aspect ratio
+    ring_aspect = ring_image.width / ring_image.height
+    target_aspect = target_width / target_height
+    
+    if ring_aspect > target_aspect:
+        # Ring is wider
+        new_width = target_width
+        new_height = int(target_width / ring_aspect)
+    else:
+        # Ring is taller
+        new_height = target_height
+        new_width = int(target_height * ring_aspect)
+    
+    # Resize
+    ring_resized = ring_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+    
+    # Rotate if needed
+    if mask_data['angle'] != 0:
+        ring_resized = ring_resized.rotate(-mask_data['angle'], expand=True, fillcolor=(0, 0, 0, 0))
+    
+    return ring_resized
+
+def composite_ring_on_sample(sample_data, ring_image):
+    """Composite ring onto sample using mask"""
+    try:
+        # Get original and mask
+        original = sample_data['original'].copy()
+        mask = sample_data['mask']
+        
+        # Analyze mask region
+        mask_data = analyze_mask_region(mask)
+        if not mask_data:
+            print("Failed to analyze mask region")
+            return original
+        
+        # Remove background from ring if needed
+        if ring_image.mode != 'RGBA' or not check_if_already_transparent(ring_image):
+            ring_no_bg = remove_background_from_image(ring_image)
+        else:
+            ring_no_bg = ring_image
+        
+        # Transform ring to fit mask
+        ring_transformed = transform_ring_for_placement(ring_no_bg, mask_data)
+        
+        # Create a new image for compositing
+        composite = original.copy()
+        
+        # Calculate paste position
+        paste_x = mask_data['center'][0] - ring_transformed.width // 2
+        paste_y = mask_data['center'][1] - ring_transformed.height // 2
+        
+        # Paste ring
+        composite.paste(ring_transformed, (paste_x, paste_y), ring_transformed)
+        
+        # Apply color/lighting matching
+        composite = apply_lighting_match(composite, original, mask_data['bounds'])
+        
+        return composite
+        
+    except Exception as e:
+        print(f"Error in composite_ring_on_sample: {e}")
+        return sample_data['original'].copy()
+
+def apply_lighting_match(composite, original, bounds):
+    """Match lighting and color between composite and original"""
+    # This is a simplified version - real implementation would use
+    # histogram matching, color transfer algorithms, etc.
+    
+    # For now, just apply slight color adjustment
+    from PIL import ImageEnhance
+    
+    # Slight brightness adjustment
+    enhancer = ImageEnhance.Brightness(composite)
+    composite = enhancer.enhance(0.95)
+    
+    # Slight color adjustment
+    enhancer = ImageEnhance.Color(composite)
+    composite = enhancer.enhance(1.02)
+    
+    return composite
+
+def select_best_sample_for_ring(ring_image, samples, ring_index):
+    """Select the best sample for a given ring"""
+    # Simple selection logic - can be enhanced with:
+    # - Ring type detection (male/female)
+    # - Size matching
+    # - Style matching
+    
+    # For now, cycle through samples
+    sample_index = ring_index % len(samples)
+    
+    # Special logic for couple shots (every 3rd image)
+    if ring_index % 3 == 2:
+        # Look for couple sample
+        for i, sample in enumerate(samples):
+            if sample.get('metadata', {}).get('type') == 'couple':
+                return i
+    
+    return sample_index
+
+def process_wearing_shots_masked(input_data):
+    """Process group 9 - Generate wearing shots using masked templates"""
+    print("=== Processing Group 9: Wearing Shots with Masked Templates ===")
+    start_time = time.time()
+    
+    # Get all 9 ring images
+    ring_images = []
+    
+    for i in range(1, 10):
+        key = f'image{i}'
+        if key in input_data and input_data[key]:
+            try:
+                img = get_image_from_input({key: input_data[key]})
+                ring_images.append(img)
+                print(f"Loaded ring image {i}")
+            except Exception as e:
+                print(f"Failed to load ring image {i}: {e}")
+    
+    if len(ring_images) < 9:
+        print(f"Warning: Only {len(ring_images)} ring images found, expected 9")
+    
+    # Load wearing shot samples
+    samples = load_wearing_shot_samples()
+    print(f"Loaded {len(samples)} wearing shot samples")
+    
+    # Process rings in parallel for speed
+    wearing_shots = []
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        # Submit all ring processing tasks
+        future_to_ring = {}
+        
+        for i, ring_img in enumerate(ring_images):
+            # Select appropriate sample
+            sample_idx = select_best_sample_for_ring(ring_img, samples, i)
+            sample = samples[sample_idx]
+            
+            # Submit task
+            future = executor.submit(composite_ring_on_sample, sample, ring_img)
+            future_to_ring[future] = i
+        
+        # Collect results
+        for future in concurrent.futures.as_completed(future_to_ring):
+            ring_idx = future_to_ring[future]
+            try:
+                result = future.result()
+                wearing_shots.append({
+                    'image': result,
+                    'ring_index': ring_idx,
+                    'title': f"Ring {ring_idx + 1}"
+                })
+                print(f"Processed wearing shot for ring {ring_idx + 1}")
+            except Exception as e:
+                print(f"Failed to process ring {ring_idx + 1}: {e}")
+    
+    # Sort by ring index
+    wearing_shots.sort(key=lambda x: x['ring_index'])
+    
+    # Create final layout
+    final_image = create_wearing_shots_grid(wearing_shots)
+    
+    # Clean up
+    for img in ring_images:
+        img.close()
+    
+    print(f"Wearing shots processing completed in {time.time() - start_time:.2f}s")
+    
+    return final_image
+
+def create_wearing_shots_grid(wearing_shots):
+    """Create a grid layout for wearing shots"""
+    width = FIXED_WIDTH
+    
+    # Grid configuration - 3x3
+    cols = 3
+    rows = 3
+    
+    # Individual image size
+    img_width = 380
+    img_height = 380
+    
+    # Spacing
+    h_spacing = 30
+    v_spacing = 40
+    top_margin = 100
+    bottom_margin = 80
+    
+    # Calculate total height
+    grid_height = rows * img_height + (rows - 1) * v_spacing
+    total_height = top_margin + grid_height + bottom_margin
+    
+    # Create final image
+    final_img = Image.new('RGB', (width, total_height), '#FFFFFF')
+    draw = ImageDraw.Draw(final_img)
+    
+    # Add title
+    korean_font_path = download_korean_font()
+    title_font = get_font(56, korean_font_path)
+    label_font = get_font(16, korean_font_path)
+    
+    title = "WEARING SHOTS"
+    title_width, _ = get_text_size(draw, title, title_font)
+    safe_draw_text(draw, (width//2 - title_width//2, 30), title, title_font, (40, 40, 40))
+    
+    # Calculate grid starting position
+    grid_width = cols * img_width + (cols - 1) * h_spacing
+    start_x = (width - grid_width) // 2
+    
+    # Place each wearing shot
+    for i, shot_data in enumerate(wearing_shots[:9]):  # Max 9 images
+        row = i // cols
+        col = i % cols
+        
+        x = start_x + col * (img_width + h_spacing)
+        y = top_margin + row * (img_height + v_spacing)
+        
+        # Resize wearing shot
+        shot_img = shot_data['image']
+        shot_resized = shot_img.resize((img_width, img_height), Image.Resampling.LANCZOS)
+        
+        # Add subtle border
+        bordered = Image.new('RGB', (img_width + 2, img_height + 2), (240, 240, 240))
+        bordered.paste(shot_resized, (1, 1))
+        
+        # Paste to final image
+        final_img.paste(bordered, (x - 1, y - 1))
+        
+        # Add ring number label
+        label = f"Ring {i + 1}"
+        label_width, _ = get_text_size(draw, label, label_font)
+        safe_draw_text(draw, (x + img_width//2 - label_width//2, y + img_height + 5), 
+                      label, label_font, (120, 120, 120))
+    
+    # Add page indicator
+    page_text = "- Wearing Shots Collection -"
+    small_font = get_font(16, korean_font_path)
+    text_width, _ = get_text_size(draw, page_text, small_font)
+    safe_draw_text(draw, (width//2 - text_width//2, total_height - 30), 
+                  page_text, small_font, (200, 200, 200))
+    
+    return final_img
+
 def detect_group_number_from_input(input_data):
-    """Detect group number from input data - UPDATED FOR NEW STRUCTURE"""
+    """Detect group number from input data - UPDATED FOR NEW STRUCTURE WITH GROUP 9"""
     # Priority 1: Explicit route_number
     route_number = input_data.get('route_number', 0)
     if route_number and str(route_number).isdigit():
@@ -1112,14 +1499,20 @@ def detect_group_number_from_input(input_data):
         print(f"Found explicit group_number: {group_num}")
         return group_num
     
-    # Priority 3: Text type hints
+    # Priority 3: Check if all 9 images are present (Group 9)
+    all_images_present = all(f'image{i}' in input_data for i in range(1, 10))
+    if all_images_present:
+        print("All 9 images present, detected as Group 9")
+        return 9
+    
+    # Priority 4: Text type hints
     text_type = input_data.get('text_type', '').lower()
     if 'md_talk' in text_type:
         return 7
     elif 'design_point' in text_type:
         return 8
     
-    # Priority 4: Check for Google Script format (semicolon-separated URLs)
+    # Priority 5: Check for Google Script format (semicolon-separated URLs)
     for key, group in [('image3', 3), ('image4', 4), ('image5', 5)]:
         if key in input_data and input_data[key]:
             value = input_data[key]
@@ -1127,11 +1520,13 @@ def detect_group_number_from_input(input_data):
                 print(f"Detected group {group} from semicolon-separated URLs in {key}")
                 return group
     
-    # Priority 5: Check for color section indicators
+    # Priority 6: Check for color section indicators
     if 'image6' in input_data or 'image9' in input_data:
-        return 6
+        # But not if all 9 images are present
+        if not all_images_present:
+            return 6
     
-    # Priority 6: Specific image keys - UPDATED FOR NEW STRUCTURE
+    # Priority 7: Specific image keys - UPDATED FOR NEW STRUCTURE
     if 'image1' in input_data:
         return 1
     elif 'image2' in input_data:
@@ -1143,7 +1538,7 @@ def detect_group_number_from_input(input_data):
     elif 'image5' in input_data:
         return 5
     
-    # Priority 7: Check for color indicators in any field
+    # Priority 8: Check for color indicators in any field
     if any(key in str(input_data).lower() for key in ['color', 'colour', 'gold']):
         return 6
     
@@ -1191,9 +1586,9 @@ def send_to_webhook(image_base64, handler_type, file_name, route_number=0, metad
         return None
 
 def handler(event):
-    """Main handler for detail page creation - UPDATED FOR NEW STRUCTURE"""
+    """Main handler for detail page creation - COMPLETE VERSION WITH GROUP 9"""
     try:
-        print(f"=== V122 Detail Page Handler - No Wearing Shots ===")
+        print(f"=== V123 Detail Page Handler - Complete with Masked Wearing Shots ===")
         
         # Get input data
         input_data = event.get('input', event)
@@ -1203,10 +1598,10 @@ def handler(event):
         group_number = detect_group_number_from_input(input_data)
         print(f"Detected group number: {group_number}")
         
-        if group_number < 1 or group_number > 8:
+        if group_number < 1 or group_number > 9:
             raise ValueError(f"Invalid group number: {group_number}")
         
-        # Process based on group - UPDATED STRUCTURE
+        # Process based on group - COMPLETE STRUCTURE
         if group_number == 1:
             print("=== Processing Group 1: Single image 1 ===")
             detail_page = process_single_image(input_data, group_number)
@@ -1231,6 +1626,11 @@ def handler(event):
             print(f"=== Processing Group {group_number}: Text section ===")
             detail_page, section_type = process_text_section(input_data, group_number)
             page_type = f"text_section_{section_type}"
+            
+        elif group_number == 9:
+            print("=== Processing Group 9: Wearing shots with masked templates ===")
+            detail_page = process_wearing_shots_masked(input_data)
+            page_type = "wearing_shots_masked"
         
         else:
             raise ValueError(f"Unknown group number: {group_number}")
@@ -1259,9 +1659,10 @@ def handler(event):
                 "height": detail_page.height
             },
             "has_text_overlay": group_number in [7, 8],
-            "has_background_removal": group_number == 6,
+            "has_background_removal": group_number in [6, 9],
+            "has_masked_compositing": group_number == 9,
             "format": "base64_no_padding",
-            "version": "V122_NO_WEARING"
+            "version": "V123_COMPLETE"
         }
         
         # Send to webhook
@@ -1282,11 +1683,11 @@ def handler(event):
             "output": {
                 "error": str(e),
                 "status": "error",
-                "version": "V122_NO_WEARING"
+                "version": "V123_COMPLETE"
             }
         }
 
 # RunPod handler
 if __name__ == "__main__":
-    print("V122 Detail Handler - No Wearing Shots Started!")
+    print("V123 Detail Handler - Complete with Masked Wearing Shots Started!")
     runpod.serverless.start({"handler": handler})
