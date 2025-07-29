@@ -14,12 +14,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V3
-# VERSION: Cubic-Sparkle-V3-NoCV2
-# OpenCV 제거, SwinIR 유지
+# CUBIC DETAIL ENHANCEMENT HANDLER V3.1
+# VERSION: Cubic-Sparkle-V3.1-Fixed
+# Input handling fixed for RunPod
 ################################
 
-VERSION = "Cubic-Sparkle-V3-NoCV2"
+VERSION = "Cubic-Sparkle-V3.1-Fixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -65,26 +65,53 @@ def image_to_base64(image):
     return base64_str
 
 def find_input_data(data):
-    """Extract input image data from various formats"""
+    """Extract input image data from various formats - FIXED for RunPod"""
+    logger.info(f"🔍 Looking for input data in: {type(data)}")
+    
+    # Direct string input
     if isinstance(data, str) and len(data) > 50:
+        logger.info("✅ Found direct string input")
         return data
     
     if isinstance(data, dict):
-        priority_keys = ['image', 'enhanced_image', 'thumbnail', 'image_base64', 'base64', 'img']
+        # Log the keys for debugging
+        logger.info(f"📋 Available keys: {list(data.keys())}")
         
+        # RunPod standard input structure
+        if 'input' in data:
+            input_data = data['input']
+            logger.info(f"🔍 Found 'input' key, type: {type(input_data)}")
+            
+            if isinstance(input_data, str) and len(input_data) > 50:
+                logger.info("✅ Found string in input")
+                return input_data
+            elif isinstance(input_data, dict):
+                logger.info(f"📋 Input dict keys: {list(input_data.keys())}")
+                # Look for image data in input dict
+                for key in ['image', 'enhanced_image', 'thumbnail', 'image_base64', 'base64', 'img', 'data']:
+                    if key in input_data:
+                        value = input_data[key]
+                        if isinstance(value, str) and len(value) > 50:
+                            logger.info(f"✅ Found image data in input['{key}']")
+                            return value
+        
+        # Direct keys in event
+        priority_keys = ['image', 'enhanced_image', 'thumbnail', 'image_base64', 'base64', 'img', 'data']
         for key in priority_keys:
-            if key in data and isinstance(data[key], str) and len(data[key]) > 50:
-                return data[key]
-        
-        for key in ['input', 'data', 'output']:
             if key in data:
-                if isinstance(data[key], str) and len(data[key]) > 50:
-                    return data[key]
-                elif isinstance(data[key], dict):
-                    result = find_input_data(data[key])
-                    if result:
-                        return result
+                value = data[key]
+                if isinstance(value, str) and len(value) > 50:
+                    logger.info(f"✅ Found image data in event['{key}']")
+                    return value
+        
+        # Nested structures
+        for key in ['output', 'data']:
+            if key in data and isinstance(data[key], dict):
+                result = find_input_data(data[key])
+                if result:
+                    return result
     
+    logger.error("❌ No valid input image data found")
     return None
 
 def detect_pattern_type(filename: str) -> str:
@@ -434,9 +461,9 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     
     # 5. Create sparkle points
     # Find brightest points in each cubic region
-    from scipy.ndimage import label, center_of_mass
-    
     try:
+        from scipy.ndimage import label, center_of_mass
+        
         labeled_cubics, num_features = label(cubic_mask)
         
         for i in range(1, min(num_features + 1, 200)):  # Limit to 200 regions
@@ -481,33 +508,75 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler - OpenCV removed, SwinIR focused"""
+    """RunPod handler - FIXED input handling"""
     try:
-        logger.info(f"=== Cubic Detail Enhancement V3 {VERSION} Started ===")
+        logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for cubic detail enhancement")
+        logger.info(f"📥 Event type: {type(event)}")
         
-        # 입력 데이터 추출
-        image_data_str = find_input_data(event)
+        # Log the full event structure for debugging
+        if isinstance(event, dict):
+            logger.info(f"📋 Event keys: {list(event.keys())}")
+            if 'input' in event:
+                logger.info(f"📋 Input type: {type(event['input'])}")
+                if isinstance(event['input'], dict):
+                    logger.info(f"📋 Input keys: {list(event['input'].keys())}")
         
-        if not image_data_str and isinstance(event, dict):
-            if 'thumbnail' in event:
-                image_data_str = event['thumbnail']
-            elif 'output' in event and isinstance(event['output'], dict):
-                if 'thumbnail' in event['output']:
-                    image_data_str = event['output']['thumbnail']
+        # 입력 데이터 추출 - RunPod 표준 구조 처리
+        image_data_str = None
+        
+        # 1. RunPod standard structure: {"input": {...}}
+        if isinstance(event, dict) and 'input' in event:
+            input_data = event['input']
+            
+            # If input is directly the base64 string
+            if isinstance(input_data, str) and len(input_data) > 50:
+                image_data_str = input_data
+                logger.info("✅ Found image data as direct input string")
+            
+            # If input is a dict containing the image
+            elif isinstance(input_data, dict):
+                # Try standard keys
+                for key in ['image', 'enhanced_image', 'thumbnail', 'image_base64', 'base64', 'img', 'data']:
+                    if key in input_data and isinstance(input_data[key], str) and len(input_data[key]) > 50:
+                        image_data_str = input_data[key]
+                        logger.info(f"✅ Found image data in input['{key}']")
+                        break
+        
+        # 2. If not found, try find_input_data as fallback
+        if not image_data_str:
+            image_data_str = find_input_data(event)
         
         if not image_data_str:
-            raise ValueError("No input image data found")
+            # Provide detailed error message
+            error_msg = "No input image data found. "
+            if isinstance(event, dict):
+                error_msg += f"Available keys: {list(event.keys())}. "
+                if 'input' in event:
+                    error_msg += f"Input type: {type(event['input'])}. "
+                    if isinstance(event['input'], dict):
+                        error_msg += f"Input keys: {list(event['input'].keys())}"
+            
+            raise ValueError(error_msg)
         
-        # 파라미터 추출
-        filename = event.get('filename', '')
-        intensity = float(event.get('intensity', 1.0))
+        # 파라미터 추출 - RunPod 구조 고려
+        params = {}
+        if isinstance(event, dict):
+            # From input
+            if 'input' in event and isinstance(event['input'], dict):
+                params = event['input']
+            # From direct event
+            else:
+                params = event
+        
+        filename = params.get('filename', '')
+        intensity = float(params.get('intensity', 1.0))
         intensity = max(0.1, min(2.0, intensity))
-        apply_swinir = event.get('apply_swinir', True)
-        apply_pattern = event.get('pattern_enhancement', True)
+        apply_swinir = params.get('apply_swinir', True)
+        apply_pattern = params.get('pattern_enhancement', True)
         
-        logger.info(f"Parameters: intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
+        logger.info(f"Parameters: filename={filename}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
         
         # 이미지 디코딩
         image_bytes = decode_base64_fast(image_data_str)
@@ -563,6 +632,7 @@ def handler(event):
         cubic_pixel_count = np.sum(cubic_mask)
         cubic_percentage = (cubic_pixel_count / (image.size[0] * image.size[1])) * 100
         
+        # RunPod expects {"output": {...}} structure
         return {
             "output": {
                 "enhanced_image": output_base64,
@@ -598,13 +668,15 @@ def handler(event):
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Traceback:\n{tb}")
         
         return {
             "output": {
                 "error": str(e),
                 "status": "failed",
                 "version": VERSION,
-                "traceback": traceback.format_exc()
+                "traceback": tb
             }
         }
 
