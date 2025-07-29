@@ -65,53 +65,46 @@ def image_to_base64(image):
     return base64_str
 
 def find_input_data(data):
-    """Extract input image data from various formats - FIXED for RunPod"""
-    logger.info(f"🔍 Looking for input data in: {type(data)}")
-    
-    # Direct string input
+    """Extract input image data from various formats - optimized for cubic detail"""
+    # Handle string input
     if isinstance(data, str) and len(data) > 50:
-        logger.info("✅ Found direct string input")
         return data
     
+    # Handle dictionary input
     if isinstance(data, dict):
-        # Log the keys for debugging
-        logger.info(f"📋 Available keys: {list(data.keys())}")
+        # Priority order for cubic detail enhancement
+        # Since this processes results from enhancement/thumbnail handlers
+        priority_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img']
         
-        # RunPod standard input structure
-        if 'input' in data:
-            input_data = data['input']
-            logger.info(f"🔍 Found 'input' key, type: {type(input_data)}")
-            
-            if isinstance(input_data, str) and len(input_data) > 50:
-                logger.info("✅ Found string in input")
-                return input_data
-            elif isinstance(input_data, dict):
-                logger.info(f"📋 Input dict keys: {list(input_data.keys())}")
-                # Look for image data in input dict
-                for key in ['image', 'enhanced_image', 'thumbnail', 'image_base64', 'base64', 'img', 'data']:
-                    if key in input_data:
-                        value = input_data[key]
-                        if isinstance(value, str) and len(value) > 50:
-                            logger.info(f"✅ Found image data in input['{key}']")
-                            return value
-        
-        # Direct keys in event
-        priority_keys = ['image', 'enhanced_image', 'thumbnail', 'image_base64', 'base64', 'img', 'data']
+        # Check priority keys first
         for key in priority_keys:
-            if key in data:
-                value = data[key]
-                if isinstance(value, str) and len(value) > 50:
-                    logger.info(f"✅ Found image data in event['{key}']")
-                    return value
+            if key in data and isinstance(data[key], str) and len(data[key]) > 50:
+                logger.info(f"✅ Found image data in '{key}'")
+                return data[key]
         
-        # Nested structures
+        # Check nested structures (like output from other handlers)
         for key in ['output', 'data']:
             if key in data and isinstance(data[key], dict):
-                result = find_input_data(data[key])
+                # Check for enhanced_image or thumbnail in output
+                for img_key in priority_keys:
+                    if img_key in data[key] and isinstance(data[key][img_key], str) and len(data[key][img_key]) > 50:
+                        logger.info(f"✅ Found image data in {key}['{img_key}']")
+                        return data[key][img_key]
+        
+        # Check input structure
+        if 'input' in data:
+            if isinstance(data['input'], str) and len(data['input']) > 50:
+                return data['input']
+            elif isinstance(data['input'], dict):
+                result = find_input_data(data['input'])
                 if result:
                     return result
+        
+        # Check numbered keys as fallback
+        for i in range(10):
+            if str(i) in data and isinstance(data[str(i)], str) and len(data[str(i)]) > 50:
+                return data[str(i)]
     
-    logger.error("❌ No valid input image data found")
     return None
 
 def detect_pattern_type(filename: str) -> str:
@@ -508,73 +501,39 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler - FIXED input handling"""
+    """RunPod handler function"""
+    logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
+    logger.info(f"Handler received event type: {type(event)}")
+    
+    # Handle different event structures
+    if isinstance(event, dict):
+        if 'input' in event:
+            job = event['input']
+        else:
+            job = event
+    else:
+        job = event
+    
+    return process_cubic_enhancement(job)
+
+def process_cubic_enhancement(job):
+    """Process cubic detail enhancement"""
     try:
-        logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for cubic detail enhancement")
-        logger.info(f"📥 Event type: {type(event)}")
         
-        # Log the full event structure for debugging
-        if isinstance(event, dict):
-            logger.info(f"📋 Event keys: {list(event.keys())}")
-            if 'input' in event:
-                logger.info(f"📋 Input type: {type(event['input'])}")
-                if isinstance(event['input'], dict):
-                    logger.info(f"📋 Input keys: {list(event['input'].keys())}")
-        
-        # 입력 데이터 추출 - RunPod 표준 구조 처리
-        image_data_str = None
-        
-        # 1. RunPod standard structure: {"input": {...}}
-        if isinstance(event, dict) and 'input' in event:
-            input_data = event['input']
-            
-            # If input is directly the base64 string
-            if isinstance(input_data, str) and len(input_data) > 50:
-                image_data_str = input_data
-                logger.info("✅ Found image data as direct input string")
-            
-            # If input is a dict containing the image
-            elif isinstance(input_data, dict):
-                # Try standard keys
-                for key in ['image', 'enhanced_image', 'thumbnail', 'image_base64', 'base64', 'img', 'data']:
-                    if key in input_data and isinstance(input_data[key], str) and len(input_data[key]) > 50:
-                        image_data_str = input_data[key]
-                        logger.info(f"✅ Found image data in input['{key}']")
-                        break
-        
-        # 2. If not found, try find_input_data as fallback
-        if not image_data_str:
-            image_data_str = find_input_data(event)
+        # 입력 데이터 추출
+        image_data_str = find_input_data(job)
         
         if not image_data_str:
-            # Provide detailed error message
-            error_msg = "No input image data found. "
-            if isinstance(event, dict):
-                error_msg += f"Available keys: {list(event.keys())}. "
-                if 'input' in event:
-                    error_msg += f"Input type: {type(event['input'])}. "
-                    if isinstance(event['input'], dict):
-                        error_msg += f"Input keys: {list(event['input'].keys())}"
-            
-            raise ValueError(error_msg)
+            raise ValueError("No input image data found")
         
-        # 파라미터 추출 - RunPod 구조 고려
-        params = {}
-        if isinstance(event, dict):
-            # From input
-            if 'input' in event and isinstance(event['input'], dict):
-                params = event['input']
-            # From direct event
-            else:
-                params = event
-        
-        filename = params.get('filename', '')
-        intensity = float(params.get('intensity', 1.0))
+        # 파라미터 추출
+        filename = job.get('filename', '')
+        intensity = float(job.get('intensity', 1.0))
         intensity = max(0.1, min(2.0, intensity))
-        apply_swinir = params.get('apply_swinir', True)
-        apply_pattern = params.get('pattern_enhancement', True)
+        apply_swinir = job.get('apply_swinir', True)
+        apply_pattern = job.get('pattern_enhancement', True)
         
         logger.info(f"Parameters: filename={filename}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
         
@@ -668,15 +627,13 @@ def handler(event):
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         import traceback
-        tb = traceback.format_exc()
-        logger.error(f"Traceback:\n{tb}")
         
         return {
             "output": {
                 "error": str(e),
                 "status": "failed",
                 "version": VERSION,
-                "traceback": tb
+                "traceback": traceback.format_exc()
             }
         }
 
