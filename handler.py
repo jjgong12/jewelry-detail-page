@@ -8,18 +8,16 @@ import logging
 import string
 import requests
 
-# cv2 제거됨!
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V3.1
-# VERSION: Cubic-Sparkle-V3.1-Fixed
-# Input handling fixed for RunPod
+# CUBIC DETAIL ENHANCEMENT HANDLER V3.2
+# VERSION: Cubic-Sparkle-V3.2-InputFixed
+# Fixed input handling for RunPod integration
 ################################
 
-VERSION = "Cubic-Sparkle-V3.1-Fixed"
+VERSION = "Cubic-Sparkle-V3.2-InputFixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -65,46 +63,59 @@ def image_to_base64(image):
     return base64_str
 
 def find_input_data(data):
-    """Extract input image data from various formats - optimized for cubic detail"""
-    # Handle string input
+    """Extract input image data from various formats - fixed for RunPod"""
+    logger.info(f"🔍 Finding input data in type: {type(data)}")
+    
+    # Handle string input directly
     if isinstance(data, str) and len(data) > 50:
+        logger.info("✅ Found direct string input")
         return data
     
     # Handle dictionary input
     if isinstance(data, dict):
+        # Log the structure for debugging
+        logger.info(f"📊 Input structure keys: {list(data.keys())}")
+        
         # Priority order for cubic detail enhancement
-        # Since this processes results from enhancement/thumbnail handlers
         priority_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img']
         
-        # Check priority keys first
+        # Check direct keys first
         for key in priority_keys:
             if key in data and isinstance(data[key], str) and len(data[key]) > 50:
                 logger.info(f"✅ Found image data in '{key}'")
                 return data[key]
         
-        # Check nested structures (like output from other handlers)
-        for key in ['output', 'data']:
-            if key in data and isinstance(data[key], dict):
-                # Check for enhanced_image or thumbnail in output
+        # Check nested structures (output from other handlers)
+        for nested_key in ['output', 'data', 'result']:
+            if nested_key in data and isinstance(data[nested_key], dict):
+                logger.info(f"🔍 Checking nested '{nested_key}'")
                 for img_key in priority_keys:
-                    if img_key in data[key] and isinstance(data[key][img_key], str) and len(data[key][img_key]) > 50:
-                        logger.info(f"✅ Found image data in {key}['{img_key}']")
-                        return data[key][img_key]
+                    if img_key in data[nested_key] and isinstance(data[nested_key][img_key], str) and len(data[nested_key][img_key]) > 50:
+                        logger.info(f"✅ Found image data in {nested_key}['{img_key}']")
+                        return data[nested_key][img_key]
         
-        # Check input structure
-        if 'input' in data:
-            if isinstance(data['input'], str) and len(data['input']) > 50:
-                return data['input']
-            elif isinstance(data['input'], dict):
-                result = find_input_data(data['input'])
-                if result:
-                    return result
-        
-        # Check numbered keys as fallback
+        # Check numbered keys (from Make.com)
         for i in range(10):
-            if str(i) in data and isinstance(data[str(i)], str) and len(data[str(i)]) > 50:
-                return data[str(i)]
+            key = str(i)
+            if key in data:
+                logger.info(f"🔍 Checking numbered key '{key}'")
+                if isinstance(data[key], str) and len(data[key]) > 50:
+                    logger.info(f"✅ Found image data in numbered key '{key}'")
+                    return data[key]
+                elif isinstance(data[key], dict):
+                    result = find_input_data(data[key])
+                    if result:
+                        return result
+        
+        # Recursively check all values if nothing found yet
+        for key, value in data.items():
+            if isinstance(value, dict):
+                result = find_input_data(value)
+                if result:
+                    logger.info(f"✅ Found image data recursively in '{key}'")
+                    return result
     
+    logger.error("❌ No valid image data found")
     return None
 
 def detect_pattern_type(filename: str) -> str:
@@ -229,11 +240,10 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     return enhanced_image
 
 def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
-    """Apply SwinIR enhancement - 지연 로딩"""
+    """Apply SwinIR enhancement"""
     try:
         logger.info("🎨 Applying SwinIR enhancement for cubic detail")
         
-        # 지연 로딩
         import replicate
         
         api_token = os.environ.get('REPLICATE_API_TOKEN')
@@ -294,22 +304,18 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
     r, g, b, a = image.split()
     alpha_array = np.array(a, dtype=np.uint8)
     
-    # Convert to HSV for better detection
     hsv = image.convert('HSV')
     h, s, v = hsv.split()
     s_array = np.array(s)
     v_array = np.array(v)
     
-    # Ring holes are very bright and low saturation
     holes_mask = (v_array > 248) & (s_array < 20) & (alpha_array > 200)
     
-    # Simple morphology using PIL
     holes_image = Image.fromarray((holes_mask * 255).astype(np.uint8))
-    holes_image = holes_image.filter(ImageFilter.MinFilter(3))  # erode
-    holes_image = holes_image.filter(ImageFilter.MaxFilter(3))  # dilate
+    holes_image = holes_image.filter(ImageFilter.MinFilter(3))
+    holes_image = holes_image.filter(ImageFilter.MaxFilter(3))
     holes_mask = np.array(holes_image) > 128
     
-    # Apply holes
     alpha_array[holes_mask] = 0
     
     a_new = Image.fromarray(alpha_array)
@@ -326,18 +332,15 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     rgb_array = np.array(image.convert('RGB'), dtype=np.uint8)
     alpha_array = np.array(image.split()[3], dtype=np.uint8)
     
-    # Convert to HSV
     hsv = image.convert('HSV')
     h, s, v = hsv.split()
     h_array = np.array(h)
     s_array = np.array(s)
     v_array = np.array(v)
     
-    # Edge detection using PIL
     edges = image.filter(ImageFilter.FIND_EDGES)
     edges_array = np.array(edges.convert('L'))
     
-    # Enhanced cubic detection
     white_cubic = (
         (v_array > 240 * sensitivity) & 
         (s_array < 30) & 
@@ -350,7 +353,6 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
         (alpha_array > 200)
     )
     
-    # Edge-based cubic detection
     edge_cubic = (edges_array > 100) & (v_array > 220) & (alpha_array > 200)
     
     highlights = (
@@ -361,7 +363,6 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     
     cubic_mask = white_cubic | color_cubic | edge_cubic | highlights
     
-    # Clean up using PIL filters
     cubic_image = Image.fromarray((cubic_mask * 255).astype(np.uint8))
     cubic_image = cubic_image.filter(ImageFilter.MinFilter(3))
     cubic_image = cubic_image.filter(ImageFilter.MaxFilter(3))
@@ -388,14 +389,9 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         logger.info("No cubic regions detected, returning original")
         return image
     
-    # Pre-enhancement for SwinIR
-    # Boost cubic areas before SwinIR processing
-    
-    # 1. Edge enhancement using PIL
     edges = image.filter(ImageFilter.EDGE_ENHANCE_MORE)
     edges_array = np.array(edges.convert('RGB'), dtype=np.float32)
     
-    # Apply edge enhancement selectively
     for c in range(3):
         rgb_array[:,:,c] = np.where(
             cubic_mask,
@@ -403,7 +399,6 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
             rgb_array[:,:,c]
         )
     
-    # 2. Contrast boost for cubics
     if np.any(cubic_mask):
         mean_val = np.mean(rgb_array[cubic_mask])
         contrast_factor = 1.2 * intensity
@@ -415,14 +410,11 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
                 rgb_array[:,:,c]
             )
     
-    # 3. Highlight enhancement
     if np.any(highlights):
         boost_factor = 1.15 * intensity
         rgb_array[highlights] = np.minimum(rgb_array[highlights] * boost_factor, 255)
     
-    # 4. Color cubic saturation boost
     if np.any(color_cubic):
-        # Convert to HSV for saturation adjustment
         rgb_temp = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
         hsv_temp = rgb_temp.convert('HSV')
         h_temp, s_temp, v_temp = hsv_temp.split()
@@ -430,21 +422,18 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         s_array = np.array(s_temp, dtype=np.float32)
         v_array = np.array(v_temp, dtype=np.float32)
         
-        # Boost saturation
         s_array = np.where(
             color_cubic,
             np.minimum(s_array * (1.4 * intensity), 255),
             s_array
         )
         
-        # Boost value slightly
         v_array = np.where(
             color_cubic,
             np.minimum(v_array * 1.05, 255),
             v_array
         )
         
-        # Convert back
         hsv_enhanced = Image.merge('HSV', (
             h_temp,
             Image.fromarray(s_array.astype(np.uint8)),
@@ -452,25 +441,21 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         ))
         rgb_array = np.array(hsv_enhanced.convert('RGB'), dtype=np.float32)
     
-    # 5. Create sparkle points
-    # Find brightest points in each cubic region
     try:
         from scipy.ndimage import label, center_of_mass
         
         labeled_cubics, num_features = label(cubic_mask)
         
-        for i in range(1, min(num_features + 1, 200)):  # Limit to 200 regions
+        for i in range(1, min(num_features + 1, 200)):
             region_mask = labeled_cubics == i
             if np.sum(region_mask) < 5:
                 continue
             
-            # Find brightest point in region
             region_brightness = np.mean(rgb_array, axis=2) * region_mask
             if np.any(region_brightness > 0):
                 max_pos = np.unravel_index(np.argmax(region_brightness), region_brightness.shape)
                 y, x = max_pos
                 
-                # Add sparkle
                 sparkle_radius = 3
                 for dy in range(-sparkle_radius, sparkle_radius + 1):
                     for dx in range(-sparkle_radius, sparkle_radius + 1):
@@ -484,15 +469,12 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
                                     255
                                 )
     except:
-        # scipy not available, skip advanced sparkle
         pass
     
-    # Convert back to image
     rgb_enhanced = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
     r2, g2, b2 = rgb_enhanced.split()
     result = Image.merge('RGBA', (r2, g2, b2, a))
     
-    # Final sharpening
     sharpness = ImageEnhance.Sharpness(result)
     result = sharpness.enhance(1.0 + (0.3 * intensity))
     
@@ -501,43 +483,88 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function"""
+    """RunPod handler function - Fixed for proper input handling"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
-    logger.info(f"Handler received event type: {type(event)}")
+    logger.info(f"📥 Raw event type: {type(event)}")
+    logger.info(f"📥 Raw event keys: {list(event.keys()) if isinstance(event, dict) else 'Not a dict'}")
     
-    # Handle different event structures
+    # Extract the actual job data
+    job_input = None
+    
     if isinstance(event, dict):
+        # Check various possible input structures
         if 'input' in event:
-            job = event['input']
+            job_input = event['input']
+            logger.info("✅ Found job data in event['input']")
+        elif 'job' in event:
+            job_input = event['job']
+            logger.info("✅ Found job data in event['job']")
+        elif 'data' in event:
+            job_input = event['data']
+            logger.info("✅ Found job data in event['data']")
         else:
-            job = event
+            # Direct event might be the job
+            job_input = event
+            logger.info("✅ Using event directly as job data")
     else:
-        job = event
+        logger.error(f"❌ Event is not a dictionary: {type(event)}")
+        return {
+            "output": {
+                "error": "Invalid event type",
+                "status": "failed",
+                "version": VERSION
+            }
+        }
     
-    return process_cubic_enhancement(job)
+    # Log what we're processing
+    if isinstance(job_input, dict):
+        logger.info(f"📊 Job input keys: {list(job_input.keys())}")
+    
+    return process_cubic_enhancement(job_input)
 
 def process_cubic_enhancement(job):
     """Process cubic detail enhancement"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
-        logger.info("💎 SwinIR for cubic detail enhancement")
+        logger.info("💎 Processing cubic detail enhancement")
         
-        # 입력 데이터 추출
+        # Extract input image data
         image_data_str = find_input_data(job)
         
         if not image_data_str:
-            raise ValueError("No input image data found")
+            # Log detailed error information
+            logger.error("❌ No input image data found")
+            logger.error(f"Job type: {type(job)}")
+            if isinstance(job, dict):
+                logger.error(f"Job keys: {list(job.keys())}")
+                # Log first level values (truncated)
+                for key, value in job.items():
+                    if isinstance(value, str):
+                        logger.error(f"  {key}: string of length {len(value)}")
+                    elif isinstance(value, dict):
+                        logger.error(f"  {key}: dict with keys {list(value.keys())}")
+                    else:
+                        logger.error(f"  {key}: {type(value)}")
+            
+            raise ValueError("No input image data found in job")
         
-        # 파라미터 추출
-        filename = job.get('filename', '')
-        intensity = float(job.get('intensity', 1.0))
+        # Extract parameters with defaults
+        filename = ''
+        intensity = 1.0
+        apply_swinir = True
+        apply_pattern = True
+        
+        if isinstance(job, dict):
+            filename = job.get('filename', '')
+            intensity = float(job.get('intensity', 1.0))
+            apply_swinir = job.get('apply_swinir', True)
+            apply_pattern = job.get('pattern_enhancement', True)
+        
         intensity = max(0.1, min(2.0, intensity))
-        apply_swinir = job.get('apply_swinir', True)
-        apply_pattern = job.get('pattern_enhancement', True)
         
-        logger.info(f"Parameters: filename={filename}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
+        logger.info(f"📋 Parameters: filename={filename}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
         
-        # 이미지 디코딩
+        # Decode image
         image_bytes = decode_base64_fast(image_data_str)
         image = Image.open(BytesIO(image_bytes))
         
@@ -546,7 +573,7 @@ def process_cubic_enhancement(job):
             image = image.convert('RGBA')
         
         original_size = image.size
-        logger.info(f"Input image size: {original_size}")
+        logger.info(f"📐 Input image size: {original_size}")
         
         # 1. White Balance
         logger.info("⚖️ Step 1: Applying white balance")
@@ -568,7 +595,7 @@ def process_cubic_enhancement(job):
             pattern_type = "none"
             detected_type = "보정없음"
         
-        # 3. Ring Hole Detection (Simple version)
+        # 3. Ring Hole Detection
         logger.info("🔍 Step 3: Simple ring hole detection")
         image = ensure_ring_holes_transparent_simple(image)
         
@@ -576,22 +603,22 @@ def process_cubic_enhancement(job):
         logger.info("💎 Step 4: Cubic pre-enhancement")
         image = enhance_cubic_sparkle_with_swinir(image, intensity)
         
-        # 5. SwinIR Enhancement (for cubic detail)
+        # 5. SwinIR Enhancement
         if apply_swinir:
             logger.info("🚀 Step 5: Applying SwinIR for cubic detail")
             enhanced_image = apply_swinir_enhancement(image)
         else:
             enhanced_image = image
         
-        # Base64로 인코딩
+        # Convert to base64
         output_base64 = image_to_base64(enhanced_image)
         
-        # 통계 정보
+        # Calculate statistics
         cubic_mask, _, _, _ = detect_cubic_regions_enhanced(image)
         cubic_pixel_count = np.sum(cubic_mask)
         cubic_percentage = (cubic_pixel_count / (image.size[0] * image.size[1])) * 100
         
-        # RunPod expects {"output": {...}} structure
+        # Return with proper structure for RunPod
         return {
             "output": {
                 "enhanced_image": output_base64,
@@ -625,15 +652,17 @@ def process_cubic_enhancement(job):
         }
         
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
+        logger.error(f"❌ Error: {str(e)}")
         import traceback
+        tb = traceback.format_exc()
+        logger.error(f"Traceback:\n{tb}")
         
         return {
             "output": {
                 "error": str(e),
                 "status": "failed",
                 "version": VERSION,
-                "traceback": traceback.format_exc()
+                "traceback": tb
             }
         }
 
