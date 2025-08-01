@@ -15,12 +15,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V3.5
-# VERSION: Cubic-Sparkle-V3.5-Fixed
-# Fixed for RunPod input structure
+# CUBIC DETAIL ENHANCEMENT HANDLER V3.6
+# VERSION: Cubic-Sparkle-V3.6-RunPod-Fixed
+# Fixed for RunPod input structure - FINAL
 ################################
 
-VERSION = "Cubic-Sparkle-V3.5-Fixed"
+VERSION = "Cubic-Sparkle-V3.6-RunPod-Fixed"
 
 # Global flags for optional features
 REPLICATE_AVAILABLE = False
@@ -119,8 +119,8 @@ def find_input_data(data):
     if isinstance(data, dict):
         logger.info(f"📋 Dict keys: {list(data.keys())}")
         
-        # Priority keys
-        image_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'input']
+        # Priority keys - exact order matters!
+        image_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'input', 'data']
         
         # Direct check
         for key in image_keys:
@@ -130,13 +130,38 @@ def find_input_data(data):
                     logger.info(f"✅ Found in '{key}' (length: {len(value)})")
                     return value
         
-        # Check for base64 data without common keys
+        # Special handling for Make.com numbered keys (0, 1, 2, etc.)
+        for i in range(10):
+            key = str(i)
+            if key in data:
+                value = data[key]
+                if isinstance(value, str) and len(value) > 50:
+                    logger.info(f"✅ Found in numbered key '{key}' (length: {len(value)})")
+                    return value
+        
+        # Check for base64 data in ANY key
         for key, value in data.items():
             if isinstance(value, str) and len(value) > 1000:
-                # Check if it looks like base64
-                if all(c in string.ascii_letters + string.digits + '+/=' for c in value[:100]):
-                    logger.info(f"✅ Found potential base64 in '{key}'")
+                # Quick base64 check (first 100 chars)
+                sample = value[:100].strip()
+                if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
+                    logger.info(f"✅ Found potential base64 in '{key}' (length: {len(value)})")
                     return value
+        
+        # Log all keys and their types for debugging
+        logger.error("❌ No valid image data found in dictionary")
+        logger.error("Available data:")
+        for key, value in list(data.items())[:10]:  # First 10 items
+            if isinstance(value, str):
+                logger.error(f"  '{key}': string ({len(value)} chars)")
+                if len(value) < 100:
+                    logger.error(f"    Preview: {value[:50]}...")
+            elif isinstance(value, dict):
+                logger.error(f"  '{key}': dict with keys {list(value.keys())}")
+            elif isinstance(value, list):
+                logger.error(f"  '{key}': list with {len(value)} items")
+            else:
+                logger.error(f"  '{key}': {type(value)}")
     
     logger.error("❌ No image data found")
     return None
@@ -531,6 +556,14 @@ def process_cubic_enhancement(job_input):
         logger.info("🚀 CUBIC DETAIL ENHANCEMENT START")
         logger.info("="*50)
         
+        # Log input structure for debugging
+        if isinstance(job_input, dict):
+            logger.info(f"📋 Input is dict with keys: {list(job_input.keys())}")
+        elif isinstance(job_input, str):
+            logger.info(f"📄 Input is string with {len(job_input)} chars")
+        else:
+            logger.info(f"❓ Input type: {type(job_input)}")
+        
         # Find image data
         image_data_str = find_input_data(job_input)
         
@@ -538,24 +571,26 @@ def process_cubic_enhancement(job_input):
             error_msg = "No valid image data found"
             logger.error(f"❌ {error_msg}")
             
-            # Debug info
-            if isinstance(job_input, dict):
-                logger.error(f"Input keys: {list(job_input.keys())[:10]}")
-                # Log first few key-value pairs for debugging
-                for key in list(job_input.keys())[:5]:
-                    value = job_input[key]
-                    if isinstance(value, str):
-                        logger.error(f"  {key}: string of length {len(value)}")
-                    elif isinstance(value, dict):
-                        logger.error(f"  {key}: dict with keys {list(value.keys())}")
-                    else:
-                        logger.error(f"  {key}: {type(value)}")
+            # Detailed debug info
+            debug_info = {
+                "input_type": str(type(job_input)),
+                "expected_keys": ["enhanced_image", "thumbnail", "image", "image_base64"],
+                "received_keys": list(job_input.keys()) if isinstance(job_input, dict) else "Not a dict",
+                "make_com_format": {
+                    "input": {
+                        "enhanced_image": "{{4.data.output.output.enhanced_image}}",
+                        "filename": "optional",
+                        "intensity": 1.0
+                    }
+                }
+            }
             
             return {
                 "output": {
                     "error": error_msg,
                     "status": "failed",
-                    "version": VERSION
+                    "version": VERSION,
+                    "debug": debug_info
                 }
             }
         
@@ -706,27 +741,51 @@ def handler(event):
         logger.info(f"📦 Modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
         logger.info(f"📥 Event type: {type(event)}")
         
-        # RunPod sends data in {"input": {...}} format
-        # We need to extract the actual data from event["input"]
+        # Critical: Log raw event for debugging
+        if isinstance(event, dict):
+            logger.info(f"📋 Event keys: {list(event.keys())}")
+            if len(event) < 10:  # Small enough to log fully
+                logger.info(f"📄 Full event: {event}")
         
-        if isinstance(event, dict) and 'input' in event:
-            job_input = event['input']
-            logger.info("✅ Found event['input']")
+        # RunPod ALWAYS sends data in {"input": {...}} format
+        # This is the ONLY valid structure
+        
+        if not isinstance(event, dict):
+            raise ValueError(f"Event must be a dict, got {type(event)}")
+        
+        if 'input' not in event:
+            # This is THE error we keep hitting
+            logger.error("❌ CRITICAL: No 'input' field in event!")
+            logger.error(f"Available keys: {list(event.keys())}")
+            logger.error("RunPod requires {'input': {...}} structure")
             
-            # Log the structure of job_input
-            if isinstance(job_input, dict):
-                logger.info(f"📋 job_input keys: {list(job_input.keys())}")
+            # Log sample of each key for debugging
+            for key in list(event.keys())[:3]:
+                value = event[key]
+                if isinstance(value, str):
+                    logger.error(f"  {key}: string of {len(value)} chars")
+                elif isinstance(value, dict):
+                    logger.error(f"  {key}: dict with keys {list(value.keys())}")
+                else:
+                    logger.error(f"  {key}: {type(value)}")
+            
+            raise ValueError("Event must contain 'input' field. RunPod structure: {'input': {...}}")
+        
+        # Extract job_input from event['input']
+        job_input = event['input']
+        logger.info("✅ Successfully found event['input']")
+        
+        # Log job_input structure
+        if isinstance(job_input, dict):
+            logger.info(f"📋 job_input keys: {list(job_input.keys())}")
+            # Check if we have image data
+            for key in ['enhanced_image', 'image', 'thumbnail']:
+                if key in job_input and isinstance(job_input[key], str):
+                    logger.info(f"✅ Found '{key}' with {len(job_input[key])} chars")
+        elif isinstance(job_input, str):
+            logger.info(f"📄 job_input is string with {len(job_input)} chars")
         else:
-            # This is likely causing the error - RunPod requires 'input' field
-            logger.error("❌ No 'input' field in event!")
-            logger.error(f"Event structure: {event if isinstance(event, dict) else 'Not a dict'}")
-            
-            # Try to process anyway if there's data
-            if isinstance(event, dict) and len(event) > 0:
-                job_input = event
-                logger.warning("⚠️ Processing event directly (no 'input' field)")
-            else:
-                raise ValueError("Event must contain 'input' field for RunPod")
+            logger.info(f"❓ job_input type: {type(job_input)}")
         
         # Process
         return process_cubic_enhancement(job_input)
@@ -743,9 +802,14 @@ def handler(event):
                 "error": error_msg,
                 "status": "failed", 
                 "version": VERSION,
-                "traceback": tb
+                "traceback": tb,
+                "expected_structure": {"input": {"enhanced_image": "base64_string", "filename": "optional", "intensity": 1.0}}
             }
         }
 
-# RunPod serverless configuration
-runpod.serverless.start({"handler": handler})
+# RunPod entry point
+if __name__ == "__main__":
+    logger.info(f"🚀 Starting Cubic Detail Enhancement v{VERSION}")
+    logger.info(f"📦 Available modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
+    logger.info("⚠️ CRITICAL: RunPod requires {'input': {...}} structure")
+    runpod.serverless.start({"handler": handler})
