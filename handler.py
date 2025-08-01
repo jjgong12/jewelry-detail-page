@@ -10,19 +10,17 @@ import requests
 import json
 import traceback
 
-
-
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V3.4
-# VERSION: Cubic-Sparkle-V3.4-Minimal
-# Minimal dependencies for reliable builds
+# CUBIC DETAIL ENHANCEMENT HANDLER V3.5
+# VERSION: Cubic-Sparkle-V3.5-Fixed
+# Fixed for RunPod input structure
 ################################
 
-VERSION = "Cubic-Sparkle-V3.4-Minimal"
+VERSION = "Cubic-Sparkle-V3.5-Fixed"
 
 # Global flags for optional features
 REPLICATE_AVAILABLE = False
@@ -132,40 +130,13 @@ def find_input_data(data):
                     logger.info(f"✅ Found in '{key}' (length: {len(value)})")
                     return value
         
-        # Nested check
-        for parent in ['output', 'data', 'result', '4']:  # '4' from Make.com
-            if parent in data and isinstance(data[parent], dict):
-                logger.info(f"🔍 Checking nested '{parent}'")
-                nested = data[parent]
-                if 'data' in nested and isinstance(nested['data'], dict):
-                    # Check {{4.data.output.output.enhanced_image}} pattern
-                    if 'output' in nested['data'] and isinstance(nested['data']['output'], dict):
-                        output = nested['data']['output']
-                        if 'output' in output and isinstance(output['output'], dict):
-                            final = output['output']
-                            for key in image_keys:
-                                if key in final and isinstance(final[key], str) and len(final[key]) > 50:
-                                    logger.info(f"✅ Found in {parent}.data.output.output.{key}")
-                                    return final[key]
-                
-                # Regular nested check
-                for key in image_keys:
-                    if key in nested and isinstance(nested[key], str) and len(nested[key]) > 50:
-                        logger.info(f"✅ Found in {parent}.{key}")
-                        return nested[key]
-        
-        # Numbered keys (Make.com)
-        for i in range(10):
-            key = str(i)
-            if key in data:
-                value = data[key]
-                if isinstance(value, str) and len(value) > 50:
-                    logger.info(f"✅ Found in numbered key '{key}'")
+        # Check for base64 data without common keys
+        for key, value in data.items():
+            if isinstance(value, str) and len(value) > 1000:
+                # Check if it looks like base64
+                if all(c in string.ascii_letters + string.digits + '+/=' for c in value[:100]):
+                    logger.info(f"✅ Found potential base64 in '{key}'")
                     return value
-                elif isinstance(value, dict):
-                    result = find_input_data(value)
-                    if result:
-                        return result
     
     logger.error("❌ No image data found")
     return None
@@ -570,6 +541,15 @@ def process_cubic_enhancement(job_input):
             # Debug info
             if isinstance(job_input, dict):
                 logger.error(f"Input keys: {list(job_input.keys())[:10]}")
+                # Log first few key-value pairs for debugging
+                for key in list(job_input.keys())[:5]:
+                    value = job_input[key]
+                    if isinstance(value, str):
+                        logger.error(f"  {key}: string of length {len(value)}")
+                    elif isinstance(value, dict):
+                        logger.error(f"  {key}: dict with keys {list(value.keys())}")
+                    else:
+                        logger.error(f"  {key}: {type(value)}")
             
             return {
                 "output": {
@@ -726,29 +706,27 @@ def handler(event):
         logger.info(f"📦 Modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
         logger.info(f"📥 Event type: {type(event)}")
         
-        # Extract job input
-        job_input = None
+        # RunPod sends data in {"input": {...}} format
+        # We need to extract the actual data from event["input"]
         
-        if isinstance(event, dict):
-            # Log structure
-            keys = list(event.keys())
-            logger.info(f"📋 Event keys: {keys}")
+        if isinstance(event, dict) and 'input' in event:
+            job_input = event['input']
+            logger.info("✅ Found event['input']")
             
-            # Try different paths
-            if 'input' in event:
-                job_input = event['input']
-                logger.info("✅ Using event['input']")
-            elif 'job' in event:
-                job_input = event['job']
-                logger.info("✅ Using event['job']")
-            elif len(keys) > 0:
-                # Use event directly
-                job_input = event
-                logger.info("✅ Using event directly")
-            else:
-                raise ValueError("Empty event dictionary")
+            # Log the structure of job_input
+            if isinstance(job_input, dict):
+                logger.info(f"📋 job_input keys: {list(job_input.keys())}")
         else:
-            raise ValueError(f"Invalid event type: {type(event)}")
+            # This is likely causing the error - RunPod requires 'input' field
+            logger.error("❌ No 'input' field in event!")
+            logger.error(f"Event structure: {event if isinstance(event, dict) else 'Not a dict'}")
+            
+            # Try to process anyway if there's data
+            if isinstance(event, dict) and len(event) > 0:
+                job_input = event
+                logger.warning("⚠️ Processing event directly (no 'input' field)")
+            else:
+                raise ValueError("Event must contain 'input' field for RunPod")
         
         # Process
         return process_cubic_enhancement(job_input)
@@ -769,7 +747,5 @@ def handler(event):
             }
         }
 
-# Entry point
-if __name__ == "__main__":
-    logger.info(f"🚀 Starting Cubic Detail Enhancement v{VERSION}")
-    runpod.serverless.start({"handler": handler})
+# RunPod serverless configuration
+runpod.serverless.start({"handler": handler})
