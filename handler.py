@@ -15,12 +15,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V3.7
-# VERSION: Cubic-Sparkle-V3.7-Enhanced-Detail
-# Enhanced detail processing and better pattern handling
+# CUBIC DETAIL ENHANCEMENT HANDLER V3.8
+# VERSION: Cubic-Sparkle-V3.8-Sharpness-Upscale
+# Enhanced sharpness with upscaling support
 ################################
 
-VERSION = "Cubic-Sparkle-V3.7-Enhanced-Detail"
+VERSION = "Cubic-Sparkle-V3.8-Sharpness-Upscale"
 
 # Global flags for optional features
 REPLICATE_AVAILABLE = False
@@ -253,8 +253,8 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             white_overlay = 0.20
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Mix with detail layer
-            img_array = img_array * 0.85 + detail_array * 0.15
+            # Mix with detail layer - ENHANCED DETAIL RATIO
+            img_array = img_array * 0.78 + detail_array * 0.22
             img_array = np.clip(img_array, 0, 255)
             
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
@@ -266,9 +266,9 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             color = ImageEnhance.Color(rgb_image)
             rgb_image = color.enhance(0.98)
             
-            # Additional detail enhancement
+            # Additional detail enhancement - INCREASED
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(1.2)
+            rgb_image = sharpness.enhance(1.5)
             
         elif pattern_type == "ab_pattern":
             # AB - Unplated white cool tone (16% white)
@@ -285,8 +285,8 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             cool_overlay = np.array([240, 248, 255], dtype=np.float32)
             img_array = img_array * 0.95 + cool_overlay * 0.05
             
-            # Mix with detail layer
-            img_array = img_array * 0.88 + detail_array * 0.12
+            # Mix with detail layer - ENHANCED DETAIL RATIO
+            img_array = img_array * 0.82 + detail_array * 0.18
             img_array = np.clip(img_array, 0, 255)
             
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
@@ -297,9 +297,9 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             brightness = ImageEnhance.Brightness(rgb_image)
             rgb_image = brightness.enhance(1.03)
             
-            # Enhanced detail for cool tone
+            # Enhanced detail for cool tone - INCREASED
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(1.25)
+            rgb_image = sharpness.enhance(1.55)
             
         else:
             # Other - General colors (8% white) - UPDATED from 5%
@@ -307,8 +307,8 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             white_overlay = 0.08  # Changed from 0.05 to 0.08
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Enhanced detail mixing
-            img_array = img_array * 0.82 + detail_array * 0.18
+            # Enhanced detail mixing - INCREASED DETAIL RATIO
+            img_array = img_array * 0.75 + detail_array * 0.25
             img_array = np.clip(img_array, 0, 255)
             
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
@@ -320,17 +320,17 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             color = ImageEnhance.Color(rgb_image)
             rgb_image = color.enhance(1.02)  # Slightly increased from 0.99
             
-            # Stronger detail enhancement for general colors
+            # Stronger detail enhancement for general colors - INCREASED
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(1.6)  # Increased from 1.5
+            rgb_image = sharpness.enhance(1.9)  # Increased from 1.6
         
         # Common adjustments
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.1)
+        rgb_image = contrast.enhance(1.15)  # Slightly increased from 1.1
         
-        # Final detail pass
+        # Final detail pass - ENHANCED
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.8)
+        rgb_image = sharpness.enhance(2.2)  # Increased from 1.8
         
         # Merge back
         r2, g2, b2 = rgb_image.split()
@@ -497,11 +497,11 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
         detail = image.filter(ImageFilter.DETAIL)
         detail_array = np.array(detail.convert('RGB'), dtype=np.float32)
         
-        # Blend edges and details for cubic regions
+        # Blend edges and details for cubic regions - ENHANCED EDGE RATIO
         for c in range(3):
             rgb_array[:,:,c] = np.where(
                 cubic_mask,
-                rgb_array[:,:,c] * 0.6 + edges_array[:,:,c] * 0.25 + detail_array[:,:,c] * 0.15,
+                rgb_array[:,:,c] * 0.5 + edges_array[:,:,c] * 0.35 + detail_array[:,:,c] * 0.15,
                 rgb_array[:,:,c]
             )
         
@@ -563,8 +563,8 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
         r2, g2, b2 = rgb_enhanced.split()
         result = Image.merge('RGBA', (r2, g2, b2, a))
         
-        # Final sharpness with adaptive strength
-        sharpness_strength = 1.0 + (0.4 * intensity * min(cubic_percent / 20, 1.0))
+        # Final sharpness with adaptive strength - ENHANCED FOR CLARITY
+        sharpness_strength = 1.5 + (0.5 * intensity)  # Increased base and multiplier
         sharpness = ImageEnhance.Sharpness(result)
         result = sharpness.enhance(sharpness_strength)
         
@@ -574,19 +574,55 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
         logger.error(f"Cubic enhancement error: {e}")
         return image
 
-def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
-    """Apply SwinIR if available"""
+def apply_simple_upscale(image: Image.Image, scale_factor: float) -> Image.Image:
+    """Apply simple upscaling with Lanczos resampling"""
+    try:
+        if scale_factor <= 1.0:
+            return image
+            
+        logger.info(f"📏 Applying {scale_factor}x upscale...")
+        
+        # Calculate new dimensions
+        new_width = int(image.width * scale_factor)
+        new_height = int(image.height * scale_factor)
+        
+        # Use LANCZOS for best quality
+        try:
+            upscaled = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        except AttributeError:
+            # For older PIL versions
+            upscaled = image.resize((new_width, new_height), Image.LANCZOS)
+        
+        # Apply additional sharpening after upscale
+        sharpness = ImageEnhance.Sharpness(upscaled)
+        upscaled = sharpness.enhance(1.2)
+        
+        logger.info(f"✅ Upscaled to {new_width}x{new_height}")
+        return upscaled
+        
+    except Exception as e:
+        logger.error(f"Upscale error: {e}")
+        return image
+
+def apply_swinir_enhancement(image: Image.Image, scale_factor: int = 2) -> Image.Image:
+    """Apply SwinIR if available with upscaling"""
     if not REPLICATE_AVAILABLE:
         logger.info("⏭️ SwinIR skipped (replicate not available)")
+        # Fallback to simple upscale if scale factor > 1
+        if scale_factor > 1:
+            return apply_simple_upscale(image, scale_factor)
         return image
     
     try:
         api_token = os.environ.get('REPLICATE_API_TOKEN')
         if not api_token:
             logger.warning("⏭️ SwinIR skipped (no API token)")
+            # Fallback to simple upscale
+            if scale_factor > 1:
+                return apply_simple_upscale(image, scale_factor)
             return image
         
-        logger.info("🚀 Applying SwinIR enhancement...")
+        logger.info(f"🚀 Applying SwinIR enhancement with {scale_factor}x upscale...")
         
         client = replicate.Client(api_token=api_token)
         
@@ -597,6 +633,9 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
         r, g, b, a = image.split()
         rgb_image = Image.merge('RGB', (r, g, b))
         
+        # Store original alpha size
+        original_alpha = a
+        
         # To base64
         buffered = BytesIO()
         rgb_image.save(buffered, format="PNG", optimize=True)
@@ -604,13 +643,13 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
         img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
         img_data_url = f"data:image/png;base64,{img_base64}"
         
-        # Run model
+        # Run model with scale factor
         output = client.run(
             "jingyunliang/swinir:660d922d33153019e8c263a3bba265de882e7f4f70396546b6c9c8f9d47a021a",
             input={
                 "image": img_data_url,
                 "task_type": "Real-World Image Super-Resolution",
-                "scale": 1,
+                "scale": scale_factor,  # Use the scale factor
                 "noise_level": 10,
                 "jpeg_quality": 50
             }
@@ -623,15 +662,28 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
             else:
                 enhanced_image = Image.open(BytesIO(base64.b64decode(output)))
             
-            # Merge with alpha
-            r2, g2, b2 = enhanced_image.split()
-            result = Image.merge('RGBA', (r2, g2, b2, a))
+            # Upscale alpha channel to match
+            if scale_factor > 1:
+                new_size = (enhanced_image.width, enhanced_image.height)
+                try:
+                    alpha_upscaled = original_alpha.resize(new_size, Image.Resampling.LANCZOS)
+                except AttributeError:
+                    alpha_upscaled = original_alpha.resize(new_size, Image.LANCZOS)
+            else:
+                alpha_upscaled = original_alpha
             
-            logger.info("✅ SwinIR completed")
+            # Merge with upscaled alpha
+            r2, g2, b2 = enhanced_image.split()
+            result = Image.merge('RGBA', (r2, g2, b2, alpha_upscaled))
+            
+            logger.info(f"✅ SwinIR completed with {scale_factor}x upscale")
             return result
             
     except Exception as e:
         logger.error(f"SwinIR error: {e}")
+        # Fallback to simple upscale
+        if scale_factor > 1:
+            return apply_simple_upscale(image, scale_factor)
     
     return image
 
@@ -666,7 +718,8 @@ def process_cubic_enhancement(job_input):
                     "input": {
                         "enhanced_image": "{{4.data.output.output.enhanced_image}}",
                         "filename": "optional",
-                        "intensity": 1.0
+                        "intensity": 1.0,
+                        "upscale_factor": 2
                     }
                 }
             }
@@ -685,20 +738,24 @@ def process_cubic_enhancement(job_input):
         intensity = 1.0
         apply_swinir = True
         apply_pattern = True
+        upscale_factor = 1  # New parameter
         
         if isinstance(job_input, dict):
             filename = job_input.get('filename', '')
             intensity = float(job_input.get('intensity', 1.0))
             apply_swinir = job_input.get('apply_swinir', True)
             apply_pattern = job_input.get('pattern_enhancement', True)
+            upscale_factor = int(job_input.get('upscale_factor', 1))  # New
         
         intensity = max(0.1, min(2.0, intensity))
+        upscale_factor = max(1, min(4, upscale_factor))  # Limit to 1-4x
         
         logger.info("📋 PARAMETERS:")
         logger.info(f"  Filename: {filename}")
         logger.info(f"  Intensity: {intensity}")
         logger.info(f"  SwinIR: {apply_swinir}")
         logger.info(f"  Pattern: {apply_pattern}")
+        logger.info(f"  Upscale: {upscale_factor}x")  # New
         
         # Decode image
         logger.info("🖼️ Decoding image...")
@@ -744,12 +801,19 @@ def process_cubic_enhancement(job_input):
         logger.info("💎 [4/5] Cubic Enhancement...")
         image = enhance_cubic_sparkle_simple(image, intensity)
         
-        # 5. SwinIR
-        if apply_swinir and REPLICATE_AVAILABLE:
-            logger.info("🚀 [5/5] SwinIR Enhancement...")
-            enhanced_image = apply_swinir_enhancement(image)
+        # 5. SwinIR or Upscaling
+        if upscale_factor > 1:
+            if apply_swinir and REPLICATE_AVAILABLE:
+                logger.info(f"🚀 [5/5] SwinIR Enhancement with {upscale_factor}x upscale...")
+                enhanced_image = apply_swinir_enhancement(image, upscale_factor)
+            else:
+                logger.info(f"📏 [5/5] Simple {upscale_factor}x upscale...")
+                enhanced_image = apply_simple_upscale(image, upscale_factor)
+        elif apply_swinir and REPLICATE_AVAILABLE:
+            logger.info("🚀 [5/5] SwinIR Enhancement (no upscale)...")
+            enhanced_image = apply_swinir_enhancement(image, 1)
         else:
-            logger.info("⏭️ [5/5] SwinIR Enhancement (skipped)")
+            logger.info("⏭️ [5/5] SwinIR/Upscale (skipped)")
             enhanced_image = image
         
         # Final encoding
@@ -793,8 +857,11 @@ def process_cubic_enhancement(job_input):
                     f"pattern_{pattern_type}" if apply_pattern else "pattern_skipped",
                     "ring_hole_detection",
                     f"cubic_enhancement_{intensity}",
+                    f"swinir_{upscale_factor}x" if (apply_swinir and REPLICATE_AVAILABLE and upscale_factor > 1) else
+                    f"simple_upscale_{upscale_factor}x" if (upscale_factor > 1 and not (apply_swinir and REPLICATE_AVAILABLE)) else
                     "swinir" if (apply_swinir and REPLICATE_AVAILABLE) else "swinir_skipped"
                 ],
+                "upscale_factor": upscale_factor,
                 "base64_padding": "INCLUDED",
                 "compression": "PNG_LEVEL_3"
             }
@@ -889,7 +956,7 @@ def handler(event):
                 "status": "failed", 
                 "version": VERSION,
                 "traceback": tb,
-                "expected_structure": {"input": {"enhanced_image": "base64_string", "filename": "optional", "intensity": 1.0}}
+                "expected_structure": {"input": {"enhanced_image": "base64_string", "filename": "optional", "intensity": 1.0, "upscale_factor": 2}}
             }
         }
 
@@ -898,4 +965,5 @@ if __name__ == "__main__":
     logger.info(f"🚀 Starting Cubic Detail Enhancement v{VERSION}")
     logger.info(f"📦 Available modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
     logger.info("⚠️ CRITICAL: RunPod requires {'input': {...}} structure")
+    logger.info("📏 Upscaling: 1x-4x supported via SwinIR or Lanczos")
     runpod.serverless.start({"handler": handler})
