@@ -1,13 +1,8 @@
-FROM python:3.10-slim
+# Multi-stage build 사용
+FROM python:3.9-slim as builder
+COPY requirements.txt .
+RUN pip install --user -r requirements.txt
 
-WORKDIR /
-
-# Install Python dependencies only
-COPY requirements.txt /requirements.txt
-RUN pip install --no-cache-dir -r /requirements.txt
-
-# Copy handler
-COPY handler.py /handler.py
-
-# Start the handler
-CMD ["python", "-u", "/handler.py"]
+FROM python:3.9-slim
+COPY --from=builder /root/.local /root/.local
+COPY . .
