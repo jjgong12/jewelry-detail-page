@@ -15,12 +15,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V3.6
-# VERSION: Cubic-Sparkle-V3.6-RunPod-Fixed
-# Fixed for RunPod input structure - FINAL
+# CUBIC DETAIL ENHANCEMENT HANDLER V3.7
+# VERSION: Cubic-Sparkle-V3.7-Enhanced-Detail
+# Enhanced detail processing and better pattern handling
 ################################
 
-VERSION = "Cubic-Sparkle-V3.6-RunPod-Fixed"
+VERSION = "Cubic-Sparkle-V3.7-Enhanced-Detail"
 
 # Global flags for optional features
 REPLICATE_AVAILABLE = False
@@ -181,7 +181,7 @@ def detect_pattern_type(filename: str) -> str:
         return "other"
 
 def auto_white_balance_fast(image: Image.Image) -> Image.Image:
-    """Fast white balance correction"""
+    """Fast white balance correction with improved algorithm"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -195,11 +195,11 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
         # Sample pixels for gray reference
         sampled = img_array[::15, ::15]
         
-        # Find near-gray pixels
+        # Find near-gray pixels with improved detection
         gray_mask = (
             (np.abs(sampled[:,:,0] - sampled[:,:,1]) < 15) & 
             (np.abs(sampled[:,:,1] - sampled[:,:,2]) < 15) &
-            (sampled[:,:,0] > 180)
+            (sampled[:,:,0] > 180) & (sampled[:,:,0] < 250)
         )
         
         if np.sum(gray_mask) > 10:
@@ -210,13 +210,13 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
             
             gray_avg = (r_avg + g_avg + b_avg) / 3
             
-            # Apply corrections
+            # Apply corrections with clamping
             if r_avg > 0:
-                img_array[:,:,0] *= (gray_avg / r_avg)
+                img_array[:,:,0] *= min(1.2, gray_avg / r_avg)
             if g_avg > 0:
-                img_array[:,:,1] *= (gray_avg / g_avg)
+                img_array[:,:,1] *= min(1.2, gray_avg / g_avg)
             if b_avg > 0:
-                img_array[:,:,2] *= (gray_avg / b_avg)
+                img_array[:,:,2] *= min(1.2, gray_avg / b_avg)
         
         # Convert back
         img_array = np.clip(img_array, 0, 255)
@@ -233,7 +233,7 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
         return image
 
 def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply color pattern enhancement"""
+    """Apply color pattern enhancement with improved detail preservation"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -241,13 +241,20 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         r, g, b, a = image.split()
         rgb_image = Image.merge('RGB', (r, g, b))
         
+        # Enhanced detail preservation
+        detail_layer = rgb_image.filter(ImageFilter.DETAIL)
+        
         img_array = np.array(rgb_image, dtype=np.float32)
+        detail_array = np.array(detail_layer, dtype=np.float32)
         
         if pattern_type == "ac_pattern":
-            # AC - 무도금화이트 (20% white)
-            logger.info("🎨 AC Pattern - 무도금화이트")
+            # AC - Unplated white (20% white)
+            logger.info("🎨 AC Pattern - Unplated White")
             white_overlay = 0.20
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
+            
+            # Mix with detail layer
+            img_array = img_array * 0.85 + detail_array * 0.15
             img_array = np.clip(img_array, 0, 255)
             
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
@@ -259,9 +266,13 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             color = ImageEnhance.Color(rgb_image)
             rgb_image = color.enhance(0.98)
             
+            # Additional detail enhancement
+            sharpness = ImageEnhance.Sharpness(rgb_image)
+            rgb_image = sharpness.enhance(1.2)
+            
         elif pattern_type == "ab_pattern":
-            # AB - 무도금화이트 쿨톤 (16% white)
-            logger.info("🎨 AB Pattern - 무도금화이트 쿨톤")
+            # AB - Unplated white cool tone (16% white)
+            logger.info("🎨 AB Pattern - Unplated White Cool Tone")
             white_overlay = 0.16
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
@@ -274,7 +285,10 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             cool_overlay = np.array([240, 248, 255], dtype=np.float32)
             img_array = img_array * 0.95 + cool_overlay * 0.05
             
+            # Mix with detail layer
+            img_array = img_array * 0.88 + detail_array * 0.12
             img_array = np.clip(img_array, 0, 255)
+            
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
             color = ImageEnhance.Color(rgb_image)
@@ -283,28 +297,38 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
             brightness = ImageEnhance.Brightness(rgb_image)
             rgb_image = brightness.enhance(1.03)
             
+            # Enhanced detail for cool tone
+            sharpness = ImageEnhance.Sharpness(rgb_image)
+            rgb_image = sharpness.enhance(1.25)
+            
         else:
-            # Other - 기타색상 (5% white)
-            logger.info("🎨 Other Pattern - 기타색상")
-            white_overlay = 0.05
+            # Other - General colors (8% white) - UPDATED from 5%
+            logger.info("🎨 Other Pattern - General Colors")
+            white_overlay = 0.08  # Changed from 0.05 to 0.08
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
+            
+            # Enhanced detail mixing
+            img_array = img_array * 0.82 + detail_array * 0.18
             img_array = np.clip(img_array, 0, 255)
             
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
+            # Adjusted values for 8% white overlay
             brightness = ImageEnhance.Brightness(rgb_image)
-            rgb_image = brightness.enhance(1.12)
+            rgb_image = brightness.enhance(1.10)  # Slightly reduced from 1.12
             
             color = ImageEnhance.Color(rgb_image)
-            rgb_image = color.enhance(0.99)
+            rgb_image = color.enhance(1.02)  # Slightly increased from 0.99
             
+            # Stronger detail enhancement for general colors
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(1.5)
+            rgb_image = sharpness.enhance(1.6)  # Increased from 1.5
         
         # Common adjustments
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.1)
         
+        # Final detail pass
         sharpness = ImageEnhance.Sharpness(rgb_image)
         rgb_image = sharpness.enhance(1.8)
         
@@ -319,7 +343,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         return image
 
 def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
-    """Detect and make ring holes transparent"""
+    """Detect and make ring holes transparent with improved accuracy"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -335,8 +359,17 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
         v_array = np.array(v)
         alpha_array = np.array(a, dtype=np.uint8)
         
-        # Ring holes: very bright, low saturation
-        holes_mask = (v_array > 248) & (s_array < 20) & (alpha_array > 200)
+        # Ring holes: very bright, low saturation - improved detection
+        holes_mask = (v_array > 245) & (s_array < 25) & (alpha_array > 200)
+        
+        # Additional check for pure white areas
+        r_array = np.array(r)
+        g_array = np.array(g)
+        b_array = np.array(b)
+        pure_white = (r_array > 250) & (g_array > 250) & (b_array > 250)
+        
+        # Combine masks
+        holes_mask = holes_mask | pure_white
         
         # Simple morphology
         holes_image = Image.fromarray((holes_mask * 255).astype(np.uint8))
@@ -361,7 +394,7 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
         return image
 
 def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
-    """Detect cubic/crystal regions"""
+    """Detect cubic/crystal regions with improved algorithm"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -375,38 +408,53 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
         s_array = np.array(s)
         v_array = np.array(v)
         
-        # Edge detection
+        # Enhanced edge detection
         edges = image.filter(ImageFilter.FIND_EDGES)
-        edges_array = np.array(edges.convert('L'))
+        edges_enhanced = edges.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        edges_array = np.array(edges_enhanced.convert('L'))
         
-        # Different cubic types
+        # Different cubic types with improved thresholds
         white_cubic = (
-            (v_array > 240 * sensitivity) & 
-            (s_array < 30) & 
+            (v_array > 235 * sensitivity) & 
+            (s_array < 35) & 
             (alpha_array > 200)
         )
         
         color_cubic = (
-            (v_array > 200 * sensitivity) & 
-            (s_array > 100) & 
+            (v_array > 195 * sensitivity) & 
+            (s_array > 90) & 
             (alpha_array > 200)
         )
         
-        edge_cubic = (edges_array > 100) & (v_array > 220) & (alpha_array > 200)
+        # Improved edge cubic detection
+        edge_cubic = (
+            (edges_array > 80) & 
+            (v_array > 210) & 
+            (alpha_array > 200)
+        )
         
+        # Fine highlights detection
         highlights = (
-            (v_array > 250) & 
-            (s_array < 50) &
+            (v_array > 245) & 
+            (s_array < 60) &
             (alpha_array > 200)
         )
         
-        # Combine
-        cubic_mask = white_cubic | color_cubic | edge_cubic | highlights
+        # Micro detail detection
+        micro_details = (
+            (edges_array > 50) & 
+            (v_array > 180) & 
+            (s_array > 40) &
+            (alpha_array > 200)
+        )
         
-        # Clean up
+        # Combine all masks
+        cubic_mask = white_cubic | color_cubic | edge_cubic | highlights | micro_details
+        
+        # Clean up with improved morphology
         cubic_image = Image.fromarray((cubic_mask * 255).astype(np.uint8))
-        cubic_image = cubic_image.filter(ImageFilter.MinFilter(3))
-        cubic_image = cubic_image.filter(ImageFilter.MaxFilter(3))
+        cubic_image = cubic_image.filter(ImageFilter.MinFilter(2))
+        cubic_image = cubic_image.filter(ImageFilter.MaxFilter(2))
         cubic_mask = np.array(cubic_image) > 128
         
         return cubic_mask.astype(bool), white_cubic, color_cubic, highlights
@@ -419,7 +467,7 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
         return empty, empty, empty, empty
 
 def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Image:
-    """Simple cubic enhancement without scipy"""
+    """Enhanced cubic sparkle with improved detail processing"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -440,21 +488,32 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
         r, g, b, a = image.split()
         rgb_array = np.array(image.convert('RGB'), dtype=np.float32)
         
-        # 1. Edge enhancement
-        edges = image.filter(ImageFilter.EDGE_ENHANCE_MORE)
-        edges_array = np.array(edges.convert('RGB'), dtype=np.float32)
+        # 1. Enhanced edge processing
+        edges = image.filter(ImageFilter.FIND_EDGES)
+        edges_enhanced = edges.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        edges_array = np.array(edges_enhanced.convert('RGB'), dtype=np.float32)
         
+        # Detail layer extraction
+        detail = image.filter(ImageFilter.DETAIL)
+        detail_array = np.array(detail.convert('RGB'), dtype=np.float32)
+        
+        # Blend edges and details for cubic regions
         for c in range(3):
             rgb_array[:,:,c] = np.where(
                 cubic_mask,
-                rgb_array[:,:,c] * 0.7 + edges_array[:,:,c] * 0.3,
+                rgb_array[:,:,c] * 0.6 + edges_array[:,:,c] * 0.25 + detail_array[:,:,c] * 0.15,
                 rgb_array[:,:,c]
             )
         
-        # 2. Contrast
+        # 2. Advanced contrast with local adaptation
         if np.any(cubic_mask):
-            mean_val = np.mean(rgb_array[cubic_mask])
-            contrast_factor = 1.2 * intensity
+            # Calculate local statistics
+            cubic_values = rgb_array[cubic_mask]
+            mean_val = np.mean(cubic_values)
+            std_val = np.std(cubic_values)
+            
+            # Adaptive contrast based on local variance
+            contrast_factor = (1.2 + 0.1 * min(std_val / 50, 1.0)) * intensity
             
             for c in range(3):
                 rgb_array[:,:,c] = np.where(
@@ -463,13 +522,39 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
                     rgb_array[:,:,c]
                 )
         
-        # 3. Highlights
+        # 3. Enhanced highlights with multi-level processing
         if np.any(highlights):
+            # Primary highlight boost
             boost = 1.15 * intensity
             for c in range(3):
                 rgb_array[:,:,c] = np.where(
                     highlights,
                     np.minimum(rgb_array[:,:,c] * boost, 255),
+                    rgb_array[:,:,c]
+                )
+            
+            # Secondary soft glow around highlights
+            highlight_image = Image.fromarray((highlights * 255).astype(np.uint8))
+            glow = highlight_image.filter(ImageFilter.GaussianBlur(2))
+            glow_mask = np.array(glow) > 100
+            
+            for c in range(3):
+                rgb_array[:,:,c] = np.where(
+                    glow_mask & ~highlights,
+                    np.minimum(rgb_array[:,:,c] * (1.05 * intensity), 255),
+                    rgb_array[:,:,c]
+                )
+        
+        # 4. Micro-detail enhancement
+        if np.any(cubic_mask):
+            # Unsharp mask for micro details
+            blur_array = np.array(image.filter(ImageFilter.GaussianBlur(1)).convert('RGB'), dtype=np.float32)
+            
+            for c in range(3):
+                detail_mask = cubic_mask & (np.abs(rgb_array[:,:,c] - blur_array[:,:,c]) > 5)
+                rgb_array[:,:,c] = np.where(
+                    detail_mask,
+                    np.clip(rgb_array[:,:,c] + (rgb_array[:,:,c] - blur_array[:,:,c]) * 0.3 * intensity, 0, 255),
                     rgb_array[:,:,c]
                 )
         
@@ -478,9 +563,10 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
         r2, g2, b2 = rgb_enhanced.split()
         result = Image.merge('RGBA', (r2, g2, b2, a))
         
-        # Sharpness
+        # Final sharpness with adaptive strength
+        sharpness_strength = 1.0 + (0.4 * intensity * min(cubic_percent / 20, 1.0))
         sharpness = ImageEnhance.Sharpness(result)
-        result = sharpness.enhance(1.0 + (0.3 * intensity))
+        result = sharpness.enhance(sharpness_strength)
         
         return result
         
@@ -638,9 +724,9 @@ def process_cubic_enhancement(job_input):
             logger.info("🎨 [2/5] Pattern Enhancement...")
             pattern_type = detect_pattern_type(filename)
             detected_type = {
-                "ac_pattern": "무도금화이트(20%)",
-                "ab_pattern": "무도금화이트-쿨톤(16%)",
-                "other": "기타색상(5%)"
+                "ac_pattern": "Unplated White (20%)",
+                "ab_pattern": "Unplated White-Cool (16%)",
+                "other": "General Colors (8%)"  # Updated from 5%
             }.get(pattern_type, "Unknown")
             
             logger.info(f"  Type: {pattern_type} - {detected_type}")
@@ -648,7 +734,7 @@ def process_cubic_enhancement(job_input):
         else:
             logger.info("⏭️ [2/5] Pattern Enhancement (skipped)")
             pattern_type = "none"
-            detected_type = "보정없음"
+            detected_type = "No Correction"
         
         # 3. Ring Holes
         logger.info("🔍 [3/5] Ring Hole Detection...")
