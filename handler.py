@@ -1056,4 +1056,6 @@ if __name__ == "__main__":
     logger.info(f"📦 Available modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
     logger.info("⚠️ CRITICAL: RunPod requires {'input': {...}} structure")
     logger.info("📏 Super-Resolution: Process at higher resolution, return to original size")
-    runpod.serverless.start({"handler": handler})
+    
+    # FIXED: Pass handler directly, not wrapped in dict
+    runpod.serverless.start(handler)  # Changed from runpod.serverless.start({"handler": handler})
