@@ -674,8 +674,9 @@ def process_cubic_enhancement(job_input):
 def handler(event):
     """RunPod handler - with health check support"""
     try:
-        log(f"Handler started - v{VERSION}")
+        log(f"✅ Handler called! - v{VERSION}")  # 더 눈에 띄게
         log(f"Event type: {type(event)}")
+        log(f"Event content: {str(event)[:200]}...")  # 이벤트 내용 확인
         
         # Health check - RunPod가 빈 요청을 보낼 때
         if event is None or (isinstance(event, dict) and len(event) == 0):
@@ -731,12 +732,15 @@ def handler(event):
         if isinstance(job_input, dict):
             log(f"Job input keys: {list(job_input.keys())}")
         
+        log("🚀 Starting image processing...")  # 처리 시작 로그
+        
         # Process
         return process_cubic_enhancement(job_input)
         
     except Exception as e:
         tb = traceback.format_exc()
-        log(f"Handler error: {str(e)}")
+        log(f"❌ Handler error: {str(e)}")
+        log(f"Traceback:\n{tb}")
         
         return {
             "output": {
@@ -752,5 +756,5 @@ if __name__ == "__main__":
     log(f"Starting Cubic Enhancement v{VERSION} - Optimized")
     log("Reduced logging, lower contrast, memory efficient")
     
-    # Start handler with dictionary format
-    runpod.serverless.start({"handler": handler})
+    # Start handler WITHOUT dictionary - direct function reference
+    runpod.serverless.start(handler)
