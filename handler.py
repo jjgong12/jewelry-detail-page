@@ -15,12 +15,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V3.8
-# VERSION: Cubic-Sparkle-V3.8-Sharpness-Upscale
-# Enhanced sharpness with upscaling support
+# CUBIC DETAIL ENHANCEMENT HANDLER V4.0
+# VERSION: Cubic-Sparkle-V4.0-SuperResolution
+# Upscale processing with return to original size
 ################################
 
-VERSION = "Cubic-Sparkle-V3.8-Sharpness-Upscale"
+VERSION = "Cubic-Sparkle-V4.0-SuperResolution"
 
 # Global flags for optional features
 REPLICATE_AVAILABLE = False
@@ -574,6 +574,51 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
         logger.error(f"Cubic enhancement error: {e}")
         return image
 
+def apply_target_resize(image: Image.Image, target_width: int = None, target_height: int = None) -> Image.Image:
+    """Resize image to specific dimensions while maintaining aspect ratio"""
+    try:
+        current_width, current_height = image.size
+        
+        # If both dimensions provided, resize to exact size
+        if target_width and target_height:
+            logger.info(f"📐 Resizing to exact {target_width}x{target_height}...")
+            resized = image.resize((target_width, target_height), Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+            
+        # If only width provided, maintain aspect ratio
+        elif target_width:
+            ratio = target_width / current_width
+            new_height = int(current_height * ratio)
+            logger.info(f"📐 Resizing to width {target_width} (height: {new_height})...")
+            resized = image.resize((target_width, new_height), Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+            
+        # If only height provided, maintain aspect ratio
+        elif target_height:
+            ratio = target_height / current_height
+            new_width = int(current_width * ratio)
+            logger.info(f"📐 Resizing to height {target_height} (width: {new_width})...")
+            resized = image.resize((new_width, target_height), Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+            
+        else:
+            return image
+        
+        # Apply sharpening after resize
+        sharpness = ImageEnhance.Sharpness(resized)
+        # Adaptive sharpening based on scale factor
+        scale_factor = max(resized.width / current_width, resized.height / current_height)
+        if scale_factor > 1:
+            sharp_strength = 1.0 + (0.2 * min(scale_factor, 3))
+        else:
+            sharp_strength = 1.0 + (0.1 * (1 - scale_factor))
+        
+        resized = sharpness.enhance(sharp_strength)
+        
+        logger.info(f"✅ Resized from {current_width}x{current_height} to {resized.width}x{resized.height}")
+        return resized
+        
+    except Exception as e:
+        logger.error(f"Resize error: {e}")
+        return image
+
 def apply_simple_upscale(image: Image.Image, scale_factor: float) -> Image.Image:
     """Apply simple upscaling with Lanczos resampling"""
     try:
@@ -719,7 +764,9 @@ def process_cubic_enhancement(job_input):
                         "enhanced_image": "{{4.data.output.output.enhanced_image}}",
                         "filename": "optional",
                         "intensity": 1.0,
-                        "upscale_factor": 2
+                        "upscale_factor": 2,
+                        "target_width": 2048,
+                        "target_height": 2048
                     }
                 }
             }
@@ -738,24 +785,39 @@ def process_cubic_enhancement(job_input):
         intensity = 1.0
         apply_swinir = True
         apply_pattern = True
-        upscale_factor = 1  # New parameter
+        upscale_factor = 1  # Keep for backward compatibility
+        target_width = None  # New parameter
+        target_height = None  # New parameter
         
         if isinstance(job_input, dict):
             filename = job_input.get('filename', '')
             intensity = float(job_input.get('intensity', 1.0))
             apply_swinir = job_input.get('apply_swinir', True)
             apply_pattern = job_input.get('pattern_enhancement', True)
-            upscale_factor = int(job_input.get('upscale_factor', 1))  # New
+            upscale_factor = int(job_input.get('upscale_factor', 1))
+            target_width = job_input.get('target_width', None)  # New
+            target_height = job_input.get('target_height', None)  # New
         
         intensity = max(0.1, min(2.0, intensity))
-        upscale_factor = max(1, min(4, upscale_factor))  # Limit to 1-4x
+        upscale_factor = max(1, min(4, upscale_factor))
+        
+        # Validate target dimensions
+        if target_width:
+            target_width = int(target_width)
+            target_width = max(100, min(8192, target_width))  # 100-8192 pixels
+        if target_height:
+            target_height = int(target_height)
+            target_height = max(100, min(8192, target_height))  # 100-8192 pixels
         
         logger.info("📋 PARAMETERS:")
         logger.info(f"  Filename: {filename}")
         logger.info(f"  Intensity: {intensity}")
         logger.info(f"  SwinIR: {apply_swinir}")
         logger.info(f"  Pattern: {apply_pattern}")
-        logger.info(f"  Upscale: {upscale_factor}x")  # New
+        if target_width or target_height:
+            logger.info(f"  Target Size: {target_width or 'auto'}x{target_height or 'auto'}")
+        else:
+            logger.info(f"  Upscale: {upscale_factor}x")
         
         # Decode image
         logger.info("🖼️ Decoding image...")
@@ -766,6 +828,10 @@ def process_cubic_enhancement(job_input):
             image = image.convert('RGBA')
         
         logger.info(f"📐 Image: {image.size[0]}x{image.size[1]} {image.mode}")
+        
+        # Store original size for final resize
+        original_size = (image.size[0], image.size[1])
+        logger.info(f"📐 Original size stored: {original_size[0]}x{original_size[1]}")
         
         # Processing pipeline
         logger.info("="*30)
@@ -801,19 +867,37 @@ def process_cubic_enhancement(job_input):
         logger.info("💎 [4/5] Cubic Enhancement...")
         image = enhance_cubic_sparkle_simple(image, intensity)
         
-        # 5. SwinIR or Upscaling
-        if upscale_factor > 1:
+        # 5. SwinIR or Upscaling or Resizing
+        if target_width or target_height:
+            # Specific size requested - override original size preservation
+            logger.info("📐 [5/5] Target size resizing...")
+            enhanced_image = apply_target_resize(image, target_width, target_height)
+            # Optionally apply SwinIR for quality improvement at the new size
+            if apply_swinir and REPLICATE_AVAILABLE:
+                logger.info("🚀 Applying SwinIR for quality enhancement...")
+                enhanced_image = apply_swinir_enhancement(enhanced_image, 1)
+        elif upscale_factor > 1:
+            # Factor-based upscaling with return to original size
             if apply_swinir and REPLICATE_AVAILABLE:
                 logger.info(f"🚀 [5/5] SwinIR Enhancement with {upscale_factor}x upscale...")
                 enhanced_image = apply_swinir_enhancement(image, upscale_factor)
             else:
                 logger.info(f"📏 [5/5] Simple {upscale_factor}x upscale...")
                 enhanced_image = apply_simple_upscale(image, upscale_factor)
+            
+            # Return to original size after upscaling
+            logger.info(f"📐 Returning to original size {original_size[0]}x{original_size[1]}...")
+            enhanced_image = enhanced_image.resize(original_size, Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+            
+            # Apply mild sharpening after downscale
+            sharpness = ImageEnhance.Sharpness(enhanced_image)
+            enhanced_image = sharpness.enhance(1.1)
+            
         elif apply_swinir and REPLICATE_AVAILABLE:
-            logger.info("🚀 [5/5] SwinIR Enhancement (no upscale)...")
+            logger.info("🚀 [5/5] SwinIR Enhancement (no resize)...")
             enhanced_image = apply_swinir_enhancement(image, 1)
         else:
-            logger.info("⏭️ [5/5] SwinIR/Upscale (skipped)")
+            logger.info("⏭️ [5/5] SwinIR/Resize (skipped)")
             enhanced_image = image
         
         # Final encoding
@@ -857,11 +941,17 @@ def process_cubic_enhancement(job_input):
                     f"pattern_{pattern_type}" if apply_pattern else "pattern_skipped",
                     "ring_hole_detection",
                     f"cubic_enhancement_{intensity}",
-                    f"swinir_{upscale_factor}x" if (apply_swinir and REPLICATE_AVAILABLE and upscale_factor > 1) else
-                    f"simple_upscale_{upscale_factor}x" if (upscale_factor > 1 and not (apply_swinir and REPLICATE_AVAILABLE)) else
-                    "swinir" if (apply_swinir and REPLICATE_AVAILABLE) else "swinir_skipped"
+                    f"resize_to_{enhanced_image.width}x{enhanced_image.height}" if (target_width or target_height) else
+                    f"swinir_{upscale_factor}x_return_to_original" if (apply_swinir and REPLICATE_AVAILABLE and upscale_factor > 1) else
+                    f"simple_upscale_{upscale_factor}x_return_to_original" if (upscale_factor > 1 and not (apply_swinir and REPLICATE_AVAILABLE)) else
+                    "swinir" if (apply_swinir and REPLICATE_AVAILABLE) else "no_resize"
                 ],
                 "upscale_factor": upscale_factor,
+                "processing_resolution": f"{upscale_factor}x ({int(original_size[0]*upscale_factor)}x{int(original_size[1]*upscale_factor)})" if upscale_factor > 1 else "1x",
+                "target_dimensions": {
+                    "width": target_width,
+                    "height": target_height
+                } if (target_width or target_height) else None,
                 "base64_padding": "INCLUDED",
                 "compression": "PNG_LEVEL_3"
             }
@@ -956,7 +1046,7 @@ def handler(event):
                 "status": "failed", 
                 "version": VERSION,
                 "traceback": tb,
-                "expected_structure": {"input": {"enhanced_image": "base64_string", "filename": "optional", "intensity": 1.0, "upscale_factor": 2}}
+                "expected_structure": {"input": {"enhanced_image": "base64_string", "filename": "optional", "intensity": 1.0, "upscale_factor": 2, "target_width": 2048, "target_height": 2048}}
             }
         }
 
@@ -965,5 +1055,5 @@ if __name__ == "__main__":
     logger.info(f"🚀 Starting Cubic Detail Enhancement v{VERSION}")
     logger.info(f"📦 Available modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
     logger.info("⚠️ CRITICAL: RunPod requires {'input': {...}} structure")
-    logger.info("📏 Upscaling: 1x-4x supported via SwinIR or Lanczos")
+    logger.info("📏 Super-Resolution: Process at higher resolution, return to original size")
     runpod.serverless.start({"handler": handler})
