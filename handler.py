@@ -3,10 +3,9 @@ import os
 import base64
 import numpy as np
 from io import BytesIO
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import logging
 import string
-import requests
 import json
 import traceback
 
@@ -15,31 +14,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V4.0
-# VERSION: Cubic-Sparkle-V4.0-SuperResolution
-# Upscale processing with return to original size
+# CUBIC DETAIL ENHANCEMENT HANDLER V5.0 - EXTREME EDITION
+# VERSION: Cubic-Sparkle-V5.0-Extreme-Lightweight
+# Enhanced processing without external dependencies
 ################################
 
-VERSION = "Cubic-Sparkle-V4.0-SuperResolution"
-
-# Global flags for optional features
-REPLICATE_AVAILABLE = False
-SCIPY_AVAILABLE = False
-
-# Try importing optional packages
-try:
-    import replicate
-    REPLICATE_AVAILABLE = True
-    logger.info("✅ Replicate module available")
-except ImportError:
-    logger.warning("⚠️ Replicate not available - SwinIR will be disabled")
-
-try:
-    from scipy.ndimage import label, center_of_mass
-    SCIPY_AVAILABLE = True
-    logger.info("✅ Scipy module available")
-except ImportError:
-    logger.warning("⚠️ Scipy not available - Advanced sparkle disabled")
+VERSION = "Cubic-Sparkle-V5.0-Extreme-Lightweight"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -119,7 +99,7 @@ def find_input_data(data):
     if isinstance(data, dict):
         logger.info(f"📋 Dict keys: {list(data.keys())}")
         
-        # Priority keys - exact order matters!
+        # Priority keys
         image_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'input', 'data']
         
         # Direct check
@@ -130,7 +110,7 @@ def find_input_data(data):
                     logger.info(f"✅ Found in '{key}' (length: {len(value)})")
                     return value
         
-        # Special handling for Make.com numbered keys (0, 1, 2, etc.)
+        # Check numbered keys
         for i in range(10):
             key = str(i)
             if key in data:
@@ -139,29 +119,13 @@ def find_input_data(data):
                     logger.info(f"✅ Found in numbered key '{key}' (length: {len(value)})")
                     return value
         
-        # Check for base64 data in ANY key
+        # Check any key with base64-like content
         for key, value in data.items():
             if isinstance(value, str) and len(value) > 1000:
-                # Quick base64 check (first 100 chars)
                 sample = value[:100].strip()
                 if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
                     logger.info(f"✅ Found potential base64 in '{key}' (length: {len(value)})")
                     return value
-        
-        # Log all keys and their types for debugging
-        logger.error("❌ No valid image data found in dictionary")
-        logger.error("Available data:")
-        for key, value in list(data.items())[:10]:  # First 10 items
-            if isinstance(value, str):
-                logger.error(f"  '{key}': string ({len(value)} chars)")
-                if len(value) < 100:
-                    logger.error(f"    Preview: {value[:50]}...")
-            elif isinstance(value, dict):
-                logger.error(f"  '{key}': dict with keys {list(value.keys())}")
-            elif isinstance(value, list):
-                logger.error(f"  '{key}': list with {len(value)} items")
-            else:
-                logger.error(f"  '{key}': {type(value)}")
     
     logger.error("❌ No image data found")
     return None
@@ -180,8 +144,8 @@ def detect_pattern_type(filename: str) -> str:
     else:
         return "other"
 
-def auto_white_balance_fast(image: Image.Image) -> Image.Image:
-    """Fast white balance correction with improved algorithm"""
+def auto_white_balance_extreme(image: Image.Image) -> Image.Image:
+    """EXTREME white balance correction with multi-pass algorithm"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -192,35 +156,48 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
         # Convert to numpy
         img_array = np.array(rgb_img, dtype=np.float32)
         
-        # Sample pixels for gray reference
-        sampled = img_array[::15, ::15]
+        # PASS 1: Aggressive gray world assumption
+        for c in range(3):
+            channel_mean = np.mean(img_array[:,:,c])
+            if channel_mean > 0:
+                img_array[:,:,c] = img_array[:,:,c] * (128 / channel_mean)
         
-        # Find near-gray pixels with improved detection
+        # PASS 2: Sample-based correction
+        sampled = img_array[::10, ::10]
         gray_mask = (
-            (np.abs(sampled[:,:,0] - sampled[:,:,1]) < 15) & 
-            (np.abs(sampled[:,:,1] - sampled[:,:,2]) < 15) &
-            (sampled[:,:,0] > 180) & (sampled[:,:,0] < 250)
+            (np.abs(sampled[:,:,0] - sampled[:,:,1]) < 20) & 
+            (np.abs(sampled[:,:,1] - sampled[:,:,2]) < 20) &
+            (sampled[:,:,0] > 150) & (sampled[:,:,0] < 250)
         )
         
-        if np.sum(gray_mask) > 10:
-            # Calculate corrections
+        if np.sum(gray_mask) > 5:
             r_avg = np.mean(sampled[gray_mask, 0])
             g_avg = np.mean(sampled[gray_mask, 1])
             b_avg = np.mean(sampled[gray_mask, 2])
             
             gray_avg = (r_avg + g_avg + b_avg) / 3
             
-            # Apply corrections with clamping
+            # More aggressive correction
             if r_avg > 0:
-                img_array[:,:,0] *= min(1.2, gray_avg / r_avg)
+                img_array[:,:,0] *= min(1.5, gray_avg / r_avg)
             if g_avg > 0:
-                img_array[:,:,1] *= min(1.2, gray_avg / g_avg)
+                img_array[:,:,1] *= min(1.5, gray_avg / g_avg)
             if b_avg > 0:
-                img_array[:,:,2] *= min(1.2, gray_avg / b_avg)
+                img_array[:,:,2] *= min(1.5, gray_avg / b_avg)
+        
+        # PASS 3: Highlight preservation
+        highlights = img_array > 240
+        img_array = np.clip(img_array, 0, 255)
+        
+        # Restore some highlights
+        img_array[highlights] = np.minimum(img_array[highlights] * 1.05, 255)
         
         # Convert back
-        img_array = np.clip(img_array, 0, 255)
         rgb_balanced = Image.fromarray(img_array.astype(np.uint8))
+        
+        # PASS 4: Fine-tune with PIL
+        color = ImageEnhance.Color(rgb_balanced)
+        rgb_balanced = color.enhance(1.1)
         
         # Merge with alpha
         r2, g2, b2 = rgb_balanced.split()
@@ -232,8 +209,8 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
         logger.error(f"White balance error: {e}")
         return image
 
-def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply color pattern enhancement with improved detail preservation"""
+def apply_pattern_enhancement_extreme(image: Image.Image, pattern_type: str, intensity: float = 1.0) -> Image.Image:
+    """EXTREME pattern enhancement with maximum detail preservation"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -241,96 +218,123 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         r, g, b, a = image.split()
         rgb_image = Image.merge('RGB', (r, g, b))
         
-        # Enhanced detail preservation
-        detail_layer = rgb_image.filter(ImageFilter.DETAIL)
+        # Multi-layer detail extraction
+        detail_layer1 = rgb_image.filter(ImageFilter.DETAIL)
+        detail_layer2 = rgb_image.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        detail_layer3 = rgb_image.filter(ImageFilter.SHARPEN)
         
         img_array = np.array(rgb_image, dtype=np.float32)
-        detail_array = np.array(detail_layer, dtype=np.float32)
+        detail_array1 = np.array(detail_layer1, dtype=np.float32)
+        detail_array2 = np.array(detail_layer2, dtype=np.float32)
+        detail_array3 = np.array(detail_layer3, dtype=np.float32)
         
         if pattern_type == "ac_pattern":
-            # AC - Unplated white (20% white)
-            logger.info("🎨 AC Pattern - Unplated White")
-            white_overlay = 0.20
+            # AC - Unplated white (25% white) - INCREASED
+            logger.info("🎨 AC Pattern - Unplated White EXTREME")
+            white_overlay = 0.25 * intensity
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Mix with detail layer - ENHANCED DETAIL RATIO
-            img_array = img_array * 0.78 + detail_array * 0.22
-            img_array = np.clip(img_array, 0, 255)
+            # EXTREME detail mixing
+            img_array = (
+                img_array * 0.40 + 
+                detail_array1 * 0.25 + 
+                detail_array2 * 0.20 + 
+                detail_array3 * 0.15
+            )
             
+            img_array = np.clip(img_array, 0, 255)
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
-            # Adjustments
+            # EXTREME adjustments
             brightness = ImageEnhance.Brightness(rgb_image)
-            rgb_image = brightness.enhance(1.03)
+            rgb_image = brightness.enhance(1.08)
             
             color = ImageEnhance.Color(rgb_image)
-            rgb_image = color.enhance(0.98)
+            rgb_image = color.enhance(0.92)
             
-            # Additional detail enhancement - INCREASED
+            contrast = ImageEnhance.Contrast(rgb_image)
+            rgb_image = contrast.enhance(1.25)
+            
+            # EXTREME sharpness
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(1.5)
+            rgb_image = sharpness.enhance(2.5)
             
         elif pattern_type == "ab_pattern":
-            # AB - Unplated white cool tone (16% white)
-            logger.info("🎨 AB Pattern - Unplated White Cool Tone")
-            white_overlay = 0.16
+            # AB - Unplated white cool tone (20% white) - INCREASED
+            logger.info("🎨 AB Pattern - Unplated White Cool Tone EXTREME")
+            white_overlay = 0.20 * intensity
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Cool tone
-            img_array[:,:,0] *= 0.96
-            img_array[:,:,1] *= 0.98
-            img_array[:,:,2] *= 1.02
+            # EXTREME cool tone
+            img_array[:,:,0] *= 0.92
+            img_array[:,:,1] *= 0.96
+            img_array[:,:,2] *= 1.05
             
-            # Cool overlay
-            cool_overlay = np.array([240, 248, 255], dtype=np.float32)
-            img_array = img_array * 0.95 + cool_overlay * 0.05
+            # Strong cool overlay
+            cool_overlay = np.array([235, 245, 255], dtype=np.float32)
+            img_array = img_array * 0.88 + cool_overlay * 0.12
             
-            # Mix with detail layer - ENHANCED DETAIL RATIO
-            img_array = img_array * 0.82 + detail_array * 0.18
+            # EXTREME detail mixing
+            img_array = (
+                img_array * 0.45 + 
+                detail_array1 * 0.20 + 
+                detail_array2 * 0.20 + 
+                detail_array3 * 0.15
+            )
+            
             img_array = np.clip(img_array, 0, 255)
-            
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
             color = ImageEnhance.Color(rgb_image)
-            rgb_image = color.enhance(0.88)
+            rgb_image = color.enhance(0.82)
             
             brightness = ImageEnhance.Brightness(rgb_image)
-            rgb_image = brightness.enhance(1.03)
+            rgb_image = brightness.enhance(1.06)
             
-            # Enhanced detail for cool tone - INCREASED
+            contrast = ImageEnhance.Contrast(rgb_image)
+            rgb_image = contrast.enhance(1.22)
+            
+            # EXTREME cool tone sharpness
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(1.55)
+            rgb_image = sharpness.enhance(2.8)
             
         else:
-            # Other - General colors (8% white) - UPDATED from 5%
-            logger.info("🎨 Other Pattern - General Colors")
-            white_overlay = 0.08  # Changed from 0.05 to 0.08
+            # Other - General colors (12% white) - INCREASED
+            logger.info("🎨 Other Pattern - General Colors EXTREME")
+            white_overlay = 0.12 * intensity
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Enhanced detail mixing - INCREASED DETAIL RATIO
-            img_array = img_array * 0.75 + detail_array * 0.25
-            img_array = np.clip(img_array, 0, 255)
+            # EXTREME detail mixing for general colors
+            img_array = (
+                img_array * 0.35 + 
+                detail_array1 * 0.25 + 
+                detail_array2 * 0.25 + 
+                detail_array3 * 0.15
+            )
             
+            img_array = np.clip(img_array, 0, 255)
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
-            # Adjusted values for 8% white overlay
             brightness = ImageEnhance.Brightness(rgb_image)
-            rgb_image = brightness.enhance(1.10)  # Slightly reduced from 1.12
+            rgb_image = brightness.enhance(1.15)
             
             color = ImageEnhance.Color(rgb_image)
-            rgb_image = color.enhance(1.02)  # Slightly increased from 0.99
+            rgb_image = color.enhance(1.08)
             
-            # Stronger detail enhancement for general colors - INCREASED
+            contrast = ImageEnhance.Contrast(rgb_image)
+            rgb_image = contrast.enhance(1.3)
+            
+            # EXTREME general sharpness
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(1.9)  # Increased from 1.6
+            rgb_image = sharpness.enhance(3.0)
         
-        # Common adjustments
+        # Common EXTREME final pass
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.15)  # Slightly increased from 1.1
+        rgb_image = contrast.enhance(1.2)
         
-        # Final detail pass - ENHANCED
+        # Ultra sharpness final pass
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(2.2)  # Increased from 1.8
+        rgb_image = sharpness.enhance(2.0)
         
         # Merge back
         r2, g2, b2 = rgb_image.split()
@@ -342,8 +346,8 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         logger.error(f"Pattern enhancement error: {e}")
         return image
 
-def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
-    """Detect and make ring holes transparent with improved accuracy"""
+def ensure_ring_holes_transparent_extreme(image: Image.Image) -> Image.Image:
+    """EXTREME ring hole detection with aggressive transparency"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -359,33 +363,46 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
         v_array = np.array(v)
         alpha_array = np.array(a, dtype=np.uint8)
         
-        # Ring holes: very bright, low saturation - improved detection
-        holes_mask = (v_array > 245) & (s_array < 25) & (alpha_array > 200)
+        # EXTREME hole detection - more aggressive
+        holes_mask = (v_array > 240) & (s_array < 30) & (alpha_array > 180)
         
-        # Additional check for pure white areas
+        # Pure white detection - more aggressive
         r_array = np.array(r)
         g_array = np.array(g)
         b_array = np.array(b)
-        pure_white = (r_array > 250) & (g_array > 250) & (b_array > 250)
+        pure_white = (r_array > 245) & (g_array > 245) & (b_array > 245)
         
-        # Combine masks
-        holes_mask = holes_mask | pure_white
+        # Near-white detection
+        near_white = (
+            (r_array > 235) & (g_array > 235) & (b_array > 235) &
+            (np.abs(r_array.astype(float) - g_array.astype(float)) < 10) &
+            (np.abs(g_array.astype(float) - b_array.astype(float)) < 10)
+        )
         
-        # Simple morphology
+        # Combine all masks
+        holes_mask = holes_mask | pure_white | near_white
+        
+        # Aggressive morphology
         holes_image = Image.fromarray((holes_mask * 255).astype(np.uint8))
-        holes_image = holes_image.filter(ImageFilter.MinFilter(3))
-        holes_image = holes_image.filter(ImageFilter.MaxFilter(3))
+        holes_image = holes_image.filter(ImageFilter.MinFilter(5))
+        holes_image = holes_image.filter(ImageFilter.MaxFilter(5))
         holes_mask = np.array(holes_image) > 128
         
-        # Apply transparency
+        # Apply transparency with feathering
         alpha_array[holes_mask] = 0
+        
+        # Feather edges
+        for i in range(2):
+            alpha_temp = Image.fromarray(alpha_array)
+            alpha_temp = alpha_temp.filter(ImageFilter.GaussianBlur(1))
+            alpha_array = np.array(alpha_temp)
         
         # Rebuild image
         a_new = Image.fromarray(alpha_array)
         result = Image.merge('RGBA', (r, g, b, a_new))
         
         hole_count = np.sum(holes_mask)
-        logger.info(f"✅ Ring holes: {hole_count} pixels")
+        logger.info(f"✅ Ring holes (EXTREME): {hole_count} pixels")
         
         return result
         
@@ -393,8 +410,8 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
         logger.error(f"Ring hole detection error: {e}")
         return image
 
-def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
-    """Detect cubic/crystal regions with improved algorithm"""
+def detect_cubic_regions_extreme(image: Image.Image, sensitivity=1.5):
+    """EXTREME cubic/crystal detection with maximum sensitivity"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -408,124 +425,156 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
         s_array = np.array(s)
         v_array = np.array(v)
         
-        # Enhanced edge detection
-        edges = image.filter(ImageFilter.FIND_EDGES)
-        edges_enhanced = edges.filter(ImageFilter.EDGE_ENHANCE_MORE)
-        edges_array = np.array(edges_enhanced.convert('L'))
+        # EXTREME edge detection - multi-pass
+        edges1 = image.filter(ImageFilter.FIND_EDGES)
+        edges2 = edges1.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        edges3 = edges2.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        edges_array = np.array(edges3.convert('L'))
         
-        # Different cubic types with improved thresholds
+        # EXTREME cubic types with lower thresholds
         white_cubic = (
-            (v_array > 235 * sensitivity) & 
-            (s_array < 35) & 
-            (alpha_array > 200)
+            (v_array > 220 * sensitivity) & 
+            (s_array < 45) & 
+            (alpha_array > 150)
         )
         
         color_cubic = (
-            (v_array > 195 * sensitivity) & 
-            (s_array > 90) & 
-            (alpha_array > 200)
+            (v_array > 180 * sensitivity) & 
+            (s_array > 70) & 
+            (alpha_array > 150)
         )
         
-        # Improved edge cubic detection
+        # EXTREME edge cubic
         edge_cubic = (
-            (edges_array > 80) & 
-            (v_array > 210) & 
-            (alpha_array > 200)
+            (edges_array > 60) & 
+            (v_array > 190) & 
+            (alpha_array > 150)
         )
         
-        # Fine highlights detection
+        # EXTREME highlights
         highlights = (
-            (v_array > 245) & 
-            (s_array < 60) &
-            (alpha_array > 200)
+            (v_array > 235) & 
+            (s_array < 80) &
+            (alpha_array > 150)
         )
         
-        # Micro detail detection
+        # EXTREME micro details
         micro_details = (
-            (edges_array > 50) & 
-            (v_array > 180) & 
-            (s_array > 40) &
-            (alpha_array > 200)
+            (edges_array > 30) & 
+            (v_array > 160) & 
+            (s_array > 20) &
+            (alpha_array > 150)
         )
+        
+        # Gradient detection for smooth transitions
+        gradient_x = np.abs(np.gradient(v_array, axis=1))
+        gradient_y = np.abs(np.gradient(v_array, axis=0))
+        gradient_mask = ((gradient_x > 5) | (gradient_y > 5)) & (alpha_array > 150)
         
         # Combine all masks
-        cubic_mask = white_cubic | color_cubic | edge_cubic | highlights | micro_details
+        cubic_mask = white_cubic | color_cubic | edge_cubic | highlights | micro_details | gradient_mask
         
-        # Clean up with improved morphology
+        # Less aggressive cleanup
         cubic_image = Image.fromarray((cubic_mask * 255).astype(np.uint8))
-        cubic_image = cubic_image.filter(ImageFilter.MinFilter(2))
-        cubic_image = cubic_image.filter(ImageFilter.MaxFilter(2))
+        cubic_image = cubic_image.filter(ImageFilter.MinFilter(1))
+        cubic_image = cubic_image.filter(ImageFilter.MaxFilter(1))
         cubic_mask = np.array(cubic_image) > 128
         
         return cubic_mask.astype(bool), white_cubic, color_cubic, highlights
         
     except Exception as e:
         logger.error(f"Cubic detection error: {e}")
-        # Return empty masks
         shape = (image.size[1], image.size[0])
         empty = np.zeros(shape, dtype=bool)
         return empty, empty, empty, empty
 
-def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Image:
-    """Enhanced cubic sparkle with improved detail processing"""
+def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Image:
+    """EXTREME cubic sparkle enhancement with maximum effect"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
         
-        # Detect cubics
-        cubic_mask, white_cubic, color_cubic, highlights = detect_cubic_regions_enhanced(image, intensity)
+        # Detect cubics with higher sensitivity
+        cubic_mask, white_cubic, color_cubic, highlights = detect_cubic_regions_extreme(image, intensity)
         
         cubic_count = np.sum(cubic_mask)
         total_pixels = image.size[0] * image.size[1]
         cubic_percent = (cubic_count / total_pixels) * 100
         
-        logger.info(f"💎 Cubic pixels: {cubic_count} ({cubic_percent:.1f}%)")
+        logger.info(f"💎 EXTREME Cubic pixels: {cubic_count} ({cubic_percent:.1f}%)")
         
         if cubic_count == 0:
+            # Even if no cubics detected, apply general enhancement
+            sharpness = ImageEnhance.Sharpness(image)
+            image = sharpness.enhance(1.5 * intensity)
             return image
         
         # Work with RGB
         r, g, b, a = image.split()
         rgb_array = np.array(image.convert('RGB'), dtype=np.float32)
         
-        # 1. Enhanced edge processing
-        edges = image.filter(ImageFilter.FIND_EDGES)
-        edges_enhanced = edges.filter(ImageFilter.EDGE_ENHANCE_MORE)
-        edges_array = np.array(edges_enhanced.convert('RGB'), dtype=np.float32)
+        # 1. EXTREME multi-layer edge processing
+        edges1 = image.filter(ImageFilter.FIND_EDGES)
+        edges2 = edges1.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        edges3 = edges2.filter(ImageFilter.SHARPEN)
         
-        # Detail layer extraction
-        detail = image.filter(ImageFilter.DETAIL)
-        detail_array = np.array(detail.convert('RGB'), dtype=np.float32)
+        edges_array1 = np.array(edges1.convert('RGB'), dtype=np.float32)
+        edges_array2 = np.array(edges2.convert('RGB'), dtype=np.float32)
+        edges_array3 = np.array(edges3.convert('RGB'), dtype=np.float32)
         
-        # Blend edges and details for cubic regions - ENHANCED EDGE RATIO
+        # Detail layers
+        detail1 = image.filter(ImageFilter.DETAIL)
+        detail2 = detail1.filter(ImageFilter.SHARPEN)
+        detail_array1 = np.array(detail1.convert('RGB'), dtype=np.float32)
+        detail_array2 = np.array(detail2.convert('RGB'), dtype=np.float32)
+        
+        # EXTREME blending for cubic regions
         for c in range(3):
             rgb_array[:,:,c] = np.where(
                 cubic_mask,
-                rgb_array[:,:,c] * 0.5 + edges_array[:,:,c] * 0.35 + detail_array[:,:,c] * 0.15,
+                (
+                    rgb_array[:,:,c] * 0.20 + 
+                    edges_array1[:,:,c] * 0.20 + 
+                    edges_array2[:,:,c] * 0.20 + 
+                    edges_array3[:,:,c] * 0.15 +
+                    detail_array1[:,:,c] * 0.15 +
+                    detail_array2[:,:,c] * 0.10
+                ),
                 rgb_array[:,:,c]
             )
         
-        # 2. Advanced contrast with local adaptation
+        # 2. EXTREME local contrast
         if np.any(cubic_mask):
-            # Calculate local statistics
-            cubic_values = rgb_array[cubic_mask]
-            mean_val = np.mean(cubic_values)
-            std_val = np.std(cubic_values)
-            
-            # Adaptive contrast based on local variance
-            contrast_factor = (1.2 + 0.1 * min(std_val / 50, 1.0)) * intensity
-            
             for c in range(3):
-                rgb_array[:,:,c] = np.where(
-                    cubic_mask,
-                    np.clip((rgb_array[:,:,c] - mean_val) * contrast_factor + mean_val, 0, 255),
-                    rgb_array[:,:,c]
-                )
+                channel = rgb_array[:,:,c]
+                
+                # Local area processing
+                for y in range(0, channel.shape[0], 50):
+                    for x in range(0, channel.shape[1], 50):
+                        y_end = min(y + 50, channel.shape[0])
+                        x_end = min(x + 50, channel.shape[1])
+                        
+                        local_mask = cubic_mask[y:y_end, x:x_end]
+                        if np.any(local_mask):
+                            local_data = channel[y:y_end, x:x_end]
+                            local_mean = np.mean(local_data[local_mask])
+                            local_std = np.std(local_data[local_mask])
+                            
+                            # Adaptive contrast
+                            contrast_factor = (1.5 + 0.2 * min(local_std / 30, 1.0)) * intensity
+                            
+                            channel[y:y_end, x:x_end] = np.where(
+                                local_mask,
+                                np.clip((local_data - local_mean) * contrast_factor + local_mean, 0, 255),
+                                local_data
+                            )
+                
+                rgb_array[:,:,c] = channel
         
-        # 3. Enhanced highlights with multi-level processing
+        # 3. EXTREME highlights
         if np.any(highlights):
-            # Primary highlight boost
-            boost = 1.15 * intensity
+            # Primary boost
+            boost = 1.3 * intensity
             for c in range(3):
                 rgb_array[:,:,c] = np.where(
                     highlights,
@@ -533,28 +582,49 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
                     rgb_array[:,:,c]
                 )
             
-            # Secondary soft glow around highlights
+            # Multi-level glow
             highlight_image = Image.fromarray((highlights * 255).astype(np.uint8))
-            glow = highlight_image.filter(ImageFilter.GaussianBlur(2))
-            glow_mask = np.array(glow) > 100
+            
+            # Inner glow
+            glow1 = highlight_image.filter(ImageFilter.GaussianBlur(1))
+            glow_mask1 = np.array(glow1) > 150
+            
+            # Outer glow
+            glow2 = highlight_image.filter(ImageFilter.GaussianBlur(3))
+            glow_mask2 = np.array(glow2) > 80
             
             for c in range(3):
                 rgb_array[:,:,c] = np.where(
-                    glow_mask & ~highlights,
-                    np.minimum(rgb_array[:,:,c] * (1.05 * intensity), 255),
+                    glow_mask1 & ~highlights,
+                    np.minimum(rgb_array[:,:,c] * (1.15 * intensity), 255),
+                    rgb_array[:,:,c]
+                )
+                rgb_array[:,:,c] = np.where(
+                    glow_mask2 & ~glow_mask1 & ~highlights,
+                    np.minimum(rgb_array[:,:,c] * (1.08 * intensity), 255),
                     rgb_array[:,:,c]
                 )
         
-        # 4. Micro-detail enhancement
+        # 4. EXTREME micro-detail enhancement
         if np.any(cubic_mask):
-            # Unsharp mask for micro details
-            blur_array = np.array(image.filter(ImageFilter.GaussianBlur(1)).convert('RGB'), dtype=np.float32)
+            # Multiple unsharp mask passes
+            blur1 = np.array(image.filter(ImageFilter.GaussianBlur(0.5)).convert('RGB'), dtype=np.float32)
+            blur2 = np.array(image.filter(ImageFilter.GaussianBlur(1.5)).convert('RGB'), dtype=np.float32)
             
             for c in range(3):
-                detail_mask = cubic_mask & (np.abs(rgb_array[:,:,c] - blur_array[:,:,c]) > 5)
+                # Fine details
+                detail_mask1 = cubic_mask & (np.abs(rgb_array[:,:,c] - blur1[:,:,c]) > 3)
                 rgb_array[:,:,c] = np.where(
-                    detail_mask,
-                    np.clip(rgb_array[:,:,c] + (rgb_array[:,:,c] - blur_array[:,:,c]) * 0.3 * intensity, 0, 255),
+                    detail_mask1,
+                    np.clip(rgb_array[:,:,c] + (rgb_array[:,:,c] - blur1[:,:,c]) * 0.5 * intensity, 0, 255),
+                    rgb_array[:,:,c]
+                )
+                
+                # Medium details
+                detail_mask2 = cubic_mask & (np.abs(rgb_array[:,:,c] - blur2[:,:,c]) > 5)
+                rgb_array[:,:,c] = np.where(
+                    detail_mask2,
+                    np.clip(rgb_array[:,:,c] + (rgb_array[:,:,c] - blur2[:,:,c]) * 0.3 * intensity, 0, 255),
                     rgb_array[:,:,c]
                 )
         
@@ -563,15 +633,112 @@ def enhance_cubic_sparkle_simple(image: Image.Image, intensity=1.0) -> Image.Ima
         r2, g2, b2 = rgb_enhanced.split()
         result = Image.merge('RGBA', (r2, g2, b2, a))
         
-        # Final sharpness with adaptive strength - ENHANCED FOR CLARITY
-        sharpness_strength = 1.5 + (0.5 * intensity)  # Increased base and multiplier
-        sharpness = ImageEnhance.Sharpness(result)
-        result = sharpness.enhance(sharpness_strength)
+        # EXTREME final sharpening cascade
+        sharpness_passes = [
+            (1.8 + (0.7 * intensity)),
+            (1.5 + (0.5 * intensity)),
+            (1.3 + (0.3 * intensity))
+        ]
+        
+        for sharp_strength in sharpness_passes:
+            sharpness = ImageEnhance.Sharpness(result)
+            result = sharpness.enhance(sharp_strength)
+        
+        # Final contrast boost
+        contrast = ImageEnhance.Contrast(result)
+        result = contrast.enhance(1.1 + (0.1 * intensity))
         
         return result
         
     except Exception as e:
         logger.error(f"Cubic enhancement error: {e}")
+        return image
+
+def apply_extreme_final_enhancement(image: Image.Image, intensity: float = 1.0) -> Image.Image:
+    """Apply final EXTREME enhancement pass"""
+    try:
+        # Clarity enhancement
+        clarity = image.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+        
+        # Structure enhancement
+        contrast = ImageEnhance.Contrast(clarity)
+        enhanced = contrast.enhance(1.05 * intensity)
+        
+        # Micro contrast
+        sharpness = ImageEnhance.Sharpness(enhanced)
+        enhanced = sharpness.enhance(1.2 * intensity)
+        
+        # Color vibrancy
+        color = ImageEnhance.Color(enhanced)
+        enhanced = color.enhance(1.05 * intensity)
+        
+        return enhanced
+        
+    except Exception as e:
+        logger.error(f"Final enhancement error: {e}")
+        return image
+
+def apply_advanced_upscale(image: Image.Image, scale_factor: float) -> Image.Image:
+    """Advanced upscaling with edge-preserving algorithm"""
+    try:
+        if scale_factor <= 1.0:
+            return image
+            
+        logger.info(f"📏 Applying EXTREME {scale_factor}x upscale...")
+        
+        # Calculate new dimensions
+        new_width = int(image.width * scale_factor)
+        new_height = int(image.height * scale_factor)
+        
+        # Step 1: Initial upscale with LANCZOS
+        try:
+            upscaled = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        except AttributeError:
+            upscaled = image.resize((new_width, new_height), Image.LANCZOS)
+        
+        # Step 2: Edge-preserving enhancement
+        edges = upscaled.filter(ImageFilter.FIND_EDGES)
+        edges_enhanced = edges.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        
+        # Step 3: Blend edges back
+        r, g, b, a = upscaled.split()
+        r_edge, g_edge, b_edge, _ = edges_enhanced.split()
+        
+        # Convert to arrays for blending
+        r_array = np.array(r, dtype=np.float32)
+        g_array = np.array(g, dtype=np.float32)
+        b_array = np.array(b, dtype=np.float32)
+        
+        r_edge_array = np.array(r_edge, dtype=np.float32)
+        g_edge_array = np.array(g_edge, dtype=np.float32)
+        b_edge_array = np.array(b_edge, dtype=np.float32)
+        
+        # Adaptive blending based on edge strength
+        blend_factor = 0.15 * min(scale_factor / 2, 1.5)
+        
+        r_array = r_array * (1 - blend_factor) + r_edge_array * blend_factor
+        g_array = g_array * (1 - blend_factor) + g_edge_array * blend_factor
+        b_array = b_array * (1 - blend_factor) + b_edge_array * blend_factor
+        
+        # Convert back
+        r_new = Image.fromarray(np.clip(r_array, 0, 255).astype(np.uint8))
+        g_new = Image.fromarray(np.clip(g_array, 0, 255).astype(np.uint8))
+        b_new = Image.fromarray(np.clip(b_array, 0, 255).astype(np.uint8))
+        
+        upscaled = Image.merge('RGBA', (r_new, g_new, b_new, a))
+        
+        # Step 4: Progressive sharpening based on scale
+        sharpness_passes = int(scale_factor)
+        for i in range(sharpness_passes):
+            strength = 1.1 + (0.1 * (i + 1) / sharpness_passes)
+            sharpness = ImageEnhance.Sharpness(upscaled)
+            upscaled = sharpness.enhance(strength)
+        
+        logger.info(f"✅ EXTREME upscaled to {new_width}x{new_height}")
+        return upscaled
+        
+    except Exception as e:
+        logger.error(f"Upscale error: {e}")
         return image
 
 def apply_target_resize(image: Image.Image, target_width: int = None, target_height: int = None) -> Image.Image:
@@ -602,14 +769,13 @@ def apply_target_resize(image: Image.Image, target_width: int = None, target_hei
             return image
         
         # Apply sharpening after resize
-        sharpness = ImageEnhance.Sharpness(resized)
-        # Adaptive sharpening based on scale factor
         scale_factor = max(resized.width / current_width, resized.height / current_height)
         if scale_factor > 1:
-            sharp_strength = 1.0 + (0.2 * min(scale_factor, 3))
+            sharp_strength = 1.2 + (0.3 * min(scale_factor, 3))
         else:
-            sharp_strength = 1.0 + (0.1 * (1 - scale_factor))
+            sharp_strength = 1.1 + (0.2 * (1 - scale_factor))
         
+        sharpness = ImageEnhance.Sharpness(resized)
         resized = sharpness.enhance(sharp_strength)
         
         logger.info(f"✅ Resized from {current_width}x{current_height} to {resized.width}x{resized.height}")
@@ -619,124 +785,11 @@ def apply_target_resize(image: Image.Image, target_width: int = None, target_hei
         logger.error(f"Resize error: {e}")
         return image
 
-def apply_simple_upscale(image: Image.Image, scale_factor: float) -> Image.Image:
-    """Apply simple upscaling with Lanczos resampling"""
-    try:
-        if scale_factor <= 1.0:
-            return image
-            
-        logger.info(f"📏 Applying {scale_factor}x upscale...")
-        
-        # Calculate new dimensions
-        new_width = int(image.width * scale_factor)
-        new_height = int(image.height * scale_factor)
-        
-        # Use LANCZOS for best quality
-        try:
-            upscaled = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        except AttributeError:
-            # For older PIL versions
-            upscaled = image.resize((new_width, new_height), Image.LANCZOS)
-        
-        # Apply additional sharpening after upscale
-        sharpness = ImageEnhance.Sharpness(upscaled)
-        upscaled = sharpness.enhance(1.2)
-        
-        logger.info(f"✅ Upscaled to {new_width}x{new_height}")
-        return upscaled
-        
-    except Exception as e:
-        logger.error(f"Upscale error: {e}")
-        return image
-
-def apply_swinir_enhancement(image: Image.Image, scale_factor: int = 2) -> Image.Image:
-    """Apply SwinIR if available with upscaling"""
-    if not REPLICATE_AVAILABLE:
-        logger.info("⏭️ SwinIR skipped (replicate not available)")
-        # Fallback to simple upscale if scale factor > 1
-        if scale_factor > 1:
-            return apply_simple_upscale(image, scale_factor)
-        return image
-    
-    try:
-        api_token = os.environ.get('REPLICATE_API_TOKEN')
-        if not api_token:
-            logger.warning("⏭️ SwinIR skipped (no API token)")
-            # Fallback to simple upscale
-            if scale_factor > 1:
-                return apply_simple_upscale(image, scale_factor)
-            return image
-        
-        logger.info(f"🚀 Applying SwinIR enhancement with {scale_factor}x upscale...")
-        
-        client = replicate.Client(api_token=api_token)
-        
-        # Prepare image
-        if image.mode != 'RGBA':
-            image = image.convert('RGBA')
-        
-        r, g, b, a = image.split()
-        rgb_image = Image.merge('RGB', (r, g, b))
-        
-        # Store original alpha size
-        original_alpha = a
-        
-        # To base64
-        buffered = BytesIO()
-        rgb_image.save(buffered, format="PNG", optimize=True)
-        buffered.seek(0)
-        img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        img_data_url = f"data:image/png;base64,{img_base64}"
-        
-        # Run model with scale factor
-        output = client.run(
-            "jingyunliang/swinir:660d922d33153019e8c263a3bba265de882e7f4f70396546b6c9c8f9d47a021a",
-            input={
-                "image": img_data_url,
-                "task_type": "Real-World Image Super-Resolution",
-                "scale": scale_factor,  # Use the scale factor
-                "noise_level": 10,
-                "jpeg_quality": 50
-            }
-        )
-        
-        if output:
-            if isinstance(output, str):
-                response = requests.get(output)
-                enhanced_image = Image.open(BytesIO(response.content))
-            else:
-                enhanced_image = Image.open(BytesIO(base64.b64decode(output)))
-            
-            # Upscale alpha channel to match
-            if scale_factor > 1:
-                new_size = (enhanced_image.width, enhanced_image.height)
-                try:
-                    alpha_upscaled = original_alpha.resize(new_size, Image.Resampling.LANCZOS)
-                except AttributeError:
-                    alpha_upscaled = original_alpha.resize(new_size, Image.LANCZOS)
-            else:
-                alpha_upscaled = original_alpha
-            
-            # Merge with upscaled alpha
-            r2, g2, b2 = enhanced_image.split()
-            result = Image.merge('RGBA', (r2, g2, b2, alpha_upscaled))
-            
-            logger.info(f"✅ SwinIR completed with {scale_factor}x upscale")
-            return result
-            
-    except Exception as e:
-        logger.error(f"SwinIR error: {e}")
-        # Fallback to simple upscale
-        if scale_factor > 1:
-            return apply_simple_upscale(image, scale_factor)
-    
-    return image
-
 def process_cubic_enhancement(job_input):
-    """Main processing function"""
+    """Main processing function with EXTREME enhancements"""
     try:
         logger.info("="*50)
-        logger.info("🚀 CUBIC DETAIL ENHANCEMENT START")
+        logger.info("🚀 CUBIC DETAIL ENHANCEMENT EXTREME START")
         logger.info("="*50)
         
         # Log input structure for debugging
@@ -759,16 +812,7 @@ def process_cubic_enhancement(job_input):
                 "input_type": str(type(job_input)),
                 "expected_keys": ["enhanced_image", "thumbnail", "image", "image_base64"],
                 "received_keys": list(job_input.keys()) if isinstance(job_input, dict) else "Not a dict",
-                "make_com_format": {
-                    "input": {
-                        "enhanced_image": "{{4.data.output.output.enhanced_image}}",
-                        "filename": "optional",
-                        "intensity": 1.0,
-                        "upscale_factor": 2,
-                        "target_width": 2048,
-                        "target_height": 2048
-                    }
-                }
+                "version": VERSION
             }
             
             return {
@@ -780,39 +824,37 @@ def process_cubic_enhancement(job_input):
                 }
             }
         
-        # Parameters
+        # Parameters with EXTREME defaults
         filename = ''
-        intensity = 1.0
-        apply_swinir = True
+        intensity = 1.5  # Increased default
         apply_pattern = True
-        upscale_factor = 1  # Keep for backward compatibility
-        target_width = None  # New parameter
-        target_height = None  # New parameter
+        upscale_factor = 1
+        target_width = None
+        target_height = None
         
         if isinstance(job_input, dict):
             filename = job_input.get('filename', '')
-            intensity = float(job_input.get('intensity', 1.0))
-            apply_swinir = job_input.get('apply_swinir', True)
+            intensity = float(job_input.get('intensity', 1.5))
             apply_pattern = job_input.get('pattern_enhancement', True)
             upscale_factor = int(job_input.get('upscale_factor', 1))
-            target_width = job_input.get('target_width', None)  # New
-            target_height = job_input.get('target_height', None)  # New
+            target_width = job_input.get('target_width', None)
+            target_height = job_input.get('target_height', None)
         
-        intensity = max(0.1, min(2.0, intensity))
+        # Intensity range expanded
+        intensity = max(0.5, min(3.0, intensity))
         upscale_factor = max(1, min(4, upscale_factor))
         
         # Validate target dimensions
         if target_width:
             target_width = int(target_width)
-            target_width = max(100, min(8192, target_width))  # 100-8192 pixels
+            target_width = max(100, min(8192, target_width))
         if target_height:
             target_height = int(target_height)
-            target_height = max(100, min(8192, target_height))  # 100-8192 pixels
+            target_height = max(100, min(8192, target_height))
         
-        logger.info("📋 PARAMETERS:")
+        logger.info("📋 EXTREME PARAMETERS:")
         logger.info(f"  Filename: {filename}")
-        logger.info(f"  Intensity: {intensity}")
-        logger.info(f"  SwinIR: {apply_swinir}")
+        logger.info(f"  Intensity: {intensity} (EXTREME)")
         logger.info(f"  Pattern: {apply_pattern}")
         if target_width or target_height:
             logger.info(f"  Target Size: {target_width or 'auto'}x{target_height or 'auto'}")
@@ -833,86 +875,78 @@ def process_cubic_enhancement(job_input):
         original_size = (image.size[0], image.size[1])
         logger.info(f"📐 Original size stored: {original_size[0]}x{original_size[1]}")
         
-        # Processing pipeline
+        # EXTREME Processing pipeline
         logger.info("="*30)
-        logger.info("🔧 PROCESSING PIPELINE")
+        logger.info("🔧 EXTREME PROCESSING PIPELINE")
         logger.info("="*30)
         
-        # 1. White Balance
-        logger.info("⚖️ [1/5] White Balance...")
-        image = auto_white_balance_fast(image)
+        # 1. EXTREME White Balance
+        logger.info("⚖️ [1/6] EXTREME White Balance...")
+        image = auto_white_balance_extreme(image)
         
-        # 2. Pattern
+        # 2. EXTREME Pattern Enhancement
         if apply_pattern:
-            logger.info("🎨 [2/5] Pattern Enhancement...")
+            logger.info("🎨 [2/6] EXTREME Pattern Enhancement...")
             pattern_type = detect_pattern_type(filename)
             detected_type = {
-                "ac_pattern": "Unplated White (20%)",
-                "ab_pattern": "Unplated White-Cool (16%)",
-                "other": "General Colors (8%)"  # Updated from 5%
+                "ac_pattern": "Unplated White EXTREME (25%)",
+                "ab_pattern": "Unplated White-Cool EXTREME (20%)",
+                "other": "General Colors EXTREME (12%)"
             }.get(pattern_type, "Unknown")
             
             logger.info(f"  Type: {pattern_type} - {detected_type}")
-            image = apply_pattern_enhancement_transparent(image, pattern_type)
+            image = apply_pattern_enhancement_extreme(image, pattern_type, intensity)
         else:
-            logger.info("⏭️ [2/5] Pattern Enhancement (skipped)")
+            logger.info("⏭️ [2/6] Pattern Enhancement (skipped)")
             pattern_type = "none"
             detected_type = "No Correction"
         
-        # 3. Ring Holes
-        logger.info("🔍 [3/5] Ring Hole Detection...")
-        image = ensure_ring_holes_transparent_simple(image)
+        # 3. EXTREME Ring Holes
+        logger.info("🔍 [3/6] EXTREME Ring Hole Detection...")
+        image = ensure_ring_holes_transparent_extreme(image)
         
-        # 4. Cubic Enhancement
-        logger.info("💎 [4/5] Cubic Enhancement...")
-        image = enhance_cubic_sparkle_simple(image, intensity)
+        # 4. EXTREME Cubic Enhancement
+        logger.info("💎 [4/6] EXTREME Cubic Enhancement...")
+        image = enhance_cubic_sparkle_extreme(image, intensity)
         
-        # 5. SwinIR or Upscaling or Resizing
+        # 5. Upscaling or Resizing
         if target_width or target_height:
-            # Specific size requested - override original size preservation
-            logger.info("📐 [5/5] Target size resizing...")
+            logger.info("📐 [5/6] Target size resizing...")
             enhanced_image = apply_target_resize(image, target_width, target_height)
-            # Optionally apply SwinIR for quality improvement at the new size
-            if apply_swinir and REPLICATE_AVAILABLE:
-                logger.info("🚀 Applying SwinIR for quality enhancement...")
-                enhanced_image = apply_swinir_enhancement(enhanced_image, 1)
+            # Apply extreme enhancement after resize
+            enhanced_image = apply_extreme_final_enhancement(enhanced_image, intensity)
         elif upscale_factor > 1:
-            # Factor-based upscaling with return to original size
-            if apply_swinir and REPLICATE_AVAILABLE:
-                logger.info(f"🚀 [5/5] SwinIR Enhancement with {upscale_factor}x upscale...")
-                enhanced_image = apply_swinir_enhancement(image, upscale_factor)
-            else:
-                logger.info(f"📏 [5/5] Simple {upscale_factor}x upscale...")
-                enhanced_image = apply_simple_upscale(image, upscale_factor)
+            logger.info(f"📏 [5/6] EXTREME {upscale_factor}x upscale...")
+            enhanced_image = apply_advanced_upscale(image, upscale_factor)
             
             # Return to original size after upscaling
             logger.info(f"📐 Returning to original size {original_size[0]}x{original_size[1]}...")
             enhanced_image = enhanced_image.resize(original_size, Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
             
-            # Apply mild sharpening after downscale
+            # Apply extreme sharpening after downscale
             sharpness = ImageEnhance.Sharpness(enhanced_image)
-            enhanced_image = sharpness.enhance(1.1)
-            
-        elif apply_swinir and REPLICATE_AVAILABLE:
-            logger.info("🚀 [5/5] SwinIR Enhancement (no resize)...")
-            enhanced_image = apply_swinir_enhancement(image, 1)
+            enhanced_image = sharpness.enhance(1.3 * intensity)
         else:
-            logger.info("⏭️ [5/5] SwinIR/Resize (skipped)")
+            logger.info("⏭️ [5/6] Upscale/Resize (skipped)")
             enhanced_image = image
+        
+        # 6. EXTREME Final Enhancement
+        logger.info("✨ [6/6] EXTREME Final Enhancement...")
+        enhanced_image = apply_extreme_final_enhancement(enhanced_image, intensity)
         
         # Final encoding
         logger.info("📤 Encoding result...")
         output_base64 = image_to_base64(enhanced_image)
         
         # Statistics
-        cubic_mask, _, _, _ = detect_cubic_regions_enhanced(enhanced_image)
+        cubic_mask, _, _, _ = detect_cubic_regions_extreme(enhanced_image)
         cubic_pixel_count = int(np.sum(cubic_mask))
         total_pixels = enhanced_image.size[0] * enhanced_image.size[1]
         cubic_percentage = (cubic_pixel_count / total_pixels) * 100 if total_pixels > 0 else 0
         
         # Response
         logger.info("="*30)
-        logger.info("✅ PROCESSING COMPLETE")
+        logger.info("✅ EXTREME PROCESSING COMPLETE")
         logger.info(f"📊 Cubic pixels: {cubic_pixel_count} ({cubic_percentage:.1f}%)")
         logger.info(f"📐 Output size: {enhanced_image.size}")
         logger.info("="*30)
@@ -930,6 +964,7 @@ def process_cubic_enhancement(job_input):
                 "pattern_type": pattern_type,
                 "detected_type": detected_type,
                 "intensity": intensity,
+                "processing_mode": "EXTREME",
                 "cubic_statistics": {
                     "cubic_pixels": cubic_pixel_count,
                     "cubic_percentage": round(cubic_percentage, 2),
@@ -937,14 +972,13 @@ def process_cubic_enhancement(job_input):
                     "total_pixels": total_pixels
                 },
                 "corrections_applied": [
-                    "white_balance",
-                    f"pattern_{pattern_type}" if apply_pattern else "pattern_skipped",
-                    "ring_hole_detection",
-                    f"cubic_enhancement_{intensity}",
+                    "extreme_white_balance",
+                    f"extreme_pattern_{pattern_type}" if apply_pattern else "pattern_skipped",
+                    "extreme_ring_hole_detection",
+                    f"extreme_cubic_enhancement_{intensity}",
                     f"resize_to_{enhanced_image.width}x{enhanced_image.height}" if (target_width or target_height) else
-                    f"swinir_{upscale_factor}x_return_to_original" if (apply_swinir and REPLICATE_AVAILABLE and upscale_factor > 1) else
-                    f"simple_upscale_{upscale_factor}x_return_to_original" if (upscale_factor > 1 and not (apply_swinir and REPLICATE_AVAILABLE)) else
-                    "swinir" if (apply_swinir and REPLICATE_AVAILABLE) else "no_resize"
+                    f"extreme_upscale_{upscale_factor}x_return_to_original" if upscale_factor > 1 else "no_resize",
+                    "extreme_final_enhancement"
                 ],
                 "upscale_factor": upscale_factor,
                 "processing_resolution": f"{upscale_factor}x ({int(original_size[0]*upscale_factor)}x{int(original_size[1]*upscale_factor)})" if upscale_factor > 1 else "1x",
@@ -981,36 +1015,23 @@ def handler(event):
     """RunPod handler - main entry point"""
     try:
         logger.info(f"🎯 RunPod Handler v{VERSION}")
-        logger.info(f"📦 Modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
+        logger.info(f"⚡ EXTREME Mode Enabled - Lightweight Edition")
         logger.info(f"📥 Event type: {type(event)}")
         
         # Critical: Log raw event for debugging
         if isinstance(event, dict):
             logger.info(f"📋 Event keys: {list(event.keys())}")
-            if len(event) < 10:  # Small enough to log fully
+            if len(event) < 10:
                 logger.info(f"📄 Full event: {event}")
         
         # RunPod ALWAYS sends data in {"input": {...}} format
-        # This is the ONLY valid structure
-        
         if not isinstance(event, dict):
             raise ValueError(f"Event must be a dict, got {type(event)}")
         
         if 'input' not in event:
-            # This is THE error we keep hitting
             logger.error("❌ CRITICAL: No 'input' field in event!")
             logger.error(f"Available keys: {list(event.keys())}")
             logger.error("RunPod requires {'input': {...}} structure")
-            
-            # Log sample of each key for debugging
-            for key in list(event.keys())[:3]:
-                value = event[key]
-                if isinstance(value, str):
-                    logger.error(f"  {key}: string of {len(value)} chars")
-                elif isinstance(value, dict):
-                    logger.error(f"  {key}: dict with keys {list(value.keys())}")
-                else:
-                    logger.error(f"  {key}: {type(value)}")
             
             raise ValueError("Event must contain 'input' field. RunPod structure: {'input': {...}}")
         
@@ -1046,16 +1067,17 @@ def handler(event):
                 "status": "failed", 
                 "version": VERSION,
                 "traceback": tb,
-                "expected_structure": {"input": {"enhanced_image": "base64_string", "filename": "optional", "intensity": 1.0, "upscale_factor": 2, "target_width": 2048, "target_height": 2048}}
+                "expected_structure": {"input": {"enhanced_image": "base64_string", "filename": "optional", "intensity": 1.5, "upscale_factor": 2, "target_width": 2048, "target_height": 2048}}
             }
         }
 
 # RunPod entry point
 if __name__ == "__main__":
     logger.info(f"🚀 Starting Cubic Detail Enhancement v{VERSION}")
-    logger.info(f"📦 Available modules: Replicate={REPLICATE_AVAILABLE}, Scipy={SCIPY_AVAILABLE}")
+    logger.info(f"⚡ EXTREME Mode - Maximum Enhancement")
+    logger.info(f"📦 Lightweight Edition - No External Dependencies")
     logger.info("⚠️ CRITICAL: RunPod requires {'input': {...}} structure")
-    logger.info("📏 Super-Resolution: Process at higher resolution, return to original size")
+    logger.info("💎 EXTREME Processing: Maximum detail preservation and enhancement")
     
     # FIXED: Pass handler directly, not wrapped in dict
-    runpod.serverless.start(handler)  # Changed from runpod.serverless.start({"handler": handler})
+    runpod.serverless.start(handler)
