@@ -69,12 +69,17 @@ def image_to_base64(image: Image.Image) -> str:
 
 def find_input_data(data):
     """Find image data in various input formats"""
+    log(f"find_input_data: Looking for image in {type(data)}")
+    
     # Direct string
     if isinstance(data, str) and len(data) > 50:
+        log(f"Found direct string image data: {len(data)} chars")
         return data
     
     # Dictionary
     if isinstance(data, dict):
+        log(f"Input is dict with keys: {list(data.keys())}")
+        
         # Priority keys
         image_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'input', 'data']
         
@@ -82,7 +87,10 @@ def find_input_data(data):
             if key in data:
                 value = data[key]
                 if isinstance(value, str) and len(value) > 50:
+                    log(f"Found image data in key '{key}': {len(value)} chars")
                     return value
+                else:
+                    log(f"Key '{key}' exists but not valid: type={type(value)}, len={len(str(value))}")
         
         # Check numbered keys
         for i in range(10):
@@ -90,8 +98,10 @@ def find_input_data(data):
             if key in data:
                 value = data[key]
                 if isinstance(value, str) and len(value) > 50:
+                    log(f"Found image data in numbered key '{key}': {len(value)} chars")
                     return value
     
+    log("❌ No valid image data found in any expected location")
     return None
 
 def detect_pattern_type(filename: str) -> str:
@@ -539,17 +549,28 @@ def apply_target_resize(image: Image.Image, target_width: int = None, target_hei
 def process_cubic_enhancement(job_input):
     """Main processing function"""
     try:
+        log("=== Starting process_cubic_enhancement ===")
+        
         # Find image data
+        log("Step 1: Finding image data...")
         image_data_str = find_input_data(job_input)
         
         if not image_data_str:
+            log("ERROR: No valid image data found")
             return {
                 "output": {
                     "error": "No valid image data found",
                     "status": "failed",
-                    "version": VERSION
+                    "version": VERSION,
+                    "debug_info": {
+                        "input_type": str(type(job_input)),
+                        "input_keys": list(job_input.keys()) if isinstance(job_input, dict) else None,
+                        "input_sample": str(job_input)[:100] if job_input else None
+                    }
                 }
             }
+        
+        log(f"Found image data: {len(image_data_str)} characters")
         
         # Parameters
         filename = ''
@@ -564,6 +585,7 @@ def process_cubic_enhancement(job_input):
             apply_pattern = job_input.get('pattern_enhancement', True)
             target_width = job_input.get('target_width', None)
             target_height = job_input.get('target_height', None)
+            log(f"Parameters: filename={filename}, intensity={intensity}, pattern={apply_pattern}")
         
         # Validate parameters
         intensity = max(0.5, min(3.0, intensity))
@@ -576,16 +598,23 @@ def process_cubic_enhancement(job_input):
             target_height = max(100, min(8192, target_height))
         
         # Decode image
+        log("Step 2: Decoding base64 image...")
         image_bytes = decode_base64_fast(image_data_str)
+        log(f"Decoded {len(image_bytes)} bytes")
+        
+        log("Step 3: Opening image with PIL...")
         image = Image.open(BytesIO(image_bytes))
         
         if image.mode != 'RGBA':
+            log(f"Converting from {image.mode} to RGBA")
             image = image.convert('RGBA')
         
         original_size = (image.size[0], image.size[1])
+        log(f"Image size: {original_size[0]}x{original_size[1]}")
         
         # Processing pipeline
         # 1. White Balance
+        log("Step 4: Applying white balance...")
         image = auto_white_balance_extreme(image)
         
         # 2. Pattern Enhancement
@@ -597,35 +626,47 @@ def process_cubic_enhancement(job_input):
                 "other": "General Colors (12%)"
             }.get(pattern_type, "Unknown")
             
+            log(f"Step 5: Applying pattern enhancement ({pattern_type})...")
             image = apply_pattern_enhancement_extreme(image, pattern_type, intensity)
         else:
             pattern_type = "none"
             detected_type = "No Correction"
+            log("Step 5: Skipping pattern enhancement")
         
         # 3. Ring Holes
+        log("Step 6: Detecting ring holes...")
         image = ensure_ring_holes_transparent_extreme(image)
         
         # 4. Cubic Enhancement
+        log("Step 7: Enhancing cubic details...")
         image = enhance_cubic_sparkle_extreme(image, intensity)
         
         # 5. Resize if needed
         if target_width or target_height:
+            log(f"Step 8: Resizing to {target_width}x{target_height}...")
             enhanced_image = apply_target_resize(image, target_width, target_height)
             enhanced_image = apply_extreme_final_enhancement(enhanced_image, intensity)
         else:
             enhanced_image = image
+            log("Step 8: No resize needed")
         
         # 6. Final Enhancement
+        log("Step 9: Applying final enhancement...")
         enhanced_image = apply_extreme_final_enhancement(enhanced_image, intensity)
         
         # Encode result
+        log("Step 10: Encoding result to base64...")
         output_base64 = image_to_base64(enhanced_image)
+        log(f"Encoded to {len(output_base64)} characters")
         
         # Statistics
+        log("Step 11: Calculating statistics...")
         cubic_mask, _, _, _ = detect_cubic_regions_extreme(enhanced_image)
         cubic_pixel_count = int(np.sum(cubic_mask))
         total_pixels = enhanced_image.size[0] * enhanced_image.size[1]
         cubic_percentage = (cubic_pixel_count / total_pixels) * 100 if total_pixels > 0 else 0
+        
+        log(f"✅ Processing complete! Cubic coverage: {cubic_percentage:.1f}%")
         
         return {
             "output": {
@@ -662,6 +703,9 @@ def process_cubic_enhancement(job_input):
         
     except Exception as e:
         tb = traceback.format_exc()
+        log(f"❌ Processing error: {str(e)}")
+        log(f"Traceback:\n{tb}")
+        
         return {
             "output": {
                 "error": str(e),
@@ -672,15 +716,15 @@ def process_cubic_enhancement(job_input):
         }
 
 def handler(event):
-    """RunPod handler - with health check support"""
+    """RunPod handler - with enhanced logging and health check support"""
     try:
-        log(f"✅ Handler called! - v{VERSION}")  # 더 눈에 띄게
+        log("="*50)
+        log(f"✅ HANDLER CALLED! - v{VERSION}")
         log(f"Event type: {type(event)}")
-        log(f"Event content: {str(event)[:200]}...")  # 이벤트 내용 확인
         
         # Health check - RunPod가 빈 요청을 보낼 때
-        if event is None or (isinstance(event, dict) and len(event) == 0):
-            log("Health check request received")
+        if event is None:
+            log("Event is None - health check")
             return {
                 "output": {
                     "status": "ready",
@@ -689,15 +733,29 @@ def handler(event):
                 }
             }
         
-        # Log event structure
         if isinstance(event, dict):
             log(f"Event keys: {list(event.keys())}")
+            log(f"Event size: {len(str(event))} chars")
+            
+            # Empty dict check
+            if len(event) == 0:
+                log("Empty event dict - health check")
+                return {
+                    "output": {
+                        "status": "ready",
+                        "version": VERSION,
+                        "message": "Worker is ready to process requests"
+                    }
+                }
+            
+            # Check for input field
             if 'input' in event:
-                log("Found 'input' key")
+                log("✓ Found 'input' key in event")
+                job_input = event['input']
                 
-                # Empty input check
-                if event['input'] is None or (isinstance(event['input'], dict) and len(event['input']) == 0):
-                    log("Empty input - health check")
+                # Log input details
+                if job_input is None:
+                    log("job_input is None - health check")
                     return {
                         "output": {
                             "status": "ready",
@@ -705,8 +763,23 @@ def handler(event):
                             "message": "Worker ready - please send request with image data"
                         }
                     }
+                elif isinstance(job_input, dict):
+                    log(f"job_input is dict with keys: {list(job_input.keys())}")
+                    if len(job_input) == 0:
+                        log("Empty job_input dict - health check")
+                        return {
+                            "output": {
+                                "status": "ready",
+                                "version": VERSION,
+                                "message": "Worker ready - please send request with image data"
+                            }
+                        }
+                elif isinstance(job_input, str):
+                    log(f"job_input is string with {len(job_input)} chars")
+                else:
+                    log(f"job_input type: {type(job_input)}")
             else:
-                log("Missing 'input' key - returning health check")
+                log("❌ Missing 'input' key in event")
                 return {
                     "output": {
                         "status": "ready",
@@ -714,10 +787,8 @@ def handler(event):
                         "message": "Worker ready - please send request with 'input' field"
                     }
                 }
-        
-        # RunPod structure check
-        if not isinstance(event, dict) or 'input' not in event:
-            log("WARNING: Invalid event structure, but worker is ready")
+        else:
+            log(f"Event is not a dict, it's: {type(event)}")
             return {
                 "output": {
                     "status": "ready",
@@ -726,21 +797,25 @@ def handler(event):
                 }
             }
         
-        job_input = event['input']
-        log(f"Job input type: {type(job_input)}")
-        
-        if isinstance(job_input, dict):
-            log(f"Job input keys: {list(job_input.keys())}")
-        
-        log("🚀 Starting image processing...")  # 처리 시작 로그
+        # At this point we have valid input
+        log("🚀 Starting image processing...")
+        log("="*50)
         
         # Process
-        return process_cubic_enhancement(job_input)
+        result = process_cubic_enhancement(job_input)
+        
+        log("="*50)
+        log("✅ Handler completed successfully")
+        log("="*50)
+        
+        return result
         
     except Exception as e:
         tb = traceback.format_exc()
-        log(f"❌ Handler error: {str(e)}")
+        log("="*50)
+        log(f"❌ HANDLER ERROR: {str(e)}")
         log(f"Traceback:\n{tb}")
+        log("="*50)
         
         return {
             "output": {
@@ -756,5 +831,12 @@ if __name__ == "__main__":
     log(f"Starting Cubic Enhancement v{VERSION} - Optimized")
     log("Reduced logging, lower contrast, memory efficient")
     
-    # Start handler WITHOUT dictionary - direct function reference
-    runpod.serverless.start(handler)
+    try:
+        # MUST use dictionary format!
+        log("Registering handler with RunPod...")
+        runpod.serverless.start({"handler": handler})
+        log("✅ Handler registered successfully")
+    except Exception as e:
+        log(f"❌ Failed to start RunPod handler: {str(e)}")
+        log(f"Traceback: {traceback.format_exc()}")
+        sys.exit(1)
