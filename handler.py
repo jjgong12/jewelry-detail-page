@@ -1,31 +1,63 @@
 import runpod
 import os
-import base64
-import numpy as np
-from io import BytesIO
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
-import string
+import sys
 import json
 import traceback
-import sys
 
-# Minimal logging - RunPod doesn't like too much logging
+# Check imports before using them
+print(f"Python version: {sys.version}", flush=True)
+print("Starting imports...", flush=True)
+
+try:
+    import base64
+    print("✓ base64 imported", flush=True)
+except Exception as e:
+    print(f"✗ base64 import failed: {e}", flush=True)
+
+try:
+    import numpy as np
+    print("✓ numpy imported", flush=True)
+except Exception as e:
+    print(f"✗ numpy import failed: {e}", flush=True)
+
+try:
+    from io import BytesIO
+    print("✓ BytesIO imported", flush=True)
+except Exception as e:
+    print(f"✗ BytesIO import failed: {e}", flush=True)
+
+try:
+    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+    print("✓ PIL imported", flush=True)
+except Exception as e:
+    print(f"✗ PIL import failed: {e}", flush=True)
+
+try:
+    import string
+    print("✓ string imported", flush=True)
+except Exception as e:
+    print(f"✗ string import failed: {e}", flush=True)
+
+# Enhanced logging
 def log(msg):
-    print(msg, flush=True)
+    """Enhanced logging with timestamp"""
+    from datetime import datetime
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    print(f"[{timestamp}] {msg}", flush=True)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V6.0 - OPTIMIZED
-# VERSION: Cubic-Sparkle-V6.0-Optimized
-# Reduced logging, lower contrast, memory efficient
+# CUBIC DETAIL ENHANCEMENT HANDLER V6.0 - FIXED
+# VERSION: Cubic-Sparkle-V6.0-Fixed
+# Fixed RunPod entry point and enhanced logging
 ################################
 
-VERSION = "Cubic-Sparkle-V6.0-Optimized"
+VERSION = "Cubic-Sparkle-V6.0-Fixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
-    """Fast base64 decode with minimal logging"""
+    """Fast base64 decode with error handling"""
     try:
         if not base64_str or len(base64_str) < 50:
-            raise ValueError("Invalid base64 string")
+            raise ValueError("Invalid base64 string - too short")
             
         # Remove data URL prefix
         if 'base64,' in base64_str:
@@ -69,12 +101,16 @@ def image_to_base64(image: Image.Image) -> str:
 
 def find_input_data(data):
     """Find image data in various input formats"""
+    log(f"Finding input data from type: {type(data)}")
+    
     # Direct string
     if isinstance(data, str) and len(data) > 50:
+        log(f"Found direct string data: {len(data)} chars")
         return data
     
     # Dictionary
     if isinstance(data, dict):
+        log(f"Input is dict with keys: {list(data.keys())}")
         # Priority keys
         image_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'input', 'data']
         
@@ -82,6 +118,7 @@ def find_input_data(data):
             if key in data:
                 value = data[key]
                 if isinstance(value, str) and len(value) > 50:
+                    log(f"Found image data in key '{key}': {len(value)} chars")
                     return value
         
         # Check numbered keys
@@ -90,8 +127,10 @@ def find_input_data(data):
             if key in data:
                 value = data[key]
                 if isinstance(value, str) and len(value) > 50:
+                    log(f"Found image data in key '{key}': {len(value)} chars")
                     return value
     
+    log("No valid image data found")
     return None
 
 def detect_pattern_type(filename: str) -> str:
@@ -160,7 +199,8 @@ def auto_white_balance_extreme(image: Image.Image) -> Image.Image:
         r2, g2, b2 = rgb_balanced.split()
         return Image.merge('RGBA', (r2, g2, b2, a))
         
-    except Exception:
+    except Exception as e:
+        log(f"White balance error: {str(e)}")
         return image
 
 def apply_pattern_enhancement_extreme(image: Image.Image, pattern_type: str, intensity: float = 1.0) -> Image.Image:
@@ -286,7 +326,8 @@ def apply_pattern_enhancement_extreme(image: Image.Image, pattern_type: str, int
         r2, g2, b2 = rgb_image.split()
         return Image.merge('RGBA', (r2, g2, b2, a))
         
-    except Exception:
+    except Exception as e:
+        log(f"Pattern enhancement error: {str(e)}")
         return image
 
 def ensure_ring_holes_transparent_extreme(image: Image.Image) -> Image.Image:
@@ -328,7 +369,8 @@ def ensure_ring_holes_transparent_extreme(image: Image.Image) -> Image.Image:
         a_new = Image.fromarray(alpha_array)
         return Image.merge('RGBA', (r, g, b, a_new))
         
-    except Exception:
+    except Exception as e:
+        log(f"Ring hole detection error: {str(e)}")
         return image
 
 def detect_cubic_regions_extreme(image: Image.Image, sensitivity=1.5):
@@ -380,7 +422,8 @@ def detect_cubic_regions_extreme(image: Image.Image, sensitivity=1.5):
         
         return cubic_mask, white_cubic, color_cubic, highlights
         
-    except Exception:
+    except Exception as e:
+        log(f"Cubic detection error: {str(e)}")
         shape = (image.size[1], image.size[0])
         empty = np.zeros(shape, dtype=bool)
         return empty, empty, empty, empty
@@ -474,7 +517,8 @@ def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Im
         
         return result
         
-    except Exception:
+    except Exception as e:
+        log(f"Cubic enhancement error: {str(e)}")
         return image
 
 def apply_extreme_final_enhancement(image: Image.Image, intensity: float = 1.0) -> Image.Image:
@@ -497,7 +541,8 @@ def apply_extreme_final_enhancement(image: Image.Image, intensity: float = 1.0) 
         
         return enhanced
         
-    except Exception:
+    except Exception as e:
+        log(f"Final enhancement error: {str(e)}")
         return image
 
 def apply_target_resize(image: Image.Image, target_width: int = None, target_height: int = None) -> Image.Image:
@@ -533,12 +578,15 @@ def apply_target_resize(image: Image.Image, target_width: int = None, target_hei
         
         return resized
         
-    except Exception:
+    except Exception as e:
+        log(f"Resize error: {str(e)}")
         return image
 
 def process_cubic_enhancement(job_input):
     """Main processing function"""
     try:
+        log("Starting process_cubic_enhancement")
+        
         # Find image data
         image_data_str = find_input_data(job_input)
         
@@ -547,7 +595,9 @@ def process_cubic_enhancement(job_input):
                 "output": {
                     "error": "No valid image data found",
                     "status": "failed",
-                    "version": VERSION
+                    "version": VERSION,
+                    "input_type": str(type(job_input)),
+                    "input_keys": list(job_input.keys()) if isinstance(job_input, dict) else None
                 }
             }
         
@@ -575,7 +625,10 @@ def process_cubic_enhancement(job_input):
             target_height = int(target_height)
             target_height = max(100, min(8192, target_height))
         
+        log(f"Parameters: intensity={intensity}, pattern={apply_pattern}, target={target_width}x{target_height}")
+        
         # Decode image
+        log("Decoding image...")
         image_bytes = decode_base64_fast(image_data_str)
         image = Image.open(BytesIO(image_bytes))
         
@@ -583,9 +636,11 @@ def process_cubic_enhancement(job_input):
             image = image.convert('RGBA')
         
         original_size = (image.size[0], image.size[1])
+        log(f"Image loaded: {original_size[0]}x{original_size[1]}")
         
         # Processing pipeline
         # 1. White Balance
+        log("Applying white balance...")
         image = auto_white_balance_extreme(image)
         
         # 2. Pattern Enhancement
@@ -597,28 +652,34 @@ def process_cubic_enhancement(job_input):
                 "other": "General Colors (12%)"
             }.get(pattern_type, "Unknown")
             
+            log(f"Applying pattern enhancement: {pattern_type} - {detected_type}")
             image = apply_pattern_enhancement_extreme(image, pattern_type, intensity)
         else:
             pattern_type = "none"
             detected_type = "No Correction"
         
         # 3. Ring Holes
+        log("Detecting ring holes...")
         image = ensure_ring_holes_transparent_extreme(image)
         
         # 4. Cubic Enhancement
+        log("Enhancing cubic details...")
         image = enhance_cubic_sparkle_extreme(image, intensity)
         
         # 5. Resize if needed
         if target_width or target_height:
+            log(f"Resizing to {target_width}x{target_height}...")
             enhanced_image = apply_target_resize(image, target_width, target_height)
             enhanced_image = apply_extreme_final_enhancement(enhanced_image, intensity)
         else:
             enhanced_image = image
         
         # 6. Final Enhancement
+        log("Applying final enhancement...")
         enhanced_image = apply_extreme_final_enhancement(enhanced_image, intensity)
         
         # Encode result
+        log("Encoding result...")
         output_base64 = image_to_base64(enhanced_image)
         
         # Statistics
@@ -626,6 +687,8 @@ def process_cubic_enhancement(job_input):
         cubic_pixel_count = int(np.sum(cubic_mask))
         total_pixels = enhanced_image.size[0] * enhanced_image.size[1]
         cubic_percentage = (cubic_pixel_count / total_pixels) * 100 if total_pixels > 0 else 0
+        
+        log(f"Processing complete: {enhanced_image.size[0]}x{enhanced_image.size[1]}, {cubic_percentage:.1f}% cubic")
         
         return {
             "output": {
@@ -662,6 +725,9 @@ def process_cubic_enhancement(job_input):
         
     except Exception as e:
         tb = traceback.format_exc()
+        log(f"Processing error: {str(e)}")
+        log(f"Traceback:\n{tb}")
+        
         return {
             "output": {
                 "error": str(e),
@@ -672,15 +738,31 @@ def process_cubic_enhancement(job_input):
         }
 
 def handler(event):
-    """RunPod handler - minimal logging"""
+    """RunPod handler - with proper error handling"""
     try:
-        log(f"Handler started - v{VERSION}")
+        log(f"=== Handler started - v{VERSION} ===")
+        log(f"Event type: {type(event)}")
+        
+        # Log event structure
+        if isinstance(event, dict):
+            log(f"Event keys: {list(event.keys())}")
+            if 'input' in event:
+                log("✓ Found 'input' key")
+            else:
+                log("✗ Missing 'input' key")
+        else:
+            log(f"✗ Event is not a dict: {type(event)}")
         
         # RunPod structure check
         if not isinstance(event, dict) or 'input' not in event:
+            log("ERROR: Invalid event structure for RunPod")
             raise ValueError("Event must contain 'input' field")
         
         job_input = event['input']
+        log(f"Job input type: {type(job_input)}")
+        
+        if isinstance(job_input, dict):
+            log(f"Job input keys: {list(job_input.keys())}")
         
         # Process
         return process_cubic_enhancement(job_input)
@@ -688,20 +770,30 @@ def handler(event):
     except Exception as e:
         tb = traceback.format_exc()
         log(f"Handler error: {str(e)}")
+        log(f"Traceback:\n{tb}")
         
         return {
             "output": {
                 "error": str(e),
                 "status": "failed",
                 "version": VERSION,
-                "traceback": tb
+                "traceback": tb,
+                "event_structure": str(type(event)),
+                "event_keys": list(event.keys()) if isinstance(event, dict) else None
             }
         }
 
 # RunPod entry point
 if __name__ == "__main__":
-    log(f"Starting Cubic Enhancement v{VERSION} - Optimized")
-    log("Reduced logging, lower contrast, memory efficient")
+    log(f"=== Starting Cubic Enhancement v{VERSION} ===")
+    log("Fixed RunPod entry point and enhanced logging")
+    log("Python packages check complete")
     
-    # Start handler
-    runpod.serverless.start(handler)
+    try:
+        # FIXED: Use dictionary format for handler
+        log("Registering handler with RunPod...")
+        runpod.serverless.start({"handler": handler})
+    except Exception as e:
+        log(f"CRITICAL: Failed to start RunPod handler: {str(e)}")
+        log(f"Traceback:\n{traceback.format_exc()}")
+        sys.exit(1)
