@@ -14,12 +14,12 @@ def log(msg):
     print(msg, flush=True)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V7.0 - RUNPOD FIX
-# VERSION: Cubic-Sparkle-V7.0-RunPodFix
-# Fixed RunPod entry point
+# CUBIC DETAIL ENHANCEMENT HANDLER V7.1 - HEALTH CHECK FIX
+# VERSION: Cubic-Sparkle-V7.1-HealthCheckFix
+# Fixed RunPod health check and entry point
 ################################
 
-VERSION = "Cubic-Sparkle-V7.0-RunPodFix"
+VERSION = "Cubic-Sparkle-V7.1-HealthCheckFix"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with minimal logging"""
@@ -716,16 +716,27 @@ def process_cubic_enhancement(job_input):
         }
 
 def handler(event):
-    """RunPod handler - FIXED for input structure"""
+    """RunPod handler - FIXED for health check and input structure"""
     try:
         log("="*50)
-        log(f"✅ HANDLER CALLED! - v{VERSION}")
+        log(f"🎯 HANDLER CALLED! - v{VERSION}")
         log(f"Event type: {type(event)}")
         
-        # Critical: RunPod requires event['input'] structure
-        # But if we get None or empty, return ready status
+        # CRITICAL: Handle health checks properly
+        # RunPod sends empty requests or None to check if worker is ready
         if event is None:
-            log("Event is None - health check")
+            log("✅ Health check: Event is None")
+            return {
+                "output": {
+                    "status": "ready",
+                    "version": VERSION,
+                    "message": "Worker is ready to process requests"
+                }
+            }
+        
+        # If event is empty dict
+        if isinstance(event, dict) and len(event) == 0:
+            log("✅ Health check: Empty event dict")
             return {
                 "output": {
                     "status": "ready",
@@ -735,36 +746,48 @@ def handler(event):
             }
         
         # Check if event has 'input' field (RunPod standard)
-        if not isinstance(event, dict) or 'input' not in event:
-            log("⚠️ No 'input' key found in event")
-            # If there's data in event, try to process it anyway
-            if isinstance(event, dict) and len(event) > 0:
-                log("Attempting to process event directly")
-                job_input = event
-            else:
-                return {
-                    "output": {
-                        "status": "ready",
-                        "version": VERSION,
-                        "message": "Worker ready - please send request with 'input' field"
+        if isinstance(event, dict):
+            log(f"Event keys: {list(event.keys())}")
+            
+            # Standard RunPod structure with 'input' field
+            if 'input' in event:
+                job_input = event['input']
+                log("✅ Found 'input' key in event")
+                
+                # Check if input is None or empty (health check)
+                if job_input is None or (isinstance(job_input, dict) and len(job_input) == 0):
+                    log("✅ Health check: Empty or None input")
+                    return {
+                        "output": {
+                            "status": "ready",
+                            "version": VERSION,
+                            "message": "Worker ready - please send request with image data"
+                        }
                     }
-                }
+            else:
+                # No 'input' key - could be direct data or health check
+                log("⚠️ No 'input' key found in event")
+                
+                # If there's other data, try to process it
+                if len(event) > 0:
+                    log("Attempting to process event directly")
+                    job_input = event
+                else:
+                    # Empty event - health check
+                    log("✅ Health check: No input key and empty event")
+                    return {
+                        "output": {
+                            "status": "ready",
+                            "version": VERSION,
+                            "message": "Worker ready - please send request with 'input' field"
+                        }
+                    }
         else:
-            # Standard RunPod structure
-            job_input = event['input']
-            log("✓ Found 'input' key in event")
+            # Event is not a dict - try to process it anyway
+            log(f"⚠️ Event is not a dict: {type(event)}")
+            job_input = event
         
-        # Check if input is empty
-        if job_input is None or (isinstance(job_input, dict) and len(job_input) == 0):
-            log("Empty input - returning ready status")
-            return {
-                "output": {
-                    "status": "ready",
-                    "version": VERSION,
-                    "message": "Worker ready - please send request with image data"
-                }
-            }
-        
+        # At this point we should have valid job_input
         # Log what we're working with
         if isinstance(job_input, dict):
             log(f"job_input is dict with keys: {list(job_input.keys())}")
@@ -803,13 +826,16 @@ def handler(event):
 
 # RunPod entry point
 if __name__ == "__main__":
-    log(f"Starting Cubic Enhancement v{VERSION} - RunPod Fix")
-    log("CRITICAL FIX: Using direct handler (not wrapped in dict)")
+    log(f"Starting Cubic Enhancement v{VERSION} - Health Check Fix")
+    log("CRITICAL FIXES:")
+    log("1. Proper health check handling for empty/None requests")
+    log("2. Using dict format for handler registration")
+    log("3. Always returning {'output': {...}} structure")
     
     try:
-        # FIXED: Pass handler directly, not wrapped in dict
+        # FIXED: Use dictionary format which is more standard
         log("Registering handler with RunPod...")
-        runpod.serverless.start(handler)  # Changed from {"handler": handler}
+        runpod.serverless.start({"handler": handler})
         log("✅ Handler registered successfully")
     except Exception as e:
         log(f"❌ Failed to start RunPod handler: {str(e)}")
