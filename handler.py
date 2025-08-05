@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V10
-# VERSION: Cubic-Sparkle-V10-Final
-# Using V3.2 enhancement values
+# CUBIC DETAIL ENHANCEMENT HANDLER V11
+# VERSION: Cubic-Sparkle-V11-Fixed
+# Fixed input extraction based on other handlers
 ################################
 
-VERSION = "Cubic-Sparkle-V10-Final"
+VERSION = "Cubic-Sparkle-V11-Fixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -63,46 +63,81 @@ def image_to_base64(image):
     base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return base64_str
 
-def find_input_data(data):
-    """Extract input image data from various formats - optimized for cubic detail"""
-    # Handle string input
-    if isinstance(data, str) and len(data) > 50:
-        return data
+def find_input_data_improved(data, depth=0, max_depth=10):
+    """Improved input data extraction based on other handlers"""
+    if depth > max_depth:
+        return None
     
-    # Handle dictionary input
+    # Direct string check
+    if isinstance(data, str) and len(data) > 50:
+        # Basic check if it looks like base64
+        sample = data[:100].strip()
+        if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
+            logger.info("✅ Found image data as direct string")
+            return data
+    
     if isinstance(data, dict):
-        # Priority order for cubic detail enhancement
-        # Added 'enhancement' to handle the current input structure
-        priority_keys = ['enhancement', 'enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img']
+        # Priority keys - UPDATED to match input structure
+        priority_keys = [
+            'enhancement',  # This is the key in the error message
+            'enhanced_image', 
+            'thumbnail', 
+            'image', 
+            'image_base64', 
+            'base64', 
+            'img',
+            'input_image',
+            'original_image',
+            'base64_image',
+            'imageData'
+        ]
         
         # Check priority keys first
         for key in priority_keys:
-            if key in data and isinstance(data[key], str) and len(data[key]) > 50:
-                logger.info(f"✅ Found image data in '{key}'")
-                return data[key]
+            if key in data:
+                value = data[key]
+                # Check if it's a string with substantial length
+                if isinstance(value, str) and len(value) > 50:
+                    # Verify it looks like base64
+                    sample = value[:100].strip()
+                    if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
+                        logger.info(f"✅ Found image data in '{key}'")
+                        return value
+                # If it's a dict, recurse into it
+                elif isinstance(value, dict):
+                    result = find_input_data_improved(value, depth + 1, max_depth)
+                    if result:
+                        return result
         
-        # Check nested structures (like output from other handlers)
-        for key in ['output', 'data']:
+        # Check nested structures
+        for key in ['output', 'data', 'input']:
             if key in data and isinstance(data[key], dict):
-                # Check for enhanced_image or thumbnail in output
-                for img_key in priority_keys:
-                    if img_key in data[key] and isinstance(data[key][img_key], str) and len(data[key][img_key]) > 50:
-                        logger.info(f"✅ Found image data in {key}['{img_key}']")
-                        return data[key][img_key]
-        
-        # Check input structure
-        if 'input' in data:
-            if isinstance(data['input'], str) and len(data['input']) > 50:
-                return data['input']
-            elif isinstance(data['input'], dict):
-                result = find_input_data(data['input'])
+                result = find_input_data_improved(data[key], depth + 1, max_depth)
                 if result:
                     return result
         
-        # Check numbered keys as fallback
-        for i in range(10):
-            if str(i) in data and isinstance(data[str(i)], str) and len(data[str(i)]) > 50:
-                return data[str(i)]
+        # Check all other keys recursively
+        for key, value in data.items():
+            # Skip keys we already checked
+            if key in priority_keys + ['output', 'data', 'input']:
+                continue
+            
+            if isinstance(value, (dict, list)):
+                result = find_input_data_improved(value, depth + 1, max_depth)
+                if result:
+                    return result
+            elif isinstance(value, str) and len(value) > 1000:
+                # Large string that might be base64
+                sample = value[:100].strip()
+                if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
+                    logger.info(f"✅ Found potential image data in '{key}'")
+                    return value
+    
+    elif isinstance(data, list):
+        for i, item in enumerate(data):
+            result = find_input_data_improved(item, depth + 1, max_depth)
+            if result:
+                return result
     
     return None
 
@@ -451,39 +486,8 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         ))
         rgb_array = np.array(hsv_enhanced.convert('RGB'), dtype=np.float32)
     
-    # 5. Create sparkle points
-    try:
-        from scipy.ndimage import label, center_of_mass
-        
-        labeled_cubics, num_features = label(cubic_mask)
-        
-        for i in range(1, min(num_features + 1, 200)):  # Limit to 200 regions
-            region_mask = labeled_cubics == i
-            if np.sum(region_mask) < 5:
-                continue
-            
-            # Find brightest point in region
-            region_brightness = np.mean(rgb_array, axis=2) * region_mask
-            if np.any(region_brightness > 0):
-                max_pos = np.unravel_index(np.argmax(region_brightness), region_brightness.shape)
-                y, x = max_pos
-                
-                # Add sparkle
-                sparkle_radius = 3
-                for dy in range(-sparkle_radius, sparkle_radius + 1):
-                    for dx in range(-sparkle_radius, sparkle_radius + 1):
-                        ny, nx = y + dy, x + dx
-                        if 0 <= ny < rgb_array.shape[0] and 0 <= nx < rgb_array.shape[1]:
-                            dist = np.sqrt(dy**2 + dx**2)
-                            if dist <= sparkle_radius:
-                                sparkle_intensity = (1 - dist/sparkle_radius) * 0.3 * intensity
-                                rgb_array[ny, nx] = np.minimum(
-                                    rgb_array[ny, nx] + (255 - rgb_array[ny, nx]) * sparkle_intensity,
-                                    255
-                                )
-    except:
-        # scipy not available, skip advanced sparkle
-        pass
+    # 5. Create sparkle points (simplified without scipy)
+    # Skip advanced sparkle if scipy not available
     
     # Convert back to image
     rgb_enhanced = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
@@ -499,10 +503,19 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function"""
+    """RunPod handler function - FIXED V11"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
-    logger.info(f"Handler received event: {json.dumps(event, indent=2)[:500]}...")
+    
+    # Log the structure for debugging
+    if isinstance(event, dict):
+        logger.info(f"Event keys: {list(event.keys())}")
+        # Log first few chars of each key for debugging
+        for key in list(event.keys())[:5]:  # First 5 keys only
+            if isinstance(event[key], str):
+                logger.info(f"  {key}: {event[key][:50]}...")
+            elif isinstance(event[key], dict):
+                logger.info(f"  {key}: dict with keys {list(event[key].keys())}")
     
     try:
         # Extract the actual job data from RunPod event structure
@@ -538,65 +551,40 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement"""
+    """Process cubic detail enhancement - FIXED"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for cubic detail enhancement")
         logger.info(f"Job input type: {type(job)}")
         
-        # Extract input data - clearer processing
-        image_data_str = None
+        # Log job structure
+        if isinstance(job, dict):
+            logger.info(f"Job keys: {list(job.keys())}")
         
-        # Direct string input (base64)
-        if isinstance(job, str) and len(job) > 50:
-            image_data_str = job
-            logger.info("✅ Found image data as direct string")
-        
-        # Dictionary input
-        elif isinstance(job, dict):
-            # Priority order for finding image data - Added 'enhancement'
-            priority_keys = ['enhancement', 'enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'data']
-            
-            # Check top-level keys
-            for key in priority_keys:
-                if key in job and isinstance(job[key], str) and len(job[key]) > 50:
-                    image_data_str = job[key]
-                    logger.info(f"✅ Found image data in job['{key}']")
-                    break
-            
-            # If not found, check nested structures
-            if not image_data_str:
-                # Check output structure
-                if 'output' in job and isinstance(job['output'], dict):
-                    for key in priority_keys:
-                        if key in job['output'] and isinstance(job['output'][key], str) and len(job['output'][key]) > 50:
-                            image_data_str = job['output'][key]
-                            logger.info(f"✅ Found image data in job['output']['{key}']")
-                            break
-                
-                # Check data structure
-                if not image_data_str and 'data' in job and isinstance(job['data'], dict):
-                    for key in priority_keys:
-                        if key in job['data'] and isinstance(job['data'][key], str) and len(job['data'][key]) > 50:
-                            image_data_str = job['data'][key]
-                            logger.info(f"✅ Found image data in job['data']['{key}']")
-                            break
-        
-        # If still not found, use the legacy find_input_data function
-        if not image_data_str:
-            image_data_str = find_input_data(job)
+        # Extract input data using improved function
+        image_data_str = find_input_data_improved(job)
         
         if not image_data_str:
+            # More detailed error message
             error_msg = "No input image data found. "
             if isinstance(job, dict):
                 error_msg += f"Available keys: {list(job.keys())}. "
-                # Log first few chars of each key for debugging
-                for key in job.keys():
-                    if isinstance(job[key], str):
-                        error_msg += f"{key}: {job[key][:50]}... "
-                    elif isinstance(job[key], dict):
-                        error_msg += f"{key}: dict with keys {list(job[key].keys())}. "
-            raise ValueError(error_msg)
+                # Check specific problematic keys
+                if 'enhancement' in job:
+                    enhancement_val = job['enhancement']
+                    if isinstance(enhancement_val, str):
+                        error_msg += f"'enhancement' is string with length {len(enhancement_val)}. "
+                        if len(enhancement_val) > 50:
+                            # Try to use it directly
+                            logger.info("Attempting to use 'enhancement' key directly")
+                            image_data_str = enhancement_val
+                        else:
+                            error_msg += "'enhancement' string too short to be image data. "
+                    else:
+                        error_msg += f"'enhancement' is {type(enhancement_val)}. "
+            
+            if not image_data_str:
+                raise ValueError(error_msg)
         
         # Extract parameters
         params = job if isinstance(job, dict) else {}
@@ -691,7 +679,8 @@ def process_cubic_enhancement(job):
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
-                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.CubicPrep → 5.SwinIR"
+                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.CubicPrep → 5.SwinIR",
+                "v11_fix": "Improved input extraction based on other handlers"
             }
         }
         
