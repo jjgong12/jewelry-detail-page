@@ -14,12 +14,12 @@ def log(msg):
     print(msg, flush=True)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V7.0 - INPUT FIX
-# VERSION: Cubic-Sparkle-V7.0-InputFix
-# Fixed input handling for RunPod
+# CUBIC DETAIL ENHANCEMENT HANDLER V7.0 - RUNPOD FIX
+# VERSION: Cubic-Sparkle-V7.0-RunPodFix
+# Fixed RunPod entry point
 ################################
 
-VERSION = "Cubic-Sparkle-V7.0-InputFix"
+VERSION = "Cubic-Sparkle-V7.0-RunPodFix"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with minimal logging"""
@@ -722,9 +722,8 @@ def handler(event):
         log(f"✅ HANDLER CALLED! - v{VERSION}")
         log(f"Event type: {type(event)}")
         
-        # Critical change: Handle both with and without 'input' wrapper
-        job_input = None
-        
+        # Critical: RunPod requires event['input'] structure
+        # But if we get None or empty, return ready status
         if event is None:
             log("Event is None - health check")
             return {
@@ -736,16 +735,26 @@ def handler(event):
             }
         
         # Check if event has 'input' field (RunPod standard)
-        if isinstance(event, dict) and 'input' in event:
-            log("✓ Found 'input' key in event")
-            job_input = event['input']
+        if not isinstance(event, dict) or 'input' not in event:
+            log("⚠️ No 'input' key found in event")
+            # If there's data in event, try to process it anyway
+            if isinstance(event, dict) and len(event) > 0:
+                log("Attempting to process event directly")
+                job_input = event
+            else:
+                return {
+                    "output": {
+                        "status": "ready",
+                        "version": VERSION,
+                        "message": "Worker ready - please send request with 'input' field"
+                    }
+                }
         else:
-            # If no 'input' field, treat the entire event as input
-            # This handles cases where Make.com sends data directly
-            log("⚠️ No 'input' key found - using entire event as input")
-            job_input = event
+            # Standard RunPod structure
+            job_input = event['input']
+            log("✓ Found 'input' key in event")
         
-        # Now check if we have valid data
+        # Check if input is empty
         if job_input is None or (isinstance(job_input, dict) and len(job_input) == 0):
             log("Empty input - returning ready status")
             return {
@@ -794,13 +803,13 @@ def handler(event):
 
 # RunPod entry point
 if __name__ == "__main__":
-    log(f"Starting Cubic Enhancement v{VERSION} - Input Fix")
-    log("Fixed input handling for Make.com compatibility")
+    log(f"Starting Cubic Enhancement v{VERSION} - RunPod Fix")
+    log("CRITICAL FIX: Using direct handler (not wrapped in dict)")
     
     try:
-        # MUST use dictionary format!
+        # FIXED: Pass handler directly, not wrapped in dict
         log("Registering handler with RunPod...")
-        runpod.serverless.start({"handler": handler})
+        runpod.serverless.start(handler)  # Changed from {"handler": handler}
         log("✅ Handler registered successfully")
     except Exception as e:
         log(f"❌ Failed to start RunPod handler: {str(e)}")
