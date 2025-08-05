@@ -14,12 +14,12 @@ def log(msg):
     print(msg, flush=True)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V7.2 - JOB INPUT FIX
-# VERSION: Cubic-Sparkle-V7.2-JobInputFix
-# Fixed RunPod job input structure and Make.com compatibility
+# CUBIC DETAIL ENHANCEMENT HANDLER V7.3 - ADJUSTED ENHANCEMENT
+# VERSION: Cubic-Sparkle-V7.3-AdjustedEnhancement
+# Reduced enhancement values except white overlay
 ################################
 
-VERSION = "Cubic-Sparkle-V7.2-JobInputFix"
+VERSION = "Cubic-Sparkle-V7.3-AdjustedEnhancement"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with minimal logging"""
@@ -162,9 +162,9 @@ def auto_white_balance_extreme(image: Image.Image) -> Image.Image:
         np.clip(img_array, 0, 255, out=img_array)
         rgb_balanced = Image.fromarray(img_array.astype(np.uint8))
         
-        # Fine-tune
+        # Fine-tune - REDUCED
         color = ImageEnhance.Color(rgb_balanced)
-        rgb_balanced = color.enhance(1.1)
+        rgb_balanced = color.enhance(1.05)  # Reduced from 1.1
         
         # Merge with alpha
         r2, g2, b2 = rgb_balanced.split()
@@ -174,7 +174,7 @@ def auto_white_balance_extreme(image: Image.Image) -> Image.Image:
         return image
 
 def apply_pattern_enhancement_extreme(image: Image.Image, pattern_type: str, intensity: float = 1.0) -> Image.Image:
-    """Pattern enhancement with REDUCED contrast"""
+    """Pattern enhancement with REDUCED contrast and adjustments"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -191,106 +191,106 @@ def apply_pattern_enhancement_extreme(image: Image.Image, pattern_type: str, int
         detail_array2 = np.array(detail_layer2, dtype=np.float32)
         
         if pattern_type == "ac_pattern":
-            # AC - Unplated white (25% white)
+            # AC - Unplated white (25% white) - KEEP WHITE OVERLAY
             white_overlay = 0.25 * intensity
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Detail mixing
+            # Detail mixing - REDUCED
             img_array = (
-                img_array * 0.50 + 
-                detail_array1 * 0.25 + 
-                detail_array2 * 0.25
+                img_array * 0.60 +      # Increased from 0.50
+                detail_array1 * 0.20 +  # Reduced from 0.25
+                detail_array2 * 0.20    # Reduced from 0.25
             )
             
             np.clip(img_array, 0, 255, out=img_array)
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
-            # Adjustments with REDUCED contrast
+            # Adjustments with REDUCED values
             brightness = ImageEnhance.Brightness(rgb_image)
-            rgb_image = brightness.enhance(1.08)
+            rgb_image = brightness.enhance(1.05)  # Reduced from 1.08
             
             color = ImageEnhance.Color(rgb_image)
-            rgb_image = color.enhance(0.92)
+            rgb_image = color.enhance(0.95)  # Increased from 0.92
             
-            # REDUCED contrast (was 1.25)
+            # REDUCED contrast
             contrast = ImageEnhance.Contrast(rgb_image)
-            rgb_image = contrast.enhance(1.15)
+            rgb_image = contrast.enhance(1.08)  # Reduced from 1.15
             
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(2.2)
+            rgb_image = sharpness.enhance(1.8)  # Reduced from 2.2
             
         elif pattern_type == "ab_pattern":
-            # AB - Unplated white cool tone (20% white)
+            # AB - Unplated white cool tone (20% white) - KEEP WHITE OVERLAY
             white_overlay = 0.20 * intensity
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Cool tone
-            img_array[:,:,0] *= 0.92
-            img_array[:,:,1] *= 0.96
-            img_array[:,:,2] *= 1.05
+            # Cool tone - REDUCED
+            img_array[:,:,0] *= 0.94  # Increased from 0.92
+            img_array[:,:,1] *= 0.97  # Increased from 0.96
+            img_array[:,:,2] *= 1.03  # Reduced from 1.05
             
-            # Cool overlay
+            # Cool overlay - REDUCED
             cool_overlay = np.array([235, 245, 255], dtype=np.float32)
-            img_array = img_array * 0.88 + cool_overlay * 0.12
+            img_array = img_array * 0.92 + cool_overlay * 0.08  # Reduced from 0.88/0.12
             
-            # Detail mixing
+            # Detail mixing - REDUCED
             img_array = (
-                img_array * 0.50 + 
-                detail_array1 * 0.25 + 
-                detail_array2 * 0.25
+                img_array * 0.60 +      # Increased from 0.50
+                detail_array1 * 0.20 +  # Reduced from 0.25
+                detail_array2 * 0.20    # Reduced from 0.25
             )
             
             np.clip(img_array, 0, 255, out=img_array)
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
             color = ImageEnhance.Color(rgb_image)
-            rgb_image = color.enhance(0.82)
+            rgb_image = color.enhance(0.88)  # Increased from 0.82
             
             brightness = ImageEnhance.Brightness(rgb_image)
-            rgb_image = brightness.enhance(1.06)
+            rgb_image = brightness.enhance(1.04)  # Reduced from 1.06
             
-            # REDUCED contrast (was 1.22)
+            # REDUCED contrast
             contrast = ImageEnhance.Contrast(rgb_image)
-            rgb_image = contrast.enhance(1.12)
+            rgb_image = contrast.enhance(1.06)  # Reduced from 1.12
             
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(2.5)
+            rgb_image = sharpness.enhance(2.0)  # Reduced from 2.5
             
         else:
-            # Other - General colors (12% white)
+            # Other - General colors (12% white) - KEEP WHITE OVERLAY
             white_overlay = 0.12 * intensity
             img_array = img_array * (1 - white_overlay) + 255 * white_overlay
             
-            # Detail mixing
+            # Detail mixing - REDUCED
             img_array = (
-                img_array * 0.50 + 
-                detail_array1 * 0.25 + 
-                detail_array2 * 0.25
+                img_array * 0.60 +      # Increased from 0.50
+                detail_array1 * 0.20 +  # Reduced from 0.25
+                detail_array2 * 0.20    # Reduced from 0.25
             )
             
             np.clip(img_array, 0, 255, out=img_array)
             rgb_image = Image.fromarray(img_array.astype(np.uint8))
             
             brightness = ImageEnhance.Brightness(rgb_image)
-            rgb_image = brightness.enhance(1.15)
+            rgb_image = brightness.enhance(1.10)  # Reduced from 1.15
             
             color = ImageEnhance.Color(rgb_image)
-            rgb_image = color.enhance(1.08)
+            rgb_image = color.enhance(1.05)  # Reduced from 1.08
             
-            # REDUCED contrast (was 1.3)
+            # REDUCED contrast
             contrast = ImageEnhance.Contrast(rgb_image)
-            rgb_image = contrast.enhance(1.18)
+            rgb_image = contrast.enhance(1.10)  # Reduced from 1.18
             
             sharpness = ImageEnhance.Sharpness(rgb_image)
-            rgb_image = sharpness.enhance(2.8)
+            rgb_image = sharpness.enhance(2.2)  # Reduced from 2.8
         
         # Common final pass with REDUCED contrast
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.1)  # Was 1.2
+        rgb_image = contrast.enhance(1.05)  # Reduced from 1.1
         
-        # Final sharpness
+        # Final sharpness - REDUCED
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.8)
+        rgb_image = sharpness.enhance(1.5)  # Reduced from 1.8
         
         # Merge back
         r2, g2, b2 = rgb_image.split()
@@ -396,7 +396,7 @@ def detect_cubic_regions_extreme(image: Image.Image, sensitivity=1.5):
         return empty, empty, empty, empty
 
 def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Image:
-    """Cubic enhancement with REDUCED contrast"""
+    """Cubic enhancement with REDUCED contrast and effects"""
     try:
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -406,9 +406,9 @@ def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Im
         
         cubic_count = np.sum(cubic_mask)
         if cubic_count == 0:
-            # Apply general enhancement
+            # Apply general enhancement - REDUCED
             sharpness = ImageEnhance.Sharpness(image)
-            return sharpness.enhance(1.5 * intensity)
+            return sharpness.enhance(1.2 * intensity)  # Reduced from 1.5
         
         # Work with RGB
         r, g, b, a = image.split()
@@ -423,11 +423,11 @@ def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Im
         detail = image.filter(ImageFilter.DETAIL)
         detail_array = np.array(detail.convert('RGB'), dtype=np.float32)
         
-        # Blend for cubic regions
+        # Blend for cubic regions - REDUCED
         mask_3d = np.stack([cubic_mask] * 3, axis=2)
         rgb_array = np.where(
             mask_3d,
-            rgb_array * 0.40 + edges_array * 0.30 + detail_array * 0.30,
+            rgb_array * 0.50 + edges_array * 0.25 + detail_array * 0.25,  # Reduced from 0.40/0.30/0.30
             rgb_array
         )
         
@@ -447,8 +447,8 @@ def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Im
                             local_data = channel[y:y_end, x:x_end]
                             local_mean = np.mean(local_data[local_mask])
                             
-                            # REDUCED contrast factor (was 1.5)
-                            contrast_factor = 1.2 * intensity
+                            # REDUCED contrast factor
+                            contrast_factor = 1.1 * intensity  # Reduced from 1.2
                             
                             channel[y:y_end, x:x_end] = np.where(
                                 local_mask,
@@ -460,7 +460,7 @@ def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Im
         
         # Highlights with REDUCED boost
         if np.any(highlights):
-            boost = 1.2 * intensity  # Was 1.3
+            boost = 1.1 * intensity  # Reduced from 1.2
             mask_3d = np.stack([highlights] * 3, axis=2)
             rgb_array = np.where(
                 mask_3d,
@@ -474,13 +474,13 @@ def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Im
         r2, g2, b2 = rgb_enhanced.split()
         result = Image.merge('RGBA', (r2, g2, b2, a))
         
-        # Final sharpening with moderate values
+        # Final sharpening with moderate values - REDUCED
         sharpness = ImageEnhance.Sharpness(result)
-        result = sharpness.enhance(1.5 + (0.3 * intensity))
+        result = sharpness.enhance(1.3 + (0.2 * intensity))  # Reduced from 1.5 + 0.3
         
-        # REDUCED final contrast (was 1.1)
+        # REDUCED final contrast
         contrast = ImageEnhance.Contrast(result)
-        result = contrast.enhance(1.05 + (0.05 * intensity))
+        result = contrast.enhance(1.02 + (0.03 * intensity))  # Reduced from 1.05 + 0.05
         
         return result
         
@@ -488,22 +488,22 @@ def enhance_cubic_sparkle_extreme(image: Image.Image, intensity=1.5) -> Image.Im
         return image
 
 def apply_extreme_final_enhancement(image: Image.Image, intensity: float = 1.0) -> Image.Image:
-    """Final enhancement with REDUCED contrast"""
+    """Final enhancement with REDUCED contrast and effects"""
     try:
-        # Clarity
-        clarity = image.filter(ImageFilter.UnsharpMask(radius=2, percent=120, threshold=3))
+        # Clarity - REDUCED
+        clarity = image.filter(ImageFilter.UnsharpMask(radius=2, percent=100, threshold=3))  # Reduced from 120
         
-        # REDUCED contrast (was 1.05)
+        # REDUCED contrast
         contrast = ImageEnhance.Contrast(clarity)
-        enhanced = contrast.enhance(1.03 * intensity)
+        enhanced = contrast.enhance(1.02 * intensity)  # Reduced from 1.03
         
-        # Sharpness
+        # Sharpness - REDUCED
         sharpness = ImageEnhance.Sharpness(enhanced)
-        enhanced = sharpness.enhance(1.15 * intensity)
+        enhanced = sharpness.enhance(1.08 * intensity)  # Reduced from 1.15
         
-        # Color
+        # Color - REDUCED
         color = ImageEnhance.Color(enhanced)
-        enhanced = color.enhance(1.05 * intensity)
+        enhanced = color.enhance(1.03 * intensity)  # Reduced from 1.05
         
         return enhanced
         
@@ -534,9 +534,9 @@ def apply_target_resize(image: Image.Image, target_width: int = None, target_hei
         else:
             return image
         
-        # Sharpening after resize
+        # Sharpening after resize - REDUCED
         scale_factor = max(resized.width / current_width, resized.height / current_height)
-        sharp_strength = 1.2 + (0.2 * min(scale_factor, 2))
+        sharp_strength = 1.1 + (0.1 * min(scale_factor, 2))  # Reduced from 1.2 + 0.2
         
         sharpness = ImageEnhance.Sharpness(resized)
         resized = sharpness.enhance(sharp_strength)
@@ -681,7 +681,7 @@ def process_cubic_enhancement(job_input):
                 "pattern_type": pattern_type,
                 "detected_type": detected_type,
                 "intensity": intensity,
-                "processing_mode": "OPTIMIZED",
+                "processing_mode": "ADJUSTED_ENHANCEMENT",
                 "cubic_statistics": {
                     "cubic_pixels": cubic_pixel_count,
                     "cubic_percentage": round(cubic_percentage, 2),
@@ -694,10 +694,11 @@ def process_cubic_enhancement(job_input):
                     "ring_hole_detection",
                     f"cubic_enhancement_{intensity}",
                     f"resize_to_{enhanced_image.width}x{enhanced_image.height}" if (target_width or target_height) else "no_resize",
-                    "final_enhancement_reduced_contrast"
+                    "final_enhancement_reduced_values"
                 ],
                 "base64_padding": "INCLUDED",
-                "compression": "PNG_LEVEL_3"
+                "compression": "PNG_LEVEL_3",
+                "adjustment_note": "All enhancement values reduced except white overlay"
             }
         }
         
@@ -832,11 +833,13 @@ def handler(job):
 
 # RunPod entry point
 if __name__ == "__main__":
-    log(f"Starting Cubic Enhancement v{VERSION} - Job Input Fix")
-    log("CRITICAL FIXES:")
-    log("1. Handler now uses 'job' parameter (RunPod standard)")
-    log("2. Proper error message for Make.com format issues")
-    log("3. Clear instructions for fixing 'input' field missing error")
+    log(f"Starting Cubic Enhancement v{VERSION} - Adjusted Enhancement Values")
+    log("ADJUSTMENT CHANGES:")
+    log("1. Kept white overlay values (25%, 20%, 12%)")
+    log("2. Reduced all contrast enhancements")
+    log("3. Reduced sharpness values")
+    log("4. Reduced color enhancement values")
+    log("5. Reduced detail mixing ratios")
     
     try:
         # FIXED: Use dictionary format with handler
