@@ -14,12 +14,12 @@ def log(msg):
     print(msg, flush=True)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V7.1 - HEALTH CHECK FIX
-# VERSION: Cubic-Sparkle-V7.1-HealthCheckFix
-# Fixed RunPod health check and entry point
+# CUBIC DETAIL ENHANCEMENT HANDLER V7.2 - JOB INPUT FIX
+# VERSION: Cubic-Sparkle-V7.2-JobInputFix
+# Fixed RunPod job input structure and Make.com compatibility
 ################################
 
-VERSION = "Cubic-Sparkle-V7.1-HealthCheckFix"
+VERSION = "Cubic-Sparkle-V7.2-JobInputFix"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with minimal logging"""
@@ -715,17 +715,17 @@ def process_cubic_enhancement(job_input):
             }
         }
 
-def handler(event):
-    """RunPod handler - FIXED for health check and input structure"""
+def handler(job):
+    """RunPod handler - FIXED with proper job parameter"""
     try:
         log("="*50)
         log(f"🎯 HANDLER CALLED! - v{VERSION}")
-        log(f"Event type: {type(event)}")
+        log(f"Job type: {type(job)}")
         
         # CRITICAL: Handle health checks properly
         # RunPod sends empty requests or None to check if worker is ready
-        if event is None:
-            log("✅ Health check: Event is None")
+        if job is None:
+            log("✅ Health check: Job is None")
             return {
                 "output": {
                     "status": "ready",
@@ -734,9 +734,9 @@ def handler(event):
                 }
             }
         
-        # If event is empty dict
-        if isinstance(event, dict) and len(event) == 0:
-            log("✅ Health check: Empty event dict")
+        # If job is empty dict
+        if isinstance(job, dict) and len(job) == 0:
+            log("✅ Health check: Empty job dict")
             return {
                 "output": {
                     "status": "ready",
@@ -745,14 +745,14 @@ def handler(event):
                 }
             }
         
-        # Check if event has 'input' field (RunPod standard)
-        if isinstance(event, dict):
-            log(f"Event keys: {list(event.keys())}")
+        # CRITICAL: RunPod standard structure
+        if isinstance(job, dict):
+            log(f"Job keys: {list(job.keys())}")
             
-            # Standard RunPod structure with 'input' field
-            if 'input' in event:
-                job_input = event['input']
-                log("✅ Found 'input' key in event")
+            # RunPod sends job with 'input' field
+            if 'input' in job:
+                job_input = job['input']
+                log("✅ Found 'input' key in job")
                 
                 # Check if input is None or empty (health check)
                 if job_input is None or (isinstance(job_input, dict) and len(job_input) == 0):
@@ -765,27 +765,33 @@ def handler(event):
                         }
                     }
             else:
-                # No 'input' key - could be direct data or health check
-                log("⚠️ No 'input' key found in event")
+                # No 'input' key - this should not happen with proper RunPod requests
+                log("❌ CRITICAL ERROR: No 'input' key found in job!")
+                log("This error occurs when Make.com sends data directly instead of wrapping it in {'input': {...}}")
                 
-                # If there's other data, try to process it
-                if len(event) > 0:
-                    log("Attempting to process event directly")
-                    job_input = event
-                else:
-                    # Empty event - health check
-                    log("✅ Health check: No input key and empty event")
-                    return {
-                        "output": {
-                            "status": "ready",
-                            "version": VERSION,
-                            "message": "Worker ready - please send request with 'input' field"
+                return {
+                    "output": {
+                        "error": "Invalid request format: missing 'input' field",
+                        "status": "failed",
+                        "version": VERSION,
+                        "message": "RunPod requires requests in format: {'input': {...}}",
+                        "make_com_fix": "In Make.com, wrap your data in an 'input' object. Example: {'input': {'enhanced_image': 'base64...', 'filename': 'test.jpg'}}",
+                        "debug_info": {
+                            "received_keys": list(job.keys()),
+                            "expected_format": {"input": {"enhanced_image": "base64_string", "filename": "optional"}}
                         }
                     }
+                }
         else:
-            # Event is not a dict - try to process it anyway
-            log(f"⚠️ Event is not a dict: {type(event)}")
-            job_input = event
+            # Job is not a dict - invalid format
+            log(f"❌ Job is not a dict: {type(job)}")
+            return {
+                "output": {
+                    "error": f"Invalid job type: expected dict, got {type(job)}",
+                    "status": "failed",
+                    "version": VERSION
+                }
+            }
         
         # At this point we should have valid job_input
         # Log what we're working with
@@ -826,14 +832,14 @@ def handler(event):
 
 # RunPod entry point
 if __name__ == "__main__":
-    log(f"Starting Cubic Enhancement v{VERSION} - Health Check Fix")
+    log(f"Starting Cubic Enhancement v{VERSION} - Job Input Fix")
     log("CRITICAL FIXES:")
-    log("1. Proper health check handling for empty/None requests")
-    log("2. Using dict format for handler registration")
-    log("3. Always returning {'output': {...}} structure")
+    log("1. Handler now uses 'job' parameter (RunPod standard)")
+    log("2. Proper error message for Make.com format issues")
+    log("3. Clear instructions for fixing 'input' field missing error")
     
     try:
-        # FIXED: Use dictionary format which is more standard
+        # FIXED: Use dictionary format with handler
         log("Registering handler with RunPod...")
         runpod.serverless.start({"handler": handler})
         log("✅ Handler registered successfully")
