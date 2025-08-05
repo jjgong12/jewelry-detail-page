@@ -14,12 +14,12 @@ def log(msg):
     print(msg, flush=True)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V6.0 - OPTIMIZED
-# VERSION: Cubic-Sparkle-V6.0-Optimized
-# Reduced logging, lower contrast, memory efficient
+# CUBIC DETAIL ENHANCEMENT HANDLER V7.0 - INPUT FIX
+# VERSION: Cubic-Sparkle-V7.0-InputFix
+# Fixed input handling for RunPod
 ################################
 
-VERSION = "Cubic-Sparkle-V6.0-Optimized"
+VERSION = "Cubic-Sparkle-V7.0-InputFix"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with minimal logging"""
@@ -716,13 +716,15 @@ def process_cubic_enhancement(job_input):
         }
 
 def handler(event):
-    """RunPod handler - with enhanced logging and health check support"""
+    """RunPod handler - FIXED for input structure"""
     try:
         log("="*50)
         log(f"✅ HANDLER CALLED! - v{VERSION}")
         log(f"Event type: {type(event)}")
         
-        # Health check - RunPod가 빈 요청을 보낼 때
+        # Critical change: Handle both with and without 'input' wrapper
+        job_input = None
+        
         if event is None:
             log("Event is None - health check")
             return {
@@ -733,75 +735,39 @@ def handler(event):
                 }
             }
         
-        if isinstance(event, dict):
-            log(f"Event keys: {list(event.keys())}")
-            log(f"Event size: {len(str(event))} chars")
-            
-            # Empty dict check
-            if len(event) == 0:
-                log("Empty event dict - health check")
-                return {
-                    "output": {
-                        "status": "ready",
-                        "version": VERSION,
-                        "message": "Worker is ready to process requests"
-                    }
-                }
-            
-            # Check for input field
-            if 'input' in event:
-                log("✓ Found 'input' key in event")
-                job_input = event['input']
-                
-                # Log input details
-                if job_input is None:
-                    log("job_input is None - health check")
-                    return {
-                        "output": {
-                            "status": "ready",
-                            "version": VERSION,
-                            "message": "Worker ready - please send request with image data"
-                        }
-                    }
-                elif isinstance(job_input, dict):
-                    log(f"job_input is dict with keys: {list(job_input.keys())}")
-                    if len(job_input) == 0:
-                        log("Empty job_input dict - health check")
-                        return {
-                            "output": {
-                                "status": "ready",
-                                "version": VERSION,
-                                "message": "Worker ready - please send request with image data"
-                            }
-                        }
-                elif isinstance(job_input, str):
-                    log(f"job_input is string with {len(job_input)} chars")
-                else:
-                    log(f"job_input type: {type(job_input)}")
-            else:
-                log("❌ Missing 'input' key in event")
-                return {
-                    "output": {
-                        "status": "ready",
-                        "version": VERSION,
-                        "message": "Worker ready - please send request with 'input' field"
-                    }
-                }
+        # Check if event has 'input' field (RunPod standard)
+        if isinstance(event, dict) and 'input' in event:
+            log("✓ Found 'input' key in event")
+            job_input = event['input']
         else:
-            log(f"Event is not a dict, it's: {type(event)}")
+            # If no 'input' field, treat the entire event as input
+            # This handles cases where Make.com sends data directly
+            log("⚠️ No 'input' key found - using entire event as input")
+            job_input = event
+        
+        # Now check if we have valid data
+        if job_input is None or (isinstance(job_input, dict) and len(job_input) == 0):
+            log("Empty input - returning ready status")
             return {
                 "output": {
                     "status": "ready",
                     "version": VERSION,
-                    "message": "Worker ready - awaiting proper request format"
+                    "message": "Worker ready - please send request with image data"
                 }
             }
         
-        # At this point we have valid input
+        # Log what we're working with
+        if isinstance(job_input, dict):
+            log(f"job_input is dict with keys: {list(job_input.keys())}")
+        elif isinstance(job_input, str):
+            log(f"job_input is string with {len(job_input)} chars")
+        else:
+            log(f"job_input type: {type(job_input)}")
+        
+        # Process the image
         log("🚀 Starting image processing...")
         log("="*50)
         
-        # Process
         result = process_cubic_enhancement(job_input)
         
         log("="*50)
@@ -828,8 +794,8 @@ def handler(event):
 
 # RunPod entry point
 if __name__ == "__main__":
-    log(f"Starting Cubic Enhancement v{VERSION} - Optimized")
-    log("Reduced logging, lower contrast, memory efficient")
+    log(f"Starting Cubic Enhancement v{VERSION} - Input Fix")
+    log("Fixed input handling for Make.com compatibility")
     
     try:
         # MUST use dictionary format!
