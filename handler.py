@@ -72,8 +72,8 @@ def find_input_data(data):
     # Handle dictionary input
     if isinstance(data, dict):
         # Priority order for cubic detail enhancement
-        # Since this processes results from enhancement/thumbnail handlers
-        priority_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img']
+        # Added 'enhancement' to handle the current input structure
+        priority_keys = ['enhancement', 'enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img']
         
         # Check priority keys first
         for key in priority_keys:
@@ -228,11 +228,11 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     return enhanced_image
 
 def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
-    """Apply SwinIR enhancement - 지연 로딩"""
+    """Apply SwinIR enhancement - delayed loading"""
     try:
         logger.info("🎨 Applying SwinIR enhancement for cubic detail")
         
-        # 지연 로딩
+        # Delayed loading
         import replicate
         
         api_token = os.environ.get('REPLICATE_API_TOKEN')
@@ -544,7 +544,7 @@ def process_cubic_enhancement(job):
         logger.info("💎 SwinIR for cubic detail enhancement")
         logger.info(f"Job input type: {type(job)}")
         
-        # 입력 데이터 추출 - 더 명확한 처리
+        # Extract input data - clearer processing
         image_data_str = None
         
         # Direct string input (base64)
@@ -554,8 +554,8 @@ def process_cubic_enhancement(job):
         
         # Dictionary input
         elif isinstance(job, dict):
-            # Priority order for finding image data
-            priority_keys = ['enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'data']
+            # Priority order for finding image data - Added 'enhancement'
+            priority_keys = ['enhancement', 'enhanced_image', 'thumbnail', 'image', 'image_base64', 'base64', 'img', 'data']
             
             # Check top-level keys
             for key in priority_keys:
@@ -598,7 +598,7 @@ def process_cubic_enhancement(job):
                         error_msg += f"{key}: dict with keys {list(job[key].keys())}. "
             raise ValueError(error_msg)
         
-        # 파라미터 추출
+        # Extract parameters
         params = job if isinstance(job, dict) else {}
         filename = params.get('filename', '')
         intensity = float(params.get('intensity', 1.0))
@@ -608,7 +608,7 @@ def process_cubic_enhancement(job):
         
         logger.info(f"Parameters: filename={filename}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
         
-        # 이미지 디코딩
+        # Decode image
         image_bytes = decode_base64_fast(image_data_str)
         image = Image.open(BytesIO(image_bytes))
         
@@ -654,10 +654,10 @@ def process_cubic_enhancement(job):
         else:
             enhanced_image = image
         
-        # Base64로 인코딩
+        # Encode to base64
         output_base64 = image_to_base64(enhanced_image)
         
-        # 통계 정보
+        # Statistics
         cubic_mask, _, _, _ = detect_cubic_regions_enhanced(image)
         cubic_pixel_count = np.sum(cubic_mask)
         cubic_percentage = (cubic_pixel_count / (image.size[0] * image.size[1])) * 100
