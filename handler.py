@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V11
-# VERSION: Cubic-Sparkle-V11-Fixed
-# Fixed input extraction based on other handlers
+# CUBIC DETAIL ENHANCEMENT HANDLER V12
+# VERSION: Cubic-Sparkle-V12-Robust
+# More robust input handling for Make.com
 ################################
 
-VERSION = "Cubic-Sparkle-V11-Fixed"
+VERSION = "Cubic-Sparkle-V12-Robust"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -63,79 +63,65 @@ def image_to_base64(image):
     base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return base64_str
 
-def find_input_data_improved(data, depth=0, max_depth=10):
-    """Improved input data extraction based on other handlers"""
+def find_input_data_robust(data, path="", depth=0, max_depth=10):
+    """More robust input data extraction with detailed logging"""
     if depth > max_depth:
         return None
     
-    # Direct string check
-    if isinstance(data, str) and len(data) > 50:
-        # Basic check if it looks like base64
-        sample = data[:100].strip()
-        if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
-            logger.info("✅ Found image data as direct string")
-            return data
+    logger.info(f"🔍 Searching at depth {depth}, path: {path}")
+    
+    # Direct string check - more lenient
+    if isinstance(data, str):
+        str_len = len(data)
+        logger.info(f"  Found string at {path} with length {str_len}")
+        
+        # Check if it's likely base64 (even if short)
+        if str_len > 20:  # Reduced from 50
+            # Remove whitespace for checking
+            sample = data[:100].strip()
+            # Basic base64 character check
+            if sample and all(c in string.ascii_letters + string.digits + '+/=' for c in sample[:50]):
+                logger.info(f"✅ Found potential base64 data at {path} (length: {str_len})")
+                return data
+        elif str_len > 0:
+            logger.info(f"  String too short at {path}: {str_len} chars")
     
     if isinstance(data, dict):
-        # Priority keys - UPDATED to match input structure
-        priority_keys = [
-            'enhancement',  # This is the key in the error message
-            'enhanced_image', 
-            'thumbnail', 
-            'image', 
-            'image_base64', 
-            'base64', 
-            'img',
-            'input_image',
-            'original_image',
-            'base64_image',
-            'imageData'
-        ]
+        logger.info(f"  Dict at {path} with keys: {list(data.keys())}")
         
-        # Check priority keys first
-        for key in priority_keys:
-            if key in data:
-                value = data[key]
-                # Check if it's a string with substantial length
-                if isinstance(value, str) and len(value) > 50:
-                    # Verify it looks like base64
-                    sample = value[:100].strip()
-                    if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
-                        logger.info(f"✅ Found image data in '{key}'")
-                        return value
-                # If it's a dict, recurse into it
-                elif isinstance(value, dict):
-                    result = find_input_data_improved(value, depth + 1, max_depth)
-                    if result:
-                        return result
+        # Check ALL string values, not just priority keys
+        base64_candidates = []
         
-        # Check nested structures
-        for key in ['output', 'data', 'input']:
-            if key in data and isinstance(data[key], dict):
-                result = find_input_data_improved(data[key], depth + 1, max_depth)
-                if result:
-                    return result
-        
-        # Check all other keys recursively
         for key, value in data.items():
-            # Skip keys we already checked
-            if key in priority_keys + ['output', 'data', 'input']:
-                continue
+            current_path = f"{path}.{key}" if path else key
             
+            if isinstance(value, str) and len(value) > 20:
+                # Log all substantial strings
+                logger.info(f"  Checking string at {current_path}: length={len(value)}")
+                
+                # Check if it looks like base64
+                sample = value[:100].strip()
+                if sample and all(c in string.ascii_letters + string.digits + '+/=' for c in sample[:50]):
+                    base64_candidates.append((current_path, value, len(value)))
+            
+            # Recursive search
             if isinstance(value, (dict, list)):
-                result = find_input_data_improved(value, depth + 1, max_depth)
+                result = find_input_data_robust(value, current_path, depth + 1, max_depth)
                 if result:
                     return result
-            elif isinstance(value, str) and len(value) > 1000:
-                # Large string that might be base64
-                sample = value[:100].strip()
-                if all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
-                    logger.info(f"✅ Found potential image data in '{key}'")
-                    return value
+        
+        # If we found base64 candidates, use the longest one
+        if base64_candidates:
+            # Sort by length, longest first
+            base64_candidates.sort(key=lambda x: x[2], reverse=True)
+            best_path, best_value, best_len = base64_candidates[0]
+            logger.info(f"✅ Selected best base64 candidate at {best_path} (length: {best_len})")
+            return best_value
     
     elif isinstance(data, list):
         for i, item in enumerate(data):
-            result = find_input_data_improved(item, depth + 1, max_depth)
+            current_path = f"{path}[{i}]"
+            result = find_input_data_robust(item, current_path, depth + 1, max_depth)
             if result:
                 return result
     
@@ -486,9 +472,6 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         ))
         rgb_array = np.array(hsv_enhanced.convert('RGB'), dtype=np.float32)
     
-    # 5. Create sparkle points (simplified without scipy)
-    # Skip advanced sparkle if scipy not available
-    
     # Convert back to image
     rgb_enhanced = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
     r2, g2, b2 = rgb_enhanced.split()
@@ -503,19 +486,13 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - FIXED V11"""
+    """RunPod handler function - V12 with robust input handling"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
-    # Log the structure for debugging
-    if isinstance(event, dict):
-        logger.info(f"Event keys: {list(event.keys())}")
-        # Log first few chars of each key for debugging
-        for key in list(event.keys())[:5]:  # First 5 keys only
-            if isinstance(event[key], str):
-                logger.info(f"  {key}: {event[key][:50]}...")
-            elif isinstance(event[key], dict):
-                logger.info(f"  {key}: dict with keys {list(event[key].keys())}")
+    # Log the complete structure for debugging
+    logger.info("📋 Complete event structure:")
+    logger.info(json.dumps(event, indent=2)[:1000] + "...")  # First 1000 chars
     
     try:
         # Extract the actual job data from RunPod event structure
@@ -551,40 +528,60 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - FIXED"""
+    """Process cubic detail enhancement - V12 with robust handling"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for cubic detail enhancement")
         logger.info(f"Job input type: {type(job)}")
         
-        # Log job structure
+        # Log job structure in detail
         if isinstance(job, dict):
             logger.info(f"Job keys: {list(job.keys())}")
+            # Log each key's value type and size
+            for key, value in job.items():
+                if isinstance(value, str):
+                    logger.info(f"  {key}: string, length={len(value)}")
+                    if len(value) < 100:
+                        logger.info(f"    Value: {value}")
+                elif isinstance(value, dict):
+                    logger.info(f"  {key}: dict, keys={list(value.keys())}")
+                elif isinstance(value, list):
+                    logger.info(f"  {key}: list, length={len(value)}")
+                else:
+                    logger.info(f"  {key}: {type(value)}")
         
-        # Extract input data using improved function
-        image_data_str = find_input_data_improved(job)
+        # Extract input data using more robust function
+        image_data_str = find_input_data_robust(job)
         
         if not image_data_str:
-            # More detailed error message
-            error_msg = "No input image data found. "
-            if isinstance(job, dict):
-                error_msg += f"Available keys: {list(job.keys())}. "
-                # Check specific problematic keys
-                if 'enhancement' in job:
-                    enhancement_val = job['enhancement']
-                    if isinstance(enhancement_val, str):
-                        error_msg += f"'enhancement' is string with length {len(enhancement_val)}. "
-                        if len(enhancement_val) > 50:
-                            # Try to use it directly
-                            logger.info("Attempting to use 'enhancement' key directly")
-                            image_data_str = enhancement_val
-                        else:
-                            error_msg += "'enhancement' string too short to be image data. "
-                    else:
-                        error_msg += f"'enhancement' is {type(enhancement_val)}. "
+            # Build detailed error message
+            error_details = []
+            error_details.append("No valid image data found in input.")
             
-            if not image_data_str:
-                raise ValueError(error_msg)
+            if isinstance(job, dict):
+                error_details.append(f"Available keys: {list(job.keys())}")
+                
+                # Check each key for potential issues
+                for key, value in job.items():
+                    if isinstance(value, str):
+                        if len(value) == 0:
+                            error_details.append(f"- '{key}' is empty string")
+                        elif len(value) < 20:
+                            error_details.append(f"- '{key}' too short ({len(value)} chars)")
+                        else:
+                            # Check if it looks like base64
+                            sample = value[:50].strip()
+                            if not all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
+                                error_details.append(f"- '{key}' doesn't look like base64")
+            
+            error_details.append("\nExpected fields: 'enhancement', 'enhanced_image', 'image', 'base64', etc.")
+            error_details.append("Image data should be base64 encoded string.")
+            
+            # Special note about Make.com
+            error_details.append("\nMake.com note: Check that the field mapping is correct.")
+            error_details.append("The image field might be: {{4.data.output.output.enhanced_image}}")
+            
+            raise ValueError("\n".join(error_details))
         
         # Extract parameters
         params = job if isinstance(job, dict) else {}
@@ -680,7 +677,13 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.CubicPrep → 5.SwinIR",
-                "v11_fix": "Improved input extraction based on other handlers"
+                "v12_improvements": [
+                    "More robust input data search",
+                    "Better error messages",
+                    "Reduced minimum string length to 20",
+                    "Complete structure logging",
+                    "Make.com field mapping hints"
+                ]
             }
         }
         
