@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V12
-# VERSION: Cubic-Sparkle-V12-Fixed
-# Fixed JSON serialization for numpy bool_
+# CUBIC DETAIL ENHANCEMENT HANDLER V13
+# VERSION: Cubic-Sparkle-V13-Balanced
+# Fixed brightness and contrast issues
 ################################
 
-VERSION = "Cubic-Sparkle-V12-Fixed"
+VERSION = "Cubic-Sparkle-V13-Balanced"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -49,7 +49,7 @@ def decode_base64_fast(base64_str: str) -> bytes:
         raise ValueError(f"Invalid base64 data: {str(e)}")
 
 def image_to_base64(image):
-    """Convert image to base64 with padding"""
+    """Convert image to base64 with padding - ALWAYS include padding"""
     buffered = BytesIO()
     
     if image.mode != 'RGBA':
@@ -60,6 +60,7 @@ def image_to_base64(image):
     image.save(buffered, format='PNG', compress_level=3, optimize=True)
     
     buffered.seek(0)
+    # ALWAYS include padding - no removal
     base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return base64_str
 
@@ -95,6 +96,10 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
         for key, value in data.items():
             current_path = f"{path}.{key}" if path else key
             
+            # Skip image data
+            if key in ['enhanced_image', 'image', 'base64', 'image_base64'] and isinstance(value, str) and len(value) > 1000:
+                continue
+                
             if isinstance(value, str) and len(value) > 20:
                 # Log all substantial strings
                 logger.info(f"  Checking string at {current_path}: length={len(value)}")
@@ -176,7 +181,7 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
     return result
 
 def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement while preserving transparency"""
+    """Apply pattern enhancement while preserving transparency - BALANCED VERSION"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -186,22 +191,24 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        logger.info("🔍 AC Pattern - Applying 20% white overlay with brightness 1.03")
-        white_overlay = 0.20
+        # AC Pattern - Slightly reduced brightness
+        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.01")
+        white_overlay = 0.18  # Reduced from 0.20
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
         
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.03)
+        rgb_image = brightness.enhance(1.01)  # Reduced from 1.03
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
         
     elif pattern_type == "ab_pattern":
-        logger.info("🔍 AB Pattern - Applying 16% white overlay with brightness 1.03")
-        white_overlay = 0.16
+        # AB Pattern - Slightly reduced brightness
+        logger.info("🔍 AB Pattern - Applying 14% white overlay with brightness 1.01")
+        white_overlay = 0.14  # Reduced from 0.16
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
         img_array[:,:,0] *= 0.96
@@ -218,18 +225,19 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = color.enhance(0.88)
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.03)
+        rgb_image = brightness.enhance(1.01)  # Reduced from 1.03
         
     else:
-        logger.info("🔍 Other Pattern - Applying 5% white overlay with brightness 1.12")
-        white_overlay = 0.05
+        # Other Pattern - SIGNIFICANTLY reduced white overlay and brightness
+        logger.info("🔍 Other Pattern - Applying 2% white overlay with brightness 1.03")
+        white_overlay = 0.02  # Greatly reduced from 0.05
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
         
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.12)
+        rgb_image = brightness.enhance(1.03)  # Greatly reduced from 1.12
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.99)
@@ -237,6 +245,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         sharpness = ImageEnhance.Sharpness(rgb_image)
         rgb_image = sharpness.enhance(1.5)
     
+    # Common adjustments for all patterns
     contrast = ImageEnhance.Contrast(rgb_image)
     rgb_image = contrast.enhance(1.1)
     
@@ -486,7 +495,7 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - V12 Fixed with better JSON serialization"""
+    """RunPod handler function - V13 Balanced with better JSON serialization"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -528,7 +537,7 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - V12 Fixed with better JSON handling"""
+    """Process cubic detail enhancement - V13 Balanced with better JSON handling"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for cubic detail enhancement")
@@ -536,7 +545,7 @@ def process_cubic_enhancement(job):
         
         # Log job structure in detail
         if isinstance(job, dict):
-            logger.info(f"Job keys: {list(job.keys())}")
+            logger.info(f"Job keys: {list(job.keys())[:10]}")
             # Log each key's value type and size
             for key, value in job.items():
                 if isinstance(value, str):
@@ -613,9 +622,9 @@ def process_cubic_enhancement(job):
             logger.info("🎨 Step 2: Applying pattern enhancement")
             pattern_type = detect_pattern_type(filename)
             detected_type = {
-                "ac_pattern": "무도금화이트(0.20)",
-                "ab_pattern": "무도금화이트-쿨톤(0.16)",
-                "other": "기타색상(0.05)"
+                "ac_pattern": "무도금화이트(0.18)",  # Updated value
+                "ab_pattern": "무도금화이트-쿨톤(0.14)",  # Updated value
+                "other": "기타색상(0.02)"  # Updated value
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -676,17 +685,17 @@ def process_cubic_enhancement(job):
                     "cubic_pre_enhancement",
                     "swinir_detail" if apply_swinir else "swinir_skipped"
                 ],
-                "base64_padding": "INCLUDED",
+                "base64_padding": "INCLUDED",  # Always included now
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.CubicPrep → 5.SwinIR",
-                "v12_fixes": [
-                    "Fixed numpy bool_ JSON serialization error",
-                    "Convert cubic_pixel_count to Python int",
-                    "Convert has_cubics to Python bool explicitly",
-                    "More robust input data search",
-                    "Better error messages",
-                    "Make.com field mapping hints"
+                "v13_improvements": [
+                    "Balanced brightness for all patterns",
+                    "AC pattern: 0.18 overlay, 1.01 brightness",
+                    "AB pattern: 0.14 overlay, 1.01 brightness",
+                    "Other patterns: 0.02 overlay, 1.03 brightness (fixed)",
+                    "Fixed excessive whitening in non-AC/AB patterns",
+                    "Always include base64 padding for compatibility"
                 ]
             }
         }
