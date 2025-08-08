@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V13
-# VERSION: Cubic-Sparkle-V13-Balanced
-# Fixed brightness and contrast issues
+# CUBIC DETAIL ENHANCEMENT HANDLER V14
+# VERSION: Cubic-Sparkle-V14-Enhanced
+# Updated pattern settings with cubic detail enhancement
 ################################
 
-VERSION = "Cubic-Sparkle-V13-Balanced"
+VERSION = "Cubic-Sparkle-V14-Enhanced"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -180,8 +180,63 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
     
     return result
 
+def enhance_cubic_detail_for_pattern(image: Image.Image, pattern_type: str) -> Image.Image:
+    """Enhanced cubic detail specifically for AC and AB patterns"""
+    if pattern_type not in ["ac_pattern", "ab_pattern"]:
+        return image
+    
+    logger.info(f"💎 Enhancing cubic detail for {pattern_type}")
+    
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    r, g, b, a = image.split()
+    rgb_image = Image.merge('RGB', (r, g, b))
+    
+    # Edge enhancement for cubic sparkle
+    edges = rgb_image.filter(ImageFilter.EDGE_ENHANCE_MORE)
+    
+    # Detect bright areas (potential cubic surfaces)
+    img_array = np.array(rgb_image, dtype=np.float32)
+    edges_array = np.array(edges, dtype=np.float32)
+    
+    # Create mask for bright areas
+    v_channel = np.max(img_array, axis=2)
+    bright_mask = v_channel > 230
+    
+    # Blend edge enhancement more strongly in bright areas
+    blend_factor = 0.3 if pattern_type == "ac_pattern" else 0.25
+    
+    for c in range(3):
+        img_array[:,:,c] = np.where(
+            bright_mask,
+            img_array[:,:,c] * (1 - blend_factor) + edges_array[:,:,c] * blend_factor,
+            img_array[:,:,c]
+        )
+    
+    # Add micro-contrast to highlights
+    if pattern_type == "ac_pattern":
+        highlight_boost = 1.08
+    else:  # ab_pattern
+        highlight_boost = 1.06
+    
+    highlight_mask = v_channel > 245
+    img_array[highlight_mask] = np.minimum(img_array[highlight_mask] * highlight_boost, 255)
+    
+    # Convert back to image
+    rgb_enhanced = Image.fromarray(np.clip(img_array, 0, 255).astype(np.uint8))
+    
+    # Apply additional sharpening for cubic detail
+    sharpness = ImageEnhance.Sharpness(rgb_enhanced)
+    rgb_enhanced = sharpness.enhance(1.2)
+    
+    r2, g2, b2 = rgb_enhanced.split()
+    result = Image.merge('RGBA', (r2, g2, b2, a))
+    
+    return result
+
 def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement while preserving transparency - BALANCED VERSION"""
+    """Apply pattern enhancement while preserving transparency - V14 ENHANCED"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -191,24 +246,35 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        # AC Pattern - Slightly reduced brightness
-        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.01")
-        white_overlay = 0.18  # Reduced from 0.20
+        # AC Pattern - Enhanced cubic detail
+        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.05")
+        white_overlay = 0.18
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
         
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
+        # Enhanced cubic detail for AC pattern
+        rgb_image = Image.merge('RGB', rgb_image.split())
+        temp_rgba = Image.merge('RGBA', (*rgb_image.split(), a))
+        temp_rgba = enhance_cubic_detail_for_pattern(temp_rgba, pattern_type)
+        r_temp, g_temp, b_temp, _ = temp_rgba.split()
+        rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
+        
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.01)  # Reduced from 1.03
+        rgb_image = brightness.enhance(1.05)  # Updated to 1.05
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
         
+        # Keep contrast at 1.1 for AC pattern
+        contrast = ImageEnhance.Contrast(rgb_image)
+        rgb_image = contrast.enhance(1.1)
+        
     elif pattern_type == "ab_pattern":
-        # AB Pattern - Slightly reduced brightness
-        logger.info("🔍 AB Pattern - Applying 14% white overlay with brightness 1.01")
-        white_overlay = 0.14  # Reduced from 0.16
+        # AB Pattern - Enhanced cubic detail with increased white overlay
+        logger.info("🔍 AB Pattern - Applying 20% white overlay with brightness 1.05")
+        white_overlay = 0.20  # Increased from 0.14 to 0.20
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
         img_array[:,:,0] *= 0.96
@@ -221,34 +287,45 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         img_array = np.clip(img_array, 0, 255)
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
+        # Enhanced cubic detail for AB pattern
+        temp_rgba = Image.merge('RGBA', (*rgb_image.split(), a))
+        temp_rgba = enhance_cubic_detail_for_pattern(temp_rgba, pattern_type)
+        r_temp, g_temp, b_temp, _ = temp_rgba.split()
+        rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
+        
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.88)
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.01)  # Reduced from 1.03
+        rgb_image = brightness.enhance(1.05)  # Updated to 1.05
+        
+        # Keep contrast at 1.1 for AB pattern
+        contrast = ImageEnhance.Contrast(rgb_image)
+        rgb_image = contrast.enhance(1.1)
         
     else:
-        # Other Pattern - SIGNIFICANTLY reduced white overlay and brightness
-        logger.info("🔍 Other Pattern - Applying 2% white overlay with brightness 1.03")
-        white_overlay = 0.02  # Greatly reduced from 0.05
+        # Other Pattern - Reduced contrast
+        logger.info("🔍 Other Pattern - Applying 2% white overlay with brightness 1.05")
+        white_overlay = 0.02
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
         
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.03)  # Greatly reduced from 1.12
+        rgb_image = brightness.enhance(1.05)  # Updated to 1.05
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.99)
         
+        # Reduced contrast for Other pattern
+        contrast = ImageEnhance.Contrast(rgb_image)
+        rgb_image = contrast.enhance(1.06)  # Reduced from 1.1 to 1.06
+        
         sharpness = ImageEnhance.Sharpness(rgb_image)
         rgb_image = sharpness.enhance(1.5)
     
-    # Common adjustments for all patterns
-    contrast = ImageEnhance.Contrast(rgb_image)
-    rgb_image = contrast.enhance(1.1)
-    
+    # Common sharpness adjustment for all patterns
     sharpness = ImageEnhance.Sharpness(rgb_image)
     rgb_image = sharpness.enhance(1.8)
     
@@ -495,7 +572,7 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - V13 Balanced with better JSON serialization"""
+    """RunPod handler function - V14 Enhanced with pattern-specific cubic detail"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -537,7 +614,7 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - V13 Balanced with better JSON handling"""
+    """Process cubic detail enhancement - V14 Enhanced"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for cubic detail enhancement")
@@ -617,14 +694,14 @@ def process_cubic_enhancement(job):
         logger.info("⚖️ Step 1: Applying white balance")
         image = auto_white_balance_fast(image)
         
-        # 2. Pattern Enhancement
+        # 2. Pattern Enhancement with Cubic Detail
         if apply_pattern:
-            logger.info("🎨 Step 2: Applying pattern enhancement")
+            logger.info("🎨 Step 2: Applying pattern enhancement with cubic detail")
             pattern_type = detect_pattern_type(filename)
             detected_type = {
-                "ac_pattern": "무도금화이트(0.18)",  # Updated value
-                "ab_pattern": "무도금화이트-쿨톤(0.14)",  # Updated value
-                "other": "기타색상(0.02)"  # Updated value
+                "ac_pattern": "무도금화이트(0.18)",
+                "ab_pattern": "무도금화이트-쿨톤(0.20)",  # Updated to 0.20
+                "other": "기타색상(0.02)"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -689,12 +766,13 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.CubicPrep → 5.SwinIR",
-                "v13_improvements": [
-                    "Balanced brightness for all patterns",
-                    "AC pattern: 0.18 overlay, 1.01 brightness",
-                    "AB pattern: 0.14 overlay, 1.01 brightness",
-                    "Other patterns: 0.02 overlay, 1.03 brightness (fixed)",
-                    "Fixed excessive whitening in non-AC/AB patterns",
+                "v14_improvements": [
+                    "All patterns brightness unified to 1.05",
+                    "AC pattern: 0.18 overlay + cubic detail enhancement",
+                    "AB pattern: 0.20 overlay (increased) + cubic detail enhancement",
+                    "Other patterns: 0.02 overlay, contrast reduced to 1.06",
+                    "AC/AB patterns have enhanced cubic sparkle detection",
+                    "Pattern-specific edge enhancement for cubic surfaces",
                     "Always include base64 padding for compatibility"
                 ]
             }
