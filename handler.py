@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 ################################
 # CUBIC DETAIL ENHANCEMENT HANDLER V12
-# VERSION: Cubic-Sparkle-V12-Robust
-# More robust input handling for Make.com
+# VERSION: Cubic-Sparkle-V12-Fixed
+# Fixed JSON serialization for numpy bool_
 ################################
 
-VERSION = "Cubic-Sparkle-V12-Robust"
+VERSION = "Cubic-Sparkle-V12-Fixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -486,7 +486,7 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - V12 with robust input handling"""
+    """RunPod handler function - V12 Fixed with better JSON serialization"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -528,7 +528,7 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - V12 with robust handling"""
+    """Process cubic detail enhancement - V12 Fixed with better JSON handling"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for cubic detail enhancement")
@@ -644,8 +644,11 @@ def process_cubic_enhancement(job):
         
         # Statistics
         cubic_mask, _, _, _ = detect_cubic_regions_enhanced(image)
-        cubic_pixel_count = np.sum(cubic_mask)
+        cubic_pixel_count = int(np.sum(cubic_mask))  # Convert to Python int
         cubic_percentage = (cubic_pixel_count / (image.size[0] * image.size[1])) * 100
+        
+        # CRITICAL FIX: Convert numpy bool_ to Python bool
+        has_cubics = bool(cubic_pixel_count > 0)  # Explicitly convert to Python bool
         
         # RunPod expects {"output": {...}} structure
         return {
@@ -662,9 +665,9 @@ def process_cubic_enhancement(job):
                 "detected_type": detected_type,
                 "intensity": intensity,
                 "cubic_statistics": {
-                    "cubic_pixels": int(cubic_pixel_count),
+                    "cubic_pixels": cubic_pixel_count,  # Already converted to Python int
                     "cubic_percentage": round(cubic_percentage, 2),
-                    "has_cubics": cubic_pixel_count > 0
+                    "has_cubics": has_cubics  # Now a Python bool, not numpy bool_
                 },
                 "corrections_applied": [
                     "white_balance",
@@ -677,11 +680,12 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.CubicPrep → 5.SwinIR",
-                "v12_improvements": [
+                "v12_fixes": [
+                    "Fixed numpy bool_ JSON serialization error",
+                    "Convert cubic_pixel_count to Python int",
+                    "Convert has_cubics to Python bool explicitly",
                     "More robust input data search",
                     "Better error messages",
-                    "Reduced minimum string length to 20",
-                    "Complete structure logging",
                     "Make.com field mapping hints"
                 ]
             }
