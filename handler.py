@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V15
-# VERSION: Cubic-Sparkle-V15-MaxDetail
-# Enhanced detail processing with stronger cubic enhancement
+# CUBIC DETAIL ENHANCEMENT HANDLER V16
+# VERSION: Cubic-Sparkle-V16-Refined
+# Fixed over-sharpening and halo artifacts
 ################################
 
-VERSION = "Cubic-Sparkle-V15-MaxDetail"
+VERSION = "Cubic-Sparkle-V16-Refined"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -181,11 +181,11 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
     return result
 
 def enhance_cubic_detail_for_pattern(image: Image.Image, pattern_type: str) -> Image.Image:
-    """ENHANCED cubic detail specifically for AC and AB patterns - STRONGER EFFECT"""
+    """REFINED cubic detail for AC and AB patterns - REDUCED to prevent artifacts"""
     if pattern_type not in ["ac_pattern", "ab_pattern"]:
         return image
     
-    logger.info(f"💎 STRONG cubic detail enhancement for {pattern_type}")
+    logger.info(f"💎 Refined cubic detail enhancement for {pattern_type}")
     
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
@@ -193,101 +193,72 @@ def enhance_cubic_detail_for_pattern(image: Image.Image, pattern_type: str) -> I
     r, g, b, a = image.split()
     rgb_image = Image.merge('RGB', (r, g, b))
     
-    # Apply MULTIPLE edge enhancement passes for stronger effect
-    edges1 = rgb_image.filter(ImageFilter.EDGE_ENHANCE_MORE)
-    edges2 = edges1.filter(ImageFilter.FIND_EDGES)
+    # REDUCED edge enhancement - only one pass
+    edges = rgb_image.filter(ImageFilter.EDGE_ENHANCE)  # Changed from EDGE_ENHANCE_MORE
     
-    # UnsharpMask for detail enhancement
-    unsharp = rgb_image.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+    # Mild UnsharpMask for detail
+    unsharp = rgb_image.filter(ImageFilter.UnsharpMask(radius=1, percent=80, threshold=3))  # Reduced from radius=2, 150%
     
     # Detect bright areas (potential cubic surfaces)
     img_array = np.array(rgb_image, dtype=np.float32)
-    edges_array = np.array(edges1, dtype=np.float32)
-    edges2_array = np.array(edges2, dtype=np.float32)
+    edges_array = np.array(edges, dtype=np.float32)
     unsharp_array = np.array(unsharp, dtype=np.float32)
     
-    # Create mask for bright areas (expanded range)
+    # Create mask for bright areas - stricter threshold
     v_channel = np.max(img_array, axis=2)
-    bright_mask = v_channel > 220  # Lowered threshold for more coverage
-    very_bright_mask = v_channel > 240
+    bright_mask = v_channel > 235  # Raised from 220
+    very_bright_mask = v_channel > 245  # Raised from 240
     
-    # STRONGER blend factors
+    # REDUCED blend factors to prevent artifacts
     if pattern_type == "ac_pattern":
-        edge_blend = 0.5  # Increased from 0.3
-        unsharp_blend = 0.3
+        edge_blend = 0.25  # Reduced from 0.5
+        unsharp_blend = 0.15  # Reduced from 0.3
     else:  # ab_pattern
-        edge_blend = 0.45  # Increased from 0.25
-        unsharp_blend = 0.25
+        edge_blend = 0.2  # Reduced from 0.45
+        unsharp_blend = 0.12  # Reduced from 0.25
     
-    # Apply multiple enhancement layers
+    # Apply gentler enhancement
     for c in range(3):
-        # First layer - edge enhancement
+        # Edge enhancement - reduced
         img_array[:,:,c] = np.where(
             bright_mask,
             img_array[:,:,c] * (1 - edge_blend) + edges_array[:,:,c] * edge_blend,
             img_array[:,:,c]
         )
         
-        # Second layer - fine edge details
+        # Unsharp mask - only on very bright areas
         img_array[:,:,c] = np.where(
             very_bright_mask,
-            img_array[:,:,c] * 0.8 + edges2_array[:,:,c] * 0.2,
-            img_array[:,:,c]
-        )
-        
-        # Third layer - unsharp mask
-        img_array[:,:,c] = np.where(
-            bright_mask,
             img_array[:,:,c] * (1 - unsharp_blend) + unsharp_array[:,:,c] * unsharp_blend,
             img_array[:,:,c]
         )
     
-    # STRONGER micro-contrast to highlights
+    # MILD micro-contrast to highlights
     if pattern_type == "ac_pattern":
-        highlight_boost = 1.15  # Increased from 1.08
-        sparkle_boost = 1.25  # New extreme highlight boost
+        highlight_boost = 1.08  # Reduced from 1.15
     else:  # ab_pattern
-        highlight_boost = 1.12  # Increased from 1.06
-        sparkle_boost = 1.20
+        highlight_boost = 1.06  # Reduced from 1.12
     
-    # Multi-level highlight enhancement
-    highlight_mask = v_channel > 235
-    extreme_highlight_mask = v_channel > 250
-    
+    # Single level highlight enhancement
+    highlight_mask = v_channel > 245
     img_array[highlight_mask] = np.minimum(img_array[highlight_mask] * highlight_boost, 255)
-    img_array[extreme_highlight_mask] = np.minimum(img_array[extreme_highlight_mask] * sparkle_boost, 255)
-    
-    # Add local contrast enhancement
-    mean_val = np.mean(img_array[bright_mask]) if np.any(bright_mask) else 128
-    for c in range(3):
-        img_array[:,:,c] = np.where(
-            bright_mask,
-            np.clip((img_array[:,:,c] - mean_val) * 1.3 + mean_val, 0, 255),
-            img_array[:,:,c]
-        )
     
     # Convert back to image
     rgb_enhanced = Image.fromarray(np.clip(img_array, 0, 255).astype(np.uint8))
     
-    # Apply MULTIPLE sharpening passes for maximum detail
+    # SINGLE mild sharpening pass
     sharpness = ImageEnhance.Sharpness(rgb_enhanced)
-    rgb_enhanced = sharpness.enhance(1.5)  # First pass
-    
-    sharpness = ImageEnhance.Sharpness(rgb_enhanced)
-    rgb_enhanced = sharpness.enhance(1.3)  # Second pass
-    
-    # Final detail filter
-    rgb_enhanced = rgb_enhanced.filter(ImageFilter.DETAIL)
+    rgb_enhanced = sharpness.enhance(1.2)  # Reduced from multiple passes
     
     r2, g2, b2 = rgb_enhanced.split()
     result = Image.merge('RGBA', (r2, g2, b2, a))
     
-    logger.info("✅ STRONG cubic detail enhancement applied!")
+    logger.info("✅ Refined cubic detail enhancement applied")
     
     return result
 
 def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement while preserving transparency - V15 MAX DETAIL"""
+    """Apply pattern enhancement while preserving transparency - V16 REFINED"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -297,7 +268,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        # AC Pattern - Enhanced cubic detail with stronger contrast
+        # AC Pattern - Refined settings
         logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.05, contrast 1.13")
         white_overlay = 0.18
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
@@ -305,7 +276,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # Enhanced cubic detail for AC pattern - BEFORE other adjustments for better effect
+        # Refined cubic detail for AC pattern
         rgb_image = Image.merge('RGB', rgb_image.split())
         temp_rgba = Image.merge('RGBA', (*rgb_image.split(), a))
         temp_rgba = enhance_cubic_detail_for_pattern(temp_rgba, pattern_type)
@@ -318,12 +289,11 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
         
-        # Increased contrast for AC pattern
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.13)  # Updated from 1.1 to 1.13
+        rgb_image = contrast.enhance(1.13)
         
     elif pattern_type == "ab_pattern":
-        # AB Pattern - Enhanced cubic detail with stronger contrast
+        # AB Pattern - Refined settings
         logger.info("🔍 AB Pattern - Applying 20% white overlay with brightness 1.05, contrast 1.13")
         white_overlay = 0.20
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
@@ -338,7 +308,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         img_array = np.clip(img_array, 0, 255)
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # Enhanced cubic detail for AB pattern - BEFORE other adjustments
+        # Refined cubic detail for AB pattern
         temp_rgba = Image.merge('RGBA', (*rgb_image.split(), a))
         temp_rgba = enhance_cubic_detail_for_pattern(temp_rgba, pattern_type)
         r_temp, g_temp, b_temp, _ = temp_rgba.split()
@@ -350,12 +320,11 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         brightness = ImageEnhance.Brightness(rgb_image)
         rgb_image = brightness.enhance(1.05)
         
-        # Increased contrast for AB pattern
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.13)  # Updated from 1.1 to 1.13
+        rgb_image = contrast.enhance(1.13)
         
     else:
-        # Other Pattern - Normal processing
+        # Other Pattern - Much gentler processing
         logger.info("🔍 Other Pattern - Applying 2% white overlay with brightness 1.05, contrast 1.06")
         white_overlay = 0.02
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
@@ -372,16 +341,18 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.06)
         
-        # Enhanced sharpening for other pattern
+        # Mild sharpening for other pattern
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.7)  # Increased from 1.5
+        rgb_image = sharpness.enhance(1.2)  # Greatly reduced from 1.7
     
-    # ENHANCED common sharpness adjustment for maximum detail
+    # REFINED common sharpness - pattern specific
     sharpness = ImageEnhance.Sharpness(rgb_image)
-    rgb_image = sharpness.enhance(2.0)  # Increased from 1.8 to 2.0
+    if pattern_type in ["ac_pattern", "ab_pattern"]:
+        rgb_image = sharpness.enhance(1.4)  # Reduced from 2.0 for AC/AB
+    else:
+        rgb_image = sharpness.enhance(1.3)  # Reduced from 2.0 for Other
     
-    # Additional detail enhancement filter
-    rgb_image = rgb_image.filter(ImageFilter.SHARPEN)
+    # NO additional SHARPEN filter to prevent artifacts
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -479,7 +450,7 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
     return result
 
 def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
-    """Enhanced cubic detection for better SwinIR results"""
+    """Enhanced cubic detection with STRICTER thresholds to prevent over-detection"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -497,25 +468,25 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     edges = image.filter(ImageFilter.FIND_EDGES)
     edges_array = np.array(edges.convert('L'))
     
-    # Enhanced cubic detection with broader range
+    # STRICTER cubic detection to avoid false positives
     white_cubic = (
-        (v_array > 230 * sensitivity) &  # Lowered threshold
-        (s_array < 40) &  # Increased tolerance
+        (v_array > 245 * sensitivity) &  # Raised threshold
+        (s_array < 25) &  # Stricter saturation
         (alpha_array > 200)
     )
     
     color_cubic = (
-        (v_array > 190 * sensitivity) &  # Lowered threshold
-        (s_array > 80) &  # Lowered threshold
+        (v_array > 210 * sensitivity) &  # Raised threshold
+        (s_array > 120) &  # Stricter saturation requirement
         (alpha_array > 200)
     )
     
-    # Edge-based cubic detection
-    edge_cubic = (edges_array > 80) & (v_array > 210) & (alpha_array > 200)  # Lowered thresholds
+    # Edge-based cubic detection - stricter
+    edge_cubic = (edges_array > 120) & (v_array > 230) & (alpha_array > 200)  # Raised thresholds
     
     highlights = (
-        (v_array > 245) &  # Slightly lowered
-        (s_array < 60) &  # Increased tolerance
+        (v_array > 250) &  # Only extreme highlights
+        (s_array < 40) &  # Stricter saturation
         (alpha_array > 200)
     )
     
@@ -530,8 +501,8 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     return cubic_mask.astype(bool), white_cubic, color_cubic, highlights
 
 def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Image.Image:
-    """ENHANCED cubic sparkle optimized for SwinIR - MAXIMUM DETAIL"""
-    logger.info("💎 MAXIMUM cubic detail processing for SwinIR...")
+    """REFINED cubic sparkle for SwinIR - BALANCED approach"""
+    logger.info("💎 Refined cubic detail processing for SwinIR...")
     
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
@@ -545,122 +516,101 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     logger.info(f"✨ Detected {cubic_count} cubic pixels")
     
     if cubic_count == 0:
-        logger.info("No cubic regions detected, applying general enhancement")
-        # Still apply some enhancement even without detected cubics
-        edges = image.filter(ImageFilter.EDGE_ENHANCE_MORE)
-        edges_array = np.array(edges.convert('RGB'), dtype=np.float32)
-        rgb_array = rgb_array * 0.8 + edges_array * 0.2
-    else:
-        # STRONGER Pre-enhancement for SwinIR
+        logger.info("No cubic regions detected, skipping enhancement")
+        return image
+    
+    # BALANCED Pre-enhancement for SwinIR
+    
+    # 1. Single edge enhancement pass
+    edges = image.filter(ImageFilter.EDGE_ENHANCE)  # Mild edge enhancement
+    edges_array = np.array(edges.convert('RGB'), dtype=np.float32)
+    
+    # Mild UnsharpMask
+    unsharp = image.filter(ImageFilter.UnsharpMask(radius=1, percent=100, threshold=3))
+    unsharp_array = np.array(unsharp.convert('RGB'), dtype=np.float32)
+    
+    # Apply BALANCED edge enhancement
+    for c in range(3):
+        # Gentle edge enhancement
+        rgb_array[:,:,c] = np.where(
+            cubic_mask,
+            rgb_array[:,:,c] * 0.75 + edges_array[:,:,c] * 0.25,  # Reduced from 0.5/0.5
+            rgb_array[:,:,c]
+        )
         
-        # 1. Multiple edge enhancement passes
-        edges1 = image.filter(ImageFilter.EDGE_ENHANCE_MORE)
-        edges2 = edges1.filter(ImageFilter.FIND_EDGES)
-        unsharp = image.filter(ImageFilter.UnsharpMask(radius=2, percent=200, threshold=2))
+        # Mild unsharp mask only on highlights
+        rgb_array[:,:,c] = np.where(
+            highlights,
+            rgb_array[:,:,c] * 0.85 + unsharp_array[:,:,c] * 0.15,  # Reduced blend
+            rgb_array[:,:,c]
+        )
+    
+    # 2. MILD contrast boost for cubics
+    if np.any(cubic_mask):
+        mean_val = np.mean(rgb_array[cubic_mask])
+        contrast_factor = 1.15 * intensity  # Reduced from 1.5
         
-        edges1_array = np.array(edges1.convert('RGB'), dtype=np.float32)
-        edges2_array = np.array(edges2.convert('RGB'), dtype=np.float32)
-        unsharp_array = np.array(unsharp.convert('RGB'), dtype=np.float32)
-        
-        # Apply STRONGER edge enhancement selectively
         for c in range(3):
-            # Layer 1: Main edge enhancement
             rgb_array[:,:,c] = np.where(
                 cubic_mask,
-                rgb_array[:,:,c] * 0.5 + edges1_array[:,:,c] * 0.5,  # Increased from 0.7/0.3
+                np.clip((rgb_array[:,:,c] - mean_val) * contrast_factor + mean_val, 0, 255),
                 rgb_array[:,:,c]
             )
-            
-            # Layer 2: Fine edges
-            rgb_array[:,:,c] = np.where(
-                highlights,
-                rgb_array[:,:,c] * 0.7 + edges2_array[:,:,c] * 0.3,
-                rgb_array[:,:,c]
-            )
-            
-            # Layer 3: Unsharp mask
-            rgb_array[:,:,c] = np.where(
-                cubic_mask,
-                rgb_array[:,:,c] * 0.6 + unsharp_array[:,:,c] * 0.4,  # Stronger unsharp
-                rgb_array[:,:,c]
-            )
+    
+    # 3. MILD highlight enhancement
+    if np.any(highlights):
+        boost_factor = 1.1 * intensity  # Reduced from 1.25
+        rgb_array[highlights] = np.minimum(rgb_array[highlights] * boost_factor, 255)
+    
+    # 4. BALANCED color cubic saturation boost
+    if np.any(color_cubic):
+        # Convert to HSV for saturation adjustment
+        rgb_temp = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
+        hsv_temp = rgb_temp.convert('HSV')
+        h_temp, s_temp, v_temp = hsv_temp.split()
         
-        # 2. STRONGER contrast boost for cubics
-        if np.any(cubic_mask):
-            mean_val = np.mean(rgb_array[cubic_mask])
-            contrast_factor = 1.5 * intensity  # Increased from 1.2
-            
-            for c in range(3):
-                rgb_array[:,:,c] = np.where(
-                    cubic_mask,
-                    np.clip((rgb_array[:,:,c] - mean_val) * contrast_factor + mean_val, 0, 255),
-                    rgb_array[:,:,c]
-                )
+        s_array = np.array(s_temp, dtype=np.float32)
+        v_array = np.array(v_temp, dtype=np.float32)
         
-        # 3. STRONGER highlight enhancement
-        if np.any(highlights):
-            boost_factor = 1.25 * intensity  # Increased from 1.15
-            rgb_array[highlights] = np.minimum(rgb_array[highlights] * boost_factor, 255)
-            
-            # Extra sparkle for extreme highlights
-            extreme_highlights = np.array(image.convert('L')) > 252
-            if np.any(extreme_highlights):
-                rgb_array[extreme_highlights] = np.minimum(rgb_array[extreme_highlights] * 1.3, 255)
+        # Mild saturation boost
+        s_array = np.where(
+            color_cubic,
+            np.minimum(s_array * (1.3 * intensity), 255),  # Reduced from 1.6
+            s_array
+        )
         
-        # 4. ENHANCED color cubic saturation boost
-        if np.any(color_cubic):
-            # Convert to HSV for saturation adjustment
-            rgb_temp = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
-            hsv_temp = rgb_temp.convert('HSV')
-            h_temp, s_temp, v_temp = hsv_temp.split()
-            
-            s_array = np.array(s_temp, dtype=np.float32)
-            v_array = np.array(v_temp, dtype=np.float32)
-            
-            # STRONGER saturation boost
-            s_array = np.where(
-                color_cubic,
-                np.minimum(s_array * (1.6 * intensity), 255),  # Increased from 1.4
-                s_array
-            )
-            
-            # STRONGER value boost
-            v_array = np.where(
-                color_cubic,
-                np.minimum(v_array * 1.1, 255),  # Increased from 1.05
-                v_array
-            )
-            
-            # Convert back
-            hsv_enhanced = Image.merge('HSV', (
-                h_temp,
-                Image.fromarray(s_array.astype(np.uint8)),
-                Image.fromarray(v_array.astype(np.uint8))
-            ))
-            rgb_array = np.array(hsv_enhanced.convert('RGB'), dtype=np.float32)
+        # Minimal value boost
+        v_array = np.where(
+            color_cubic,
+            np.minimum(v_array * 1.03, 255),  # Reduced from 1.1
+            v_array
+        )
+        
+        # Convert back
+        hsv_enhanced = Image.merge('HSV', (
+            h_temp,
+            Image.fromarray(s_array.astype(np.uint8)),
+            Image.fromarray(v_array.astype(np.uint8))
+        ))
+        rgb_array = np.array(hsv_enhanced.convert('RGB'), dtype=np.float32)
     
     # Convert back to image
     rgb_enhanced = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
     r2, g2, b2 = rgb_enhanced.split()
     result = Image.merge('RGBA', (r2, g2, b2, a))
     
-    # MULTIPLE sharpening passes for maximum detail
+    # SINGLE mild sharpening pass
     sharpness = ImageEnhance.Sharpness(result)
-    result = sharpness.enhance(1.0 + (0.5 * intensity))  # Increased from 0.3
+    result = sharpness.enhance(1.0 + (0.2 * intensity))  # Greatly reduced from 0.5
     
-    # Second sharpening pass
-    sharpness = ImageEnhance.Sharpness(result)
-    result = sharpness.enhance(1.2)
+    # NO additional detail filter to prevent artifacts
     
-    # Final detail filter
-    result = result.filter(ImageFilter.DETAIL)
-    
-    logger.info("✅ MAXIMUM cubic pre-enhancement complete!")
+    logger.info("✅ Refined cubic pre-enhancement complete")
     
     return result
 
 def handler(event):
-    """RunPod handler function - V15 MaxDetail with stronger enhancements"""
+    """RunPod handler function - V16 Refined with artifact prevention"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -702,10 +652,10 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - V15 MaxDetail"""
+    """Process cubic detail enhancement - V16 Refined"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
-        logger.info("💎 SwinIR for MAXIMUM detail enhancement")
+        logger.info("💎 SwinIR for refined detail enhancement")
         logger.info(f"Job input type: {type(job)}")
         
         # Log job structure in detail
@@ -782,9 +732,9 @@ def process_cubic_enhancement(job):
         logger.info("⚖️ Step 1: Applying white balance")
         image = auto_white_balance_fast(image)
         
-        # 2. Pattern Enhancement with STRONG Cubic Detail
+        # 2. Pattern Enhancement with Refined Cubic Detail
         if apply_pattern:
-            logger.info("🎨 Step 2: Applying pattern enhancement with MAXIMUM cubic detail")
+            logger.info("🎨 Step 2: Applying pattern enhancement with refined cubic detail")
             pattern_type = detect_pattern_type(filename)
             detected_type = {
                 "ac_pattern": "무도금화이트(0.18)",
@@ -802,13 +752,13 @@ def process_cubic_enhancement(job):
         logger.info("🔍 Step 3: Simple ring hole detection")
         image = ensure_ring_holes_transparent_simple(image)
         
-        # 4. MAXIMUM Cubic Pre-enhancement
-        logger.info("💎 Step 4: MAXIMUM cubic pre-enhancement")
+        # 4. Refined Cubic Pre-enhancement
+        logger.info("💎 Step 4: Refined cubic pre-enhancement")
         image = enhance_cubic_sparkle_with_swinir(image, intensity)
         
         # 5. SwinIR Enhancement (for cubic detail)
         if apply_swinir:
-            logger.info("🚀 Step 5: Applying SwinIR for MAXIMUM detail")
+            logger.info("🚀 Step 5: Applying SwinIR for refined detail")
             enhanced_image = apply_swinir_enhancement(image)
         else:
             enhanced_image = image
@@ -847,24 +797,24 @@ def process_cubic_enhancement(job):
                     "white_balance",
                     "pattern_enhancement" if apply_pattern else "pattern_skipped",
                     "ring_hole_detection_simple",
-                    "cubic_pre_enhancement_maximum",
+                    "cubic_pre_enhancement_refined",
                     "swinir_detail" if apply_swinir else "swinir_skipped"
                 ],
                 "base64_padding": "INCLUDED",  # Always included now
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
-                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.MaxCubicPrep → 5.SwinIR",
-                "v15_improvements": [
-                    "All patterns brightness unified to 1.05",
-                    "AC pattern: 0.18 overlay, contrast 1.13, STRONG cubic detail",
-                    "AB pattern: 0.20 overlay, contrast 1.13, STRONG cubic detail",
-                    "Other patterns: 0.02 overlay, contrast 1.06",
-                    "MAXIMUM detail enhancement with multiple edge passes",
-                    "Stronger highlight boost (AC:1.15/1.25, AB:1.12/1.20)",
-                    "Multiple sharpening passes (1.5→1.3→DETAIL filter)",
-                    "Overall sharpness increased to 2.0 + SHARPEN filter",
-                    "Enhanced cubic detection with broader thresholds",
-                    "Stronger pre-SwinIR enhancement (50% edge blend)"
+                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.RefinedCubicPrep → 5.SwinIR",
+                "v16_improvements": [
+                    "Fixed over-sharpening artifacts and halo effects",
+                    "AC pattern: Edge blend 0.5→0.25, UnsharpMask 150%→80%",
+                    "AB pattern: Edge blend 0.45→0.2, highlight boost reduced",
+                    "Other patterns: Sharpness 1.7→1.2 to prevent texture artifacts",
+                    "Overall sharpness: AC/AB 2.0→1.4, Other 2.0→1.3",
+                    "Removed additional SHARPEN filter",
+                    "Stricter cubic detection thresholds (245+, 210+)",
+                    "Single edge enhancement pass instead of multiple",
+                    "Reduced pre-SwinIR enhancement (25% blend)",
+                    "UnsharpMask: radius 2→1, percent 150→80"
                 ]
             }
         }
