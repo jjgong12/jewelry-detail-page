@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 # CUBIC DETAIL ENHANCEMENT HANDLER V16
 # VERSION: Cubic-Sparkle-V16-Refined
 # Fixed over-sharpening and halo artifacts
+# Updated: AB/AC pattern brightness 1.05 -> 1.08
 ################################
 
-VERSION = "Cubic-Sparkle-V16-Refined"
+VERSION = "Cubic-Sparkle-V16-Refined-B108"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -258,7 +259,7 @@ def enhance_cubic_detail_for_pattern(image: Image.Image, pattern_type: str) -> I
     return result
 
 def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement while preserving transparency - V16 REFINED"""
+    """Apply pattern enhancement while preserving transparency - V16 REFINED with Brightness 1.08"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -268,8 +269,8 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        # AC Pattern - Refined settings
-        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.05, contrast 1.13")
+        # AC Pattern - Refined settings with brightness 1.08
+        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.08, contrast 1.13")
         white_overlay = 0.18
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
@@ -284,7 +285,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.05)
+        rgb_image = brightness.enhance(1.08)  # UPDATED from 1.05 to 1.08
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
@@ -293,8 +294,8 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = contrast.enhance(1.13)
         
     elif pattern_type == "ab_pattern":
-        # AB Pattern - Refined settings
-        logger.info("🔍 AB Pattern - Applying 20% white overlay with brightness 1.05, contrast 1.13")
+        # AB Pattern - Refined settings with brightness 1.08
+        logger.info("🔍 AB Pattern - Applying 20% white overlay with brightness 1.08, contrast 1.13")
         white_overlay = 0.20
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
@@ -318,7 +319,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = color.enhance(0.88)
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.05)
+        rgb_image = brightness.enhance(1.08)  # UPDATED from 1.05 to 1.08
         
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.13)
@@ -333,7 +334,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.05)
+        rgb_image = brightness.enhance(1.05)  # Kept at 1.05 for other patterns
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.99)
@@ -805,6 +806,7 @@ def process_cubic_enhancement(job):
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.RefinedCubicPrep → 5.SwinIR",
                 "v16_improvements": [
+                    "UPDATED: AC/AB pattern brightness 1.05 → 1.08",
                     "Fixed over-sharpening artifacts and halo effects",
                     "AC pattern: Edge blend 0.5→0.25, UnsharpMask 150%→80%",
                     "AB pattern: Edge blend 0.45→0.2, highlight boost reduced",
