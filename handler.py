@@ -13,13 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V16
-# VERSION: Cubic-Sparkle-V16-Refined
-# Fixed over-sharpening and halo artifacts
-# Updated: AB/AC pattern brightness 1.05 -> 1.08
+# CUBIC DETAIL ENHANCEMENT HANDLER V17
+# VERSION: Cubic-Sparkle-V17-Contrast105-Brightness113
+# Updated: AB/AC pattern contrast 1.13 -> 1.05, brightness 1.08 -> 1.13
 ################################
 
-VERSION = "Cubic-Sparkle-V16-Refined-B108"
+VERSION = "Cubic-Sparkle-V17-C105-B113"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -259,7 +258,7 @@ def enhance_cubic_detail_for_pattern(image: Image.Image, pattern_type: str) -> I
     return result
 
 def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement while preserving transparency - V16 REFINED with Brightness 1.08"""
+    """Apply pattern enhancement while preserving transparency - V17 with Contrast 1.05, Brightness 1.13"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -269,8 +268,8 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        # AC Pattern - Refined settings with brightness 1.08
-        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.08, contrast 1.13")
+        # AC Pattern - Updated settings with brightness 1.13, contrast 1.05
+        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.13, contrast 1.05")
         white_overlay = 0.18
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
@@ -285,17 +284,17 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.08)  # UPDATED from 1.05 to 1.08
+        rgb_image = brightness.enhance(1.13)  # UPDATED from 1.08 to 1.13
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.13)
+        rgb_image = contrast.enhance(1.05)  # UPDATED from 1.13 to 1.05
         
     elif pattern_type == "ab_pattern":
-        # AB Pattern - Refined settings with brightness 1.08
-        logger.info("🔍 AB Pattern - Applying 20% white overlay with brightness 1.08, contrast 1.13")
+        # AB Pattern - Updated settings with brightness 1.13, contrast 1.05
+        logger.info("🔍 AB Pattern - Applying 20% white overlay with brightness 1.13, contrast 1.05")
         white_overlay = 0.20
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
@@ -319,10 +318,10 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = color.enhance(0.88)
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.08)  # UPDATED from 1.05 to 1.08
+        rgb_image = brightness.enhance(1.13)  # UPDATED from 1.08 to 1.13
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.13)
+        rgb_image = contrast.enhance(1.05)  # UPDATED from 1.13 to 1.05
         
     else:
         # Other Pattern - Much gentler processing
@@ -611,7 +610,7 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - V16 Refined with artifact prevention"""
+    """RunPod handler function - V17 with Contrast 1.05, Brightness 1.13"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -653,7 +652,7 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - V16 Refined"""
+    """Process cubic detail enhancement - V17 with Contrast 1.05, Brightness 1.13"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for refined detail enhancement")
@@ -805,18 +804,17 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.RefinedCubicPrep → 5.SwinIR",
-                "v16_improvements": [
-                    "UPDATED: AC/AB pattern brightness 1.05 → 1.08",
-                    "Fixed over-sharpening artifacts and halo effects",
-                    "AC pattern: Edge blend 0.5→0.25, UnsharpMask 150%→80%",
-                    "AB pattern: Edge blend 0.45→0.2, highlight boost reduced",
-                    "Other patterns: Sharpness 1.7→1.2 to prevent texture artifacts",
-                    "Overall sharpness: AC/AB 2.0→1.4, Other 2.0→1.3",
-                    "Removed additional SHARPEN filter",
-                    "Stricter cubic detection thresholds (245+, 210+)",
-                    "Single edge enhancement pass instead of multiple",
-                    "Reduced pre-SwinIR enhancement (25% blend)",
-                    "UnsharpMask: radius 2→1, percent 150→80"
+                "v17_improvements": [
+                    "UPDATED: AC/AB pattern contrast 1.13 → 1.05",
+                    "UPDATED: AC/AB pattern brightness 1.08 → 1.13",
+                    "AC pattern: 18% white overlay, brightness 1.13, contrast 1.05",
+                    "AB pattern: 20% white overlay, brightness 1.13, contrast 1.05",
+                    "Other patterns: unchanged (brightness 1.05, contrast 1.06)",
+                    "Maintained all V16 artifact prevention improvements",
+                    "Edge blend and UnsharpMask settings remain optimized",
+                    "Sharpness settings: AC/AB 1.4, Other 1.3",
+                    "Cubic detection thresholds remain strict (245+, 210+)",
+                    "SwinIR pre-enhancement remains balanced (25% blend)"
                 ]
             }
         }
