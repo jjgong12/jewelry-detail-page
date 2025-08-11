@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V17
-# VERSION: Cubic-Sparkle-V17-Contrast105-Brightness113
-# Updated: AB/AC pattern contrast 1.13 -> 1.05, brightness 1.08 -> 1.13
+# CUBIC DETAIL ENHANCEMENT HANDLER V18
+# VERSION: Cubic-Sparkle-V18-WO30-B111
+# Updated: AB/AC pattern white overlay 18%/20% -> 30%, brightness 1.13 -> 1.11
 ################################
 
-VERSION = "Cubic-Sparkle-V17-C105-B113"
+VERSION = "Cubic-Sparkle-V18-WO30-B111"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -258,7 +258,7 @@ def enhance_cubic_detail_for_pattern(image: Image.Image, pattern_type: str) -> I
     return result
 
 def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement while preserving transparency - V17 with Contrast 1.05, Brightness 1.13"""
+    """Apply pattern enhancement while preserving transparency - V18 with WO 30%, Brightness 1.11"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -268,9 +268,9 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        # AC Pattern - Updated settings with brightness 1.13, contrast 1.05
-        logger.info("🔍 AC Pattern - Applying 18% white overlay with brightness 1.13, contrast 1.05")
-        white_overlay = 0.18
+        # AC Pattern - Updated settings with 30% white overlay, brightness 1.11, contrast 1.05
+        logger.info("🔍 AC Pattern - Applying 30% white overlay with brightness 1.11, contrast 1.05")
+        white_overlay = 0.30  # UPDATED from 0.18 to 0.30
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
         
@@ -284,18 +284,18 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.13)  # UPDATED from 1.08 to 1.13
+        rgb_image = brightness.enhance(1.11)  # UPDATED from 1.13 to 1.11
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.05)  # UPDATED from 1.13 to 1.05
+        rgb_image = contrast.enhance(1.05)  # Kept at 1.05
         
     elif pattern_type == "ab_pattern":
-        # AB Pattern - Updated settings with brightness 1.13, contrast 1.05
-        logger.info("🔍 AB Pattern - Applying 20% white overlay with brightness 1.13, contrast 1.05")
-        white_overlay = 0.20
+        # AB Pattern - Updated settings with 30% white overlay, brightness 1.11, contrast 1.05
+        logger.info("🔍 AB Pattern - Applying 30% white overlay with brightness 1.11, contrast 1.05")
+        white_overlay = 0.30  # UPDATED from 0.20 to 0.30
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
         img_array[:,:,0] *= 0.96
@@ -318,10 +318,10 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = color.enhance(0.88)
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.13)  # UPDATED from 1.08 to 1.13
+        rgb_image = brightness.enhance(1.11)  # UPDATED from 1.13 to 1.11
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.05)  # UPDATED from 1.13 to 1.05
+        rgb_image = contrast.enhance(1.05)  # Kept at 1.05
         
     else:
         # Other Pattern - Much gentler processing
@@ -610,7 +610,7 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - V17 with Contrast 1.05, Brightness 1.13"""
+    """RunPod handler function - V18 with WO 30%, Brightness 1.11"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -652,7 +652,7 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - V17 with Contrast 1.05, Brightness 1.13"""
+    """Process cubic detail enhancement - V18 with WO 30%, Brightness 1.11"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for refined detail enhancement")
@@ -737,8 +737,8 @@ def process_cubic_enhancement(job):
             logger.info("🎨 Step 2: Applying pattern enhancement with refined cubic detail")
             pattern_type = detect_pattern_type(filename)
             detected_type = {
-                "ac_pattern": "무도금화이트(0.18)",
-                "ab_pattern": "무도금화이트-쿨톤(0.20)",
+                "ac_pattern": "무도금화이트(0.30)",  # Updated from 0.18
+                "ab_pattern": "무도금화이트-쿨톤(0.30)",  # Updated from 0.20
                 "other": "기타색상(0.02)"
             }.get(pattern_type, "기타색상")
             
@@ -804,12 +804,12 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.RefinedCubicPrep → 5.SwinIR",
-                "v17_improvements": [
-                    "UPDATED: AC/AB pattern contrast 1.13 → 1.05",
-                    "UPDATED: AC/AB pattern brightness 1.08 → 1.13",
-                    "AC pattern: 18% white overlay, brightness 1.13, contrast 1.05",
-                    "AB pattern: 20% white overlay, brightness 1.13, contrast 1.05",
-                    "Other patterns: unchanged (brightness 1.05, contrast 1.06)",
+                "v18_improvements": [
+                    "UPDATED: AC/AB pattern white overlay 18%/20% → 30%",
+                    "UPDATED: AC/AB pattern brightness 1.13 → 1.11",
+                    "AC pattern: 30% white overlay, brightness 1.11, contrast 1.05",
+                    "AB pattern: 30% white overlay, brightness 1.11, contrast 1.05",
+                    "Other patterns: unchanged (2% white overlay, brightness 1.05, contrast 1.06)",
                     "Maintained all V16 artifact prevention improvements",
                     "Edge blend and UnsharpMask settings remain optimized",
                     "Sharpness settings: AC/AB 1.4, Other 1.3",
