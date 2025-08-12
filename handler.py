@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V18
-# VERSION: Cubic-Sparkle-V18-Contrast099-Brightness117-WO10
-# Updated: Default AB pattern when no filename, relaxed pattern detection
+# CUBIC DETAIL ENHANCEMENT HANDLER V18-RING
+# VERSION: Cubic-Sparkle-V18-C099-B117-WO10-RingFix
+# Updated: Enhanced ring hole detection for jewelry
 ################################
 
-VERSION = "Cubic-Sparkle-V18-C099-B117-WO10-DefaultAB"
+VERSION = "Cubic-Sparkle-V18-C099-B117-WO10-RingFix"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -124,7 +124,6 @@ def detect_pattern_type(filename: str, default_pattern: str = "ab_pattern") -> s
     """Detect pattern type - AC, AB, or other
     Now with relaxed detection (no underscore required) and default AB pattern
     """
-    # If no filename provided, use default pattern
     if not filename:
         logger.info(f"⚠️ No filename provided, using default pattern: {default_pattern}")
         return default_pattern
@@ -132,7 +131,6 @@ def detect_pattern_type(filename: str, default_pattern: str = "ab_pattern") -> s
     filename_lower = filename.lower()
     logger.info(f"🔍 Checking pattern for filename: {filename}")
     
-    # Relaxed pattern detection - no underscore required
     if 'ac' in filename_lower:
         logger.info("✅ Detected AC pattern (무도금화이트)")
         return "ac_pattern"
@@ -252,7 +250,6 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        # AC Pattern (무도금화이트) - Updated settings
         logger.info("🔍 AC Pattern (무도금화이트) - Applying 10% white overlay with brightness 1.17, contrast 0.99")
         white_overlay = 0.10
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
@@ -276,7 +273,6 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = contrast.enhance(0.99)
         
     elif pattern_type == "ab_pattern":
-        # AB Pattern (무도금화이트-쿨톤) - Updated settings
         logger.info("🔍 AB Pattern (무도금화이트-쿨톤) - Applying 10% white overlay with brightness 1.17, contrast 0.99")
         white_overlay = 0.10
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
@@ -306,7 +302,6 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = contrast.enhance(0.99)
         
     else:
-        # Other Pattern (기타색상) - Much gentler processing
         logger.info("🔍 Other Pattern (기타색상) - Applying 2% white overlay with brightness 1.05, contrast 1.06")
         white_overlay = 0.02
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
@@ -392,34 +387,122 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
         
     return image
 
-def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
-    """Simple ring hole detection without OpenCV"""
+def ensure_ring_holes_transparent_enhanced(image: Image.Image) -> Image.Image:
+    """Enhanced ring hole detection - improved for jewelry with gray backgrounds"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
-    logger.info("🔍 Simple ring hole detection")
+    logger.info("🔍 Enhanced ring hole detection for jewelry")
     
     r, g, b, a = image.split()
+    rgb_array = np.array(image.convert('RGB'), dtype=np.uint8)
     alpha_array = np.array(a, dtype=np.uint8)
     
+    # Convert to grayscale for analysis
+    gray = np.mean(rgb_array, axis=2)
+    
+    # Method 1: Detect gray background colors (180-220 range)
+    gray_background_mask = (
+        (gray > 180) & (gray < 220) &  # Gray value range
+        (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 15) &  # R≈G
+        (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 15) &  # G≈B
+        (alpha_array > 200)  # Currently opaque
+    )
+    
+    # Method 2: HSV-based detection for very light areas
     hsv = image.convert('HSV')
     h, s, v = hsv.split()
     s_array = np.array(s)
     v_array = np.array(v)
     
-    holes_mask = (v_array > 248) & (s_array < 20) & (alpha_array > 200)
+    # Very bright with low saturation (potential holes)
+    bright_desaturated_mask = (
+        (v_array > 240) &  # Very bright
+        (s_array < 25) &   # Low saturation
+        (alpha_array > 200)  # Currently opaque
+    )
     
-    holes_image = Image.fromarray((holes_mask * 255).astype(np.uint8))
+    # Method 3: Edge detection for circular holes
+    edges = image.filter(ImageFilter.FIND_EDGES)
+    edges_gray = np.array(edges.convert('L'))
+    
+    # Find areas inside strong edges (potential holes)
+    edges_dilated = Image.fromarray(edges_gray).filter(ImageFilter.MaxFilter(5))
+    edges_eroded = edges_dilated.filter(ImageFilter.MinFilter(3))
+    edge_interior = np.array(edges_eroded) < 50  # Areas inside edges
+    
+    # Combine detection methods
+    potential_holes = gray_background_mask | bright_desaturated_mask
+    
+    # Apply morphological operations to clean up
+    holes_image = Image.fromarray((potential_holes * 255).astype(np.uint8))
+    
+    # Remove small noise
     holes_image = holes_image.filter(ImageFilter.MinFilter(3))
     holes_image = holes_image.filter(ImageFilter.MaxFilter(3))
+    
+    # Expand slightly to catch edges
+    holes_image = holes_image.filter(ImageFilter.MaxFilter(2))
+    
     holes_mask = np.array(holes_image) > 128
     
+    # Special handling for ring centers
+    # Detect circular patterns and check their centers
+    h, w = alpha_array.shape
+    center_y, center_x = h // 2, w // 2
+    
+    # Check if image center region should be transparent
+    center_region_size = min(h, w) // 6
+    center_region = gray[
+        max(0, center_y - center_region_size):min(h, center_y + center_region_size),
+        max(0, center_x - center_region_size):min(w, center_x + center_region_size)
+    ]
+    
+    if center_region.size > 0:
+        center_mean = np.mean(center_region)
+        # If center is grayish and uniform, likely a hole
+        if 180 < center_mean < 220:
+            y_indices, x_indices = np.ogrid[:h, :w]
+            center_mask = ((x_indices - center_x)**2 + (y_indices - center_y)**2) < center_region_size**2
+            holes_mask = holes_mask | center_mask
+    
+    # Apply the holes mask to alpha channel
     alpha_array[holes_mask] = 0
     
+    # Additional pass: Find completely enclosed regions
+    # Areas that are surrounded by opaque pixels might be holes
+    from scipy import ndimage
+    
+    try:
+        # Label connected components in the non-transparent areas
+        labeled, num_features = ndimage.label(alpha_array > 128)
+        
+        # Find small enclosed regions
+        for i in range(1, num_features + 1):
+            component = (labeled == i)
+            component_size = np.sum(component)
+            
+            # If component is small and surrounded, make it transparent
+            if component_size < (h * w * 0.1):  # Less than 10% of image
+                # Check if surrounded by detecting edges
+                dilated = ndimage.binary_dilation(component, iterations=3)
+                edge = dilated & ~component
+                
+                if np.sum(edge) > component_size * 0.5:  # Well-defined edge
+                    # Check if this looks like a hole (grayish color)
+                    component_gray = gray[component]
+                    if component_gray.size > 0:
+                        mean_gray = np.mean(component_gray)
+                        if 170 < mean_gray < 230:  # Grayish
+                            alpha_array[component] = 0
+    except:
+        logger.warning("scipy.ndimage not available for advanced hole detection")
+    
+    # Final cleanup
     a_new = Image.fromarray(alpha_array)
     result = Image.merge('RGBA', (r, g, b, a_new))
     
-    logger.info("✅ Ring holes applied")
+    logger.info(f"✅ Enhanced ring holes applied - {np.sum(holes_mask)} pixels made transparent")
     return result
 
 def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
@@ -560,7 +643,7 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - V18 with Default AB Pattern"""
+    """RunPod handler function - V18 with Ring Fix"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -596,9 +679,9 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement with default AB pattern support"""
+    """Process cubic detail enhancement with enhanced ring hole detection"""
     try:
-        logger.info("🚀 Fast loading version - No OpenCV")
+        logger.info("🚀 Fast loading version with Enhanced Ring Detection")
         logger.info("💎 SwinIR for refined detail enhancement")
         logger.info(f"Job input type: {type(job)}")
         
@@ -650,7 +733,6 @@ def process_cubic_enhancement(job):
         apply_swinir = params.get('apply_swinir', True)
         apply_pattern = params.get('pattern_enhancement', True)
         
-        # Use default AB pattern if no filename
         default_pattern = params.get('default_pattern', 'ab_pattern')
         
         logger.info(f"Parameters: filename={filename or 'None (using default)'}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
@@ -685,9 +767,9 @@ def process_cubic_enhancement(job):
             pattern_type = "none"
             detected_type = "보정없음"
         
-        # 3. Ring Hole Detection
-        logger.info("🔍 Step 3: Simple ring hole detection")
-        image = ensure_ring_holes_transparent_simple(image)
+        # 3. Enhanced Ring Hole Detection
+        logger.info("🔍 Step 3: Enhanced ring hole detection for jewelry")
+        image = ensure_ring_holes_transparent_enhanced(image)
         
         # 4. Refined Cubic Pre-enhancement
         logger.info("💎 Step 4: Refined cubic pre-enhancement")
@@ -730,21 +812,21 @@ def process_cubic_enhancement(job):
                 "corrections_applied": [
                     "white_balance",
                     "pattern_enhancement" if apply_pattern else "pattern_skipped",
-                    "ring_hole_detection_simple",
+                    "ring_hole_detection_enhanced",
                     "cubic_pre_enhancement_refined",
                     "swinir_detail" if apply_swinir else "swinir_skipped"
                 ],
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
-                "performance": "optimized_no_cv2",
-                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.RefinedCubicPrep → 5.SwinIR",
-                "v18_improvements": [
-                    "NEW: Default AB pattern when no filename provided",
-                    "NEW: Relaxed pattern detection (ac/ab without underscore)",
-                    "AC/AB pattern contrast 0.99",
-                    "AC/AB pattern brightness 1.17",
-                    "AC/AB pattern white overlay 10%",
-                    "Pattern detection: 'ac' → 무도금화이트, 'ab' → 무도금화이트-쿨톤"
+                "performance": "optimized_ring_detection",
+                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Enhanced) → 4.RefinedCubicPrep → 5.SwinIR",
+                "v18_ring_improvements": [
+                    "NEW: Enhanced ring hole detection for jewelry",
+                    "Gray background detection (180-220 range)",
+                    "Improved center hole detection",
+                    "Edge-based hole detection",
+                    "Morphological operations for cleaner masks",
+                    "scipy.ndimage for enclosed region detection"
                 ]
             }
         }
