@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 ################################
 # CUBIC DETAIL ENHANCEMENT HANDLER V18
 # VERSION: Cubic-Sparkle-V18-Contrast099-Brightness117-WO10
-# Updated: AB/AC pattern contrast 0.99, brightness 1.17, white overlay 10%
+# Updated: Default AB pattern when no filename, relaxed pattern detection
 ################################
 
-VERSION = "Cubic-Sparkle-V18-C099-B117-WO10"
+VERSION = "Cubic-Sparkle-V18-C099-B117-WO10-DefaultAB"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -60,7 +60,6 @@ def image_to_base64(image):
     image.save(buffered, format='PNG', compress_level=3, optimize=True)
     
     buffered.seek(0)
-    # ALWAYS include padding - no removal
     base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return base64_str
 
@@ -71,16 +70,12 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
     
     logger.info(f"🔍 Searching at depth {depth}, path: {path}")
     
-    # Direct string check - more lenient
     if isinstance(data, str):
         str_len = len(data)
         logger.info(f"  Found string at {path} with length {str_len}")
         
-        # Check if it's likely base64 (even if short)
-        if str_len > 20:  # Reduced from 50
-            # Remove whitespace for checking
+        if str_len > 20:
             sample = data[:100].strip()
-            # Basic base64 character check
             if sample and all(c in string.ascii_letters + string.digits + '+/=' for c in sample[:50]):
                 logger.info(f"✅ Found potential base64 data at {path} (length: {str_len})")
                 return data
@@ -90,34 +85,27 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
     if isinstance(data, dict):
         logger.info(f"  Dict at {path} with keys: {list(data.keys())}")
         
-        # Check ALL string values, not just priority keys
         base64_candidates = []
         
         for key, value in data.items():
             current_path = f"{path}.{key}" if path else key
             
-            # Skip image data
             if key in ['enhanced_image', 'image', 'base64', 'image_base64'] and isinstance(value, str) and len(value) > 1000:
                 continue
                 
             if isinstance(value, str) and len(value) > 20:
-                # Log all substantial strings
                 logger.info(f"  Checking string at {current_path}: length={len(value)}")
                 
-                # Check if it looks like base64
                 sample = value[:100].strip()
                 if sample and all(c in string.ascii_letters + string.digits + '+/=' for c in sample[:50]):
                     base64_candidates.append((current_path, value, len(value)))
             
-            # Recursive search
             if isinstance(value, (dict, list)):
                 result = find_input_data_robust(value, current_path, depth + 1, max_depth)
                 if result:
                     return result
         
-        # If we found base64 candidates, use the longest one
         if base64_candidates:
-            # Sort by length, longest first
             base64_candidates.sort(key=lambda x: x[2], reverse=True)
             best_path, best_value, best_len = base64_candidates[0]
             logger.info(f"✅ Selected best base64 candidate at {best_path} (length: {best_len})")
@@ -132,18 +120,27 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
     
     return None
 
-def detect_pattern_type(filename: str) -> str:
-    """Detect pattern type - AC, AB, or other"""
+def detect_pattern_type(filename: str, default_pattern: str = "ab_pattern") -> str:
+    """Detect pattern type - AC, AB, or other
+    Now with relaxed detection (no underscore required) and default AB pattern
+    """
+    # If no filename provided, use default pattern
     if not filename:
-        return "other"
+        logger.info(f"⚠️ No filename provided, using default pattern: {default_pattern}")
+        return default_pattern
     
     filename_lower = filename.lower()
+    logger.info(f"🔍 Checking pattern for filename: {filename}")
     
-    if 'ac_' in filename_lower:
+    # Relaxed pattern detection - no underscore required
+    if 'ac' in filename_lower:
+        logger.info("✅ Detected AC pattern (무도금화이트)")
         return "ac_pattern"
-    elif 'ab_' in filename_lower:
+    elif 'ab' in filename_lower:
+        logger.info("✅ Detected AB pattern (무도금화이트-쿨톤)")
         return "ab_pattern"
     else:
+        logger.info("✅ Detected other pattern (기타색상)")
         return "other"
 
 def auto_white_balance_fast(image: Image.Image) -> Image.Image:
@@ -193,62 +190,49 @@ def enhance_cubic_detail_for_pattern(image: Image.Image, pattern_type: str) -> I
     r, g, b, a = image.split()
     rgb_image = Image.merge('RGB', (r, g, b))
     
-    # REDUCED edge enhancement - only one pass
-    edges = rgb_image.filter(ImageFilter.EDGE_ENHANCE)  # Changed from EDGE_ENHANCE_MORE
+    edges = rgb_image.filter(ImageFilter.EDGE_ENHANCE)
+    unsharp = rgb_image.filter(ImageFilter.UnsharpMask(radius=1, percent=80, threshold=3))
     
-    # Mild UnsharpMask for detail
-    unsharp = rgb_image.filter(ImageFilter.UnsharpMask(radius=1, percent=80, threshold=3))  # Reduced from radius=2, 150%
-    
-    # Detect bright areas (potential cubic surfaces)
     img_array = np.array(rgb_image, dtype=np.float32)
     edges_array = np.array(edges, dtype=np.float32)
     unsharp_array = np.array(unsharp, dtype=np.float32)
     
-    # Create mask for bright areas - stricter threshold
     v_channel = np.max(img_array, axis=2)
-    bright_mask = v_channel > 235  # Raised from 220
-    very_bright_mask = v_channel > 245  # Raised from 240
+    bright_mask = v_channel > 235
+    very_bright_mask = v_channel > 245
     
-    # REDUCED blend factors to prevent artifacts
     if pattern_type == "ac_pattern":
-        edge_blend = 0.25  # Reduced from 0.5
-        unsharp_blend = 0.15  # Reduced from 0.3
+        edge_blend = 0.25
+        unsharp_blend = 0.15
     else:  # ab_pattern
-        edge_blend = 0.2  # Reduced from 0.45
-        unsharp_blend = 0.12  # Reduced from 0.25
+        edge_blend = 0.2
+        unsharp_blend = 0.12
     
-    # Apply gentler enhancement
     for c in range(3):
-        # Edge enhancement - reduced
         img_array[:,:,c] = np.where(
             bright_mask,
             img_array[:,:,c] * (1 - edge_blend) + edges_array[:,:,c] * edge_blend,
             img_array[:,:,c]
         )
         
-        # Unsharp mask - only on very bright areas
         img_array[:,:,c] = np.where(
             very_bright_mask,
             img_array[:,:,c] * (1 - unsharp_blend) + unsharp_array[:,:,c] * unsharp_blend,
             img_array[:,:,c]
         )
     
-    # MILD micro-contrast to highlights
     if pattern_type == "ac_pattern":
-        highlight_boost = 1.08  # Reduced from 1.15
+        highlight_boost = 1.08
     else:  # ab_pattern
-        highlight_boost = 1.06  # Reduced from 1.12
+        highlight_boost = 1.06
     
-    # Single level highlight enhancement
     highlight_mask = v_channel > 245
     img_array[highlight_mask] = np.minimum(img_array[highlight_mask] * highlight_boost, 255)
     
-    # Convert back to image
     rgb_enhanced = Image.fromarray(np.clip(img_array, 0, 255).astype(np.uint8))
     
-    # SINGLE mild sharpening pass
     sharpness = ImageEnhance.Sharpness(rgb_enhanced)
-    rgb_enhanced = sharpness.enhance(1.2)  # Reduced from multiple passes
+    rgb_enhanced = sharpness.enhance(1.2)
     
     r2, g2, b2 = rgb_enhanced.split()
     result = Image.merge('RGBA', (r2, g2, b2, a))
@@ -268,15 +252,14 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
     img_array = np.array(rgb_image, dtype=np.float32)
     
     if pattern_type == "ac_pattern":
-        # AC Pattern - Updated settings with brightness 1.17, contrast 0.99, white overlay 10%
-        logger.info("🔍 AC Pattern - Applying 10% white overlay with brightness 1.17, contrast 0.99")
-        white_overlay = 0.10  # UPDATED from 0.18 to 0.10
+        # AC Pattern (무도금화이트) - Updated settings
+        logger.info("🔍 AC Pattern (무도금화이트) - Applying 10% white overlay with brightness 1.17, contrast 0.99")
+        white_overlay = 0.10
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
         
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # Refined cubic detail for AC pattern
         rgb_image = Image.merge('RGB', rgb_image.split())
         temp_rgba = Image.merge('RGBA', (*rgb_image.split(), a))
         temp_rgba = enhance_cubic_detail_for_pattern(temp_rgba, pattern_type)
@@ -284,18 +267,18 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.17)  # UPDATED from 1.13 to 1.17
+        rgb_image = brightness.enhance(1.17)
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(0.99)  # UPDATED from 1.05 to 0.99
+        rgb_image = contrast.enhance(0.99)
         
     elif pattern_type == "ab_pattern":
-        # AB Pattern - Updated settings with brightness 1.17, contrast 0.99, white overlay 10%
-        logger.info("🔍 AB Pattern - Applying 10% white overlay with brightness 1.17, contrast 0.99")
-        white_overlay = 0.10  # UPDATED from 0.20 to 0.10
+        # AB Pattern (무도금화이트-쿨톤) - Updated settings
+        logger.info("🔍 AB Pattern (무도금화이트-쿨톤) - Applying 10% white overlay with brightness 1.17, contrast 0.99")
+        white_overlay = 0.10
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
         img_array[:,:,0] *= 0.96
@@ -308,7 +291,6 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         img_array = np.clip(img_array, 0, 255)
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # Refined cubic detail for AB pattern
         temp_rgba = Image.merge('RGBA', (*rgb_image.split(), a))
         temp_rgba = enhance_cubic_detail_for_pattern(temp_rgba, pattern_type)
         r_temp, g_temp, b_temp, _ = temp_rgba.split()
@@ -318,14 +300,14 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = color.enhance(0.88)
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.17)  # UPDATED from 1.13 to 1.17
+        rgb_image = brightness.enhance(1.17)
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(0.99)  # UPDATED from 1.05 to 0.99
+        rgb_image = contrast.enhance(0.99)
         
     else:
-        # Other Pattern - Much gentler processing
-        logger.info("🔍 Other Pattern - Applying 2% white overlay with brightness 1.05, contrast 1.06")
+        # Other Pattern (기타색상) - Much gentler processing
+        logger.info("🔍 Other Pattern (기타색상) - Applying 2% white overlay with brightness 1.05, contrast 1.06")
         white_overlay = 0.02
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
@@ -333,7 +315,7 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.05)  # Kept at 1.05 for other patterns
+        rgb_image = brightness.enhance(1.05)
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.99)
@@ -341,18 +323,14 @@ def apply_pattern_enhancement_transparent(image: Image.Image, pattern_type: str)
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.06)
         
-        # Mild sharpening for other pattern
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.2)  # Greatly reduced from 1.7
+        rgb_image = sharpness.enhance(1.2)
     
-    # REFINED common sharpness - pattern specific
     sharpness = ImageEnhance.Sharpness(rgb_image)
     if pattern_type in ["ac_pattern", "ab_pattern"]:
-        rgb_image = sharpness.enhance(1.4)  # Reduced from 2.0 for AC/AB
+        rgb_image = sharpness.enhance(1.4)
     else:
-        rgb_image = sharpness.enhance(1.3)  # Reduced from 2.0 for Other
-    
-    # NO additional SHARPEN filter to prevent artifacts
+        rgb_image = sharpness.enhance(1.3)
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -364,7 +342,6 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
     try:
         logger.info("🎨 Applying SwinIR enhancement for cubic detail")
         
-        # Delayed loading
         import replicate
         
         api_token = os.environ.get('REPLICATE_API_TOKEN')
@@ -425,22 +402,18 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
     r, g, b, a = image.split()
     alpha_array = np.array(a, dtype=np.uint8)
     
-    # Convert to HSV for better detection
     hsv = image.convert('HSV')
     h, s, v = hsv.split()
     s_array = np.array(s)
     v_array = np.array(v)
     
-    # Ring holes are very bright and low saturation
     holes_mask = (v_array > 248) & (s_array < 20) & (alpha_array > 200)
     
-    # Simple morphology using PIL
     holes_image = Image.fromarray((holes_mask * 255).astype(np.uint8))
-    holes_image = holes_image.filter(ImageFilter.MinFilter(3))  # erode
-    holes_image = holes_image.filter(ImageFilter.MaxFilter(3))  # dilate
+    holes_image = holes_image.filter(ImageFilter.MinFilter(3))
+    holes_image = holes_image.filter(ImageFilter.MaxFilter(3))
     holes_mask = np.array(holes_image) > 128
     
-    # Apply holes
     alpha_array[holes_mask] = 0
     
     a_new = Image.fromarray(alpha_array)
@@ -457,42 +430,37 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     rgb_array = np.array(image.convert('RGB'), dtype=np.uint8)
     alpha_array = np.array(image.split()[3], dtype=np.uint8)
     
-    # Convert to HSV
     hsv = image.convert('HSV')
     h, s, v = hsv.split()
     h_array = np.array(h)
     s_array = np.array(s)
     v_array = np.array(v)
     
-    # Edge detection using PIL
     edges = image.filter(ImageFilter.FIND_EDGES)
     edges_array = np.array(edges.convert('L'))
     
-    # STRICTER cubic detection to avoid false positives
     white_cubic = (
-        (v_array > 245 * sensitivity) &  # Raised threshold
-        (s_array < 25) &  # Stricter saturation
+        (v_array > 245 * sensitivity) &
+        (s_array < 25) &
         (alpha_array > 200)
     )
     
     color_cubic = (
-        (v_array > 210 * sensitivity) &  # Raised threshold
-        (s_array > 120) &  # Stricter saturation requirement
+        (v_array > 210 * sensitivity) &
+        (s_array > 120) &
         (alpha_array > 200)
     )
     
-    # Edge-based cubic detection - stricter
-    edge_cubic = (edges_array > 120) & (v_array > 230) & (alpha_array > 200)  # Raised thresholds
+    edge_cubic = (edges_array > 120) & (v_array > 230) & (alpha_array > 200)
     
     highlights = (
-        (v_array > 250) &  # Only extreme highlights
-        (s_array < 40) &  # Stricter saturation
+        (v_array > 250) &
+        (s_array < 40) &
         (alpha_array > 200)
     )
     
     cubic_mask = white_cubic | color_cubic | edge_cubic | highlights
     
-    # Clean up using PIL filters
     cubic_image = Image.fromarray((cubic_mask * 255).astype(np.uint8))
     cubic_image = cubic_image.filter(ImageFilter.MinFilter(3))
     cubic_image = cubic_image.filter(ImageFilter.MaxFilter(3))
@@ -519,36 +487,28 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         logger.info("No cubic regions detected, skipping enhancement")
         return image
     
-    # BALANCED Pre-enhancement for SwinIR
-    
-    # 1. Single edge enhancement pass
-    edges = image.filter(ImageFilter.EDGE_ENHANCE)  # Mild edge enhancement
+    edges = image.filter(ImageFilter.EDGE_ENHANCE)
     edges_array = np.array(edges.convert('RGB'), dtype=np.float32)
     
-    # Mild UnsharpMask
     unsharp = image.filter(ImageFilter.UnsharpMask(radius=1, percent=100, threshold=3))
     unsharp_array = np.array(unsharp.convert('RGB'), dtype=np.float32)
     
-    # Apply BALANCED edge enhancement
     for c in range(3):
-        # Gentle edge enhancement
         rgb_array[:,:,c] = np.where(
             cubic_mask,
-            rgb_array[:,:,c] * 0.75 + edges_array[:,:,c] * 0.25,  # Reduced from 0.5/0.5
+            rgb_array[:,:,c] * 0.75 + edges_array[:,:,c] * 0.25,
             rgb_array[:,:,c]
         )
         
-        # Mild unsharp mask only on highlights
         rgb_array[:,:,c] = np.where(
             highlights,
-            rgb_array[:,:,c] * 0.85 + unsharp_array[:,:,c] * 0.15,  # Reduced blend
+            rgb_array[:,:,c] * 0.85 + unsharp_array[:,:,c] * 0.15,
             rgb_array[:,:,c]
         )
     
-    # 2. MILD contrast boost for cubics
     if np.any(cubic_mask):
         mean_val = np.mean(rgb_array[cubic_mask])
-        contrast_factor = 1.15 * intensity  # Reduced from 1.5
+        contrast_factor = 1.15 * intensity
         
         for c in range(3):
             rgb_array[:,:,c] = np.where(
@@ -557,14 +517,11 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
                 rgb_array[:,:,c]
             )
     
-    # 3. MILD highlight enhancement
     if np.any(highlights):
-        boost_factor = 1.1 * intensity  # Reduced from 1.25
+        boost_factor = 1.1 * intensity
         rgb_array[highlights] = np.minimum(rgb_array[highlights] * boost_factor, 255)
     
-    # 4. BALANCED color cubic saturation boost
     if np.any(color_cubic):
-        # Convert to HSV for saturation adjustment
         rgb_temp = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
         hsv_temp = rgb_temp.convert('HSV')
         h_temp, s_temp, v_temp = hsv_temp.split()
@@ -572,21 +529,18 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         s_array = np.array(s_temp, dtype=np.float32)
         v_array = np.array(v_temp, dtype=np.float32)
         
-        # Mild saturation boost
         s_array = np.where(
             color_cubic,
-            np.minimum(s_array * (1.3 * intensity), 255),  # Reduced from 1.6
+            np.minimum(s_array * (1.3 * intensity), 255),
             s_array
         )
         
-        # Minimal value boost
         v_array = np.where(
             color_cubic,
-            np.minimum(v_array * 1.03, 255),  # Reduced from 1.1
+            np.minimum(v_array * 1.03, 255),
             v_array
         )
         
-        # Convert back
         hsv_enhanced = Image.merge('HSV', (
             h_temp,
             Image.fromarray(s_array.astype(np.uint8)),
@@ -594,41 +548,32 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
         ))
         rgb_array = np.array(hsv_enhanced.convert('RGB'), dtype=np.float32)
     
-    # Convert back to image
     rgb_enhanced = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
     r2, g2, b2 = rgb_enhanced.split()
     result = Image.merge('RGBA', (r2, g2, b2, a))
     
-    # SINGLE mild sharpening pass
     sharpness = ImageEnhance.Sharpness(result)
-    result = sharpness.enhance(1.0 + (0.2 * intensity))  # Greatly reduced from 0.5
-    
-    # NO additional detail filter to prevent artifacts
+    result = sharpness.enhance(1.0 + (0.2 * intensity))
     
     logger.info("✅ Refined cubic pre-enhancement complete")
     
     return result
 
 def handler(event):
-    """RunPod handler function - V18 with Contrast 0.99, Brightness 1.17, White Overlay 10%"""
+    """RunPod handler function - V18 with Default AB Pattern"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
-    # Log the complete structure for debugging
     logger.info("📋 Complete event structure:")
-    logger.info(json.dumps(event, indent=2)[:1000] + "...")  # First 1000 chars
+    logger.info(json.dumps(event, indent=2)[:1000] + "...")
     
     try:
-        # Extract the actual job data from RunPod event structure
         job_input = None
         
-        # Try different possible input structures
         if isinstance(event, dict):
-            # Standard RunPod structure: {"input": {...}}
             if 'input' in event:
                 job_input = event['input']
                 logger.info("Found input in event['input']")
-            # Direct input structure
             else:
                 job_input = event
                 logger.info("Using event directly as input")
@@ -636,7 +581,6 @@ def handler(event):
             job_input = event
             logger.info("Event is not a dict, using as is")
         
-        # Process the job
         return process_cubic_enhancement(job_input)
         
     except Exception as e:
@@ -652,16 +596,14 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement - V18 with Contrast 0.99, Brightness 1.17, White Overlay 10%"""
+    """Process cubic detail enhancement with default AB pattern support"""
     try:
         logger.info("🚀 Fast loading version - No OpenCV")
         logger.info("💎 SwinIR for refined detail enhancement")
         logger.info(f"Job input type: {type(job)}")
         
-        # Log job structure in detail
         if isinstance(job, dict):
             logger.info(f"Job keys: {list(job.keys())[:10]}")
-            # Log each key's value type and size
             for key, value in job.items():
                 if isinstance(value, str):
                     logger.info(f"  {key}: string, length={len(value)}")
@@ -674,18 +616,15 @@ def process_cubic_enhancement(job):
                 else:
                     logger.info(f"  {key}: {type(value)}")
         
-        # Extract input data using more robust function
         image_data_str = find_input_data_robust(job)
         
         if not image_data_str:
-            # Build detailed error message
             error_details = []
             error_details.append("No valid image data found in input.")
             
             if isinstance(job, dict):
                 error_details.append(f"Available keys: {list(job.keys())}")
                 
-                # Check each key for potential issues
                 for key, value in job.items():
                     if isinstance(value, str):
                         if len(value) == 0:
@@ -693,21 +632,17 @@ def process_cubic_enhancement(job):
                         elif len(value) < 20:
                             error_details.append(f"- '{key}' too short ({len(value)} chars)")
                         else:
-                            # Check if it looks like base64
                             sample = value[:50].strip()
                             if not all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
                                 error_details.append(f"- '{key}' doesn't look like base64")
             
             error_details.append("\nExpected fields: 'enhancement', 'enhanced_image', 'image', 'base64', etc.")
             error_details.append("Image data should be base64 encoded string.")
-            
-            # Special note about Make.com
             error_details.append("\nMake.com note: Check that the field mapping is correct.")
             error_details.append("The image field might be: {{4.data.output.output.enhanced_image}}")
             
             raise ValueError("\n".join(error_details))
         
-        # Extract parameters
         params = job if isinstance(job, dict) else {}
         filename = params.get('filename', '')
         intensity = float(params.get('intensity', 1.0))
@@ -715,9 +650,11 @@ def process_cubic_enhancement(job):
         apply_swinir = params.get('apply_swinir', True)
         apply_pattern = params.get('pattern_enhancement', True)
         
-        logger.info(f"Parameters: filename={filename}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
+        # Use default AB pattern if no filename
+        default_pattern = params.get('default_pattern', 'ab_pattern')
         
-        # Decode image
+        logger.info(f"Parameters: filename={filename or 'None (using default)'}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
+        
         image_bytes = decode_base64_fast(image_data_str)
         image = Image.open(BytesIO(image_bytes))
         
@@ -732,10 +669,10 @@ def process_cubic_enhancement(job):
         logger.info("⚖️ Step 1: Applying white balance")
         image = auto_white_balance_fast(image)
         
-        # 2. Pattern Enhancement with Refined Cubic Detail
+        # 2. Pattern Enhancement with default support
         if apply_pattern:
             logger.info("🎨 Step 2: Applying pattern enhancement with refined cubic detail")
-            pattern_type = detect_pattern_type(filename)
+            pattern_type = detect_pattern_type(filename, default_pattern=default_pattern)
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
@@ -748,7 +685,7 @@ def process_cubic_enhancement(job):
             pattern_type = "none"
             detected_type = "보정없음"
         
-        # 3. Ring Hole Detection (Simple version)
+        # 3. Ring Hole Detection
         logger.info("🔍 Step 3: Simple ring hole detection")
         image = ensure_ring_holes_transparent_simple(image)
         
@@ -756,25 +693,21 @@ def process_cubic_enhancement(job):
         logger.info("💎 Step 4: Refined cubic pre-enhancement")
         image = enhance_cubic_sparkle_with_swinir(image, intensity)
         
-        # 5. SwinIR Enhancement (for cubic detail)
+        # 5. SwinIR Enhancement
         if apply_swinir:
             logger.info("🚀 Step 5: Applying SwinIR for refined detail")
             enhanced_image = apply_swinir_enhancement(image)
         else:
             enhanced_image = image
         
-        # Encode to base64
         output_base64 = image_to_base64(enhanced_image)
         
-        # Statistics
         cubic_mask, _, _, _ = detect_cubic_regions_enhanced(image)
-        cubic_pixel_count = int(np.sum(cubic_mask))  # Convert to Python int
+        cubic_pixel_count = int(np.sum(cubic_mask))
         cubic_percentage = (cubic_pixel_count / (image.size[0] * image.size[1])) * 100
         
-        # CRITICAL FIX: Convert numpy bool_ to Python bool
-        has_cubics = bool(cubic_pixel_count > 0)  # Explicitly convert to Python bool
+        has_cubics = bool(cubic_pixel_count > 0)
         
-        # RunPod expects {"output": {...}} structure
         return {
             "output": {
                 "enhanced_image": output_base64,
@@ -788,10 +721,11 @@ def process_cubic_enhancement(job):
                 "pattern_type": pattern_type,
                 "detected_type": detected_type,
                 "intensity": intensity,
+                "filename_received": filename if filename else "None (using default)",
                 "cubic_statistics": {
-                    "cubic_pixels": cubic_pixel_count,  # Already converted to Python int
+                    "cubic_pixels": cubic_pixel_count,
                     "cubic_percentage": round(cubic_percentage, 2),
-                    "has_cubics": has_cubics  # Now a Python bool, not numpy bool_
+                    "has_cubics": has_cubics
                 },
                 "corrections_applied": [
                     "white_balance",
@@ -800,22 +734,17 @@ def process_cubic_enhancement(job):
                     "cubic_pre_enhancement_refined",
                     "swinir_detail" if apply_swinir else "swinir_skipped"
                 ],
-                "base64_padding": "INCLUDED",  # Always included now
+                "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "optimized_no_cv2",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Simple) → 4.RefinedCubicPrep → 5.SwinIR",
                 "v18_improvements": [
-                    "UPDATED: AC/AB pattern contrast 1.05 → 0.99",
-                    "UPDATED: AC/AB pattern brightness 1.13 → 1.17",
-                    "UPDATED: AC/AB pattern white overlay reduced to 10%",
-                    "AC pattern: 10% white overlay, brightness 1.17, contrast 0.99",
-                    "AB pattern: 10% white overlay, brightness 1.17, contrast 0.99",
-                    "Other patterns: unchanged (brightness 1.05, contrast 1.06)",
-                    "Maintained all V16-V17 artifact prevention improvements",
-                    "Edge blend and UnsharpMask settings remain optimized",
-                    "Sharpness settings: AC/AB 1.4, Other 1.3",
-                    "Cubic detection thresholds remain strict (245+, 210+)",
-                    "SwinIR pre-enhancement remains balanced (25% blend)"
+                    "NEW: Default AB pattern when no filename provided",
+                    "NEW: Relaxed pattern detection (ac/ab without underscore)",
+                    "AC/AB pattern contrast 0.99",
+                    "AC/AB pattern brightness 1.17",
+                    "AC/AB pattern white overlay 10%",
+                    "Pattern detection: 'ac' → 무도금화이트, 'ab' → 무도금화이트-쿨톤"
                 ]
             }
         }
