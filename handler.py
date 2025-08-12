@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V18-RING
-# VERSION: Cubic-Sparkle-V18-C099-B117-WO10-RingFix
-# Updated: Enhanced ring hole detection for jewelry
+# CUBIC DETAIL ENHANCEMENT HANDLER V18-RING-FIXED
+# VERSION: Cubic-Sparkle-V18-C099-B117-WO10-RingFix-FilterFixed
+# Updated: Fixed filter sizes for PIL compatibility
 ################################
 
-VERSION = "Cubic-Sparkle-V18-C099-B117-WO10-RingFix"
+VERSION = "Cubic-Sparkle-V18-C099-B117-WO10-RingFix-FilterFixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -437,12 +437,12 @@ def ensure_ring_holes_transparent_enhanced(image: Image.Image) -> Image.Image:
     # Apply morphological operations to clean up
     holes_image = Image.fromarray((potential_holes * 255).astype(np.uint8))
     
-    # Remove small noise
+    # Remove small noise - FIXED: Using odd sizes only
     holes_image = holes_image.filter(ImageFilter.MinFilter(3))
     holes_image = holes_image.filter(ImageFilter.MaxFilter(3))
     
-    # Expand slightly to catch edges
-    holes_image = holes_image.filter(ImageFilter.MaxFilter(2))
+    # Expand slightly to catch edges - FIXED: Changed from 2 to 3
+    holes_image = holes_image.filter(ImageFilter.MaxFilter(3))
     
     holes_mask = np.array(holes_image) > 128
     
@@ -471,9 +471,9 @@ def ensure_ring_holes_transparent_enhanced(image: Image.Image) -> Image.Image:
     
     # Additional pass: Find completely enclosed regions
     # Areas that are surrounded by opaque pixels might be holes
-    from scipy import ndimage
-    
     try:
+        from scipy import ndimage
+        
         # Label connected components in the non-transparent areas
         labeled, num_features = ndimage.label(alpha_array > 128)
         
@@ -821,7 +821,8 @@ def process_cubic_enhancement(job):
                 "performance": "optimized_ring_detection",
                 "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Enhanced) → 4.RefinedCubicPrep → 5.SwinIR",
                 "v18_ring_improvements": [
-                    "NEW: Enhanced ring hole detection for jewelry",
+                    "Fixed: Filter sizes changed to odd numbers only",
+                    "Enhanced ring hole detection for jewelry",
                     "Gray background detection (180-220 range)",
                     "Improved center hole detection",
                     "Edge-based hole detection",
