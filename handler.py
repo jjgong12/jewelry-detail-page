@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V18-RING-REFINED
-# VERSION: Cubic-Sparkle-V18-C099-B117-WO10-RingRefined
-# Updated: Refined ring hole detection for better quality
+# CUBIC DETAIL ENHANCEMENT HANDLER V18-RING-REFINED-FIXED
+# VERSION: Cubic-Sparkle-V18-C099-B117-WO10-RingRefined-Fixed
+# Updated: Fixed scipy dependency - using PIL GaussianBlur instead
 ################################
 
-VERSION = "Cubic-Sparkle-V18-C099-B117-WO10-RingRefined"
+VERSION = "Cubic-Sparkle-V18-C099-B117-WO10-RingRefined-Fixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -388,11 +388,13 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
     return image
 
 def ensure_ring_holes_transparent_refined(image: Image.Image) -> Image.Image:
-    """Refined ring hole detection - more precise and quality-preserving"""
+    """Refined ring hole detection - more precise and quality-preserving
+    FIXED: No scipy dependency, using PIL GaussianBlur instead
+    """
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
-    logger.info("🔍 Refined ring hole detection for jewelry")
+    logger.info("🔍 Refined ring hole detection for jewelry (PIL-based)")
     
     r, g, b, a = image.split()
     rgb_array = np.array(image.convert('RGB'), dtype=np.uint8)
@@ -458,18 +460,17 @@ def ensure_ring_holes_transparent_refined(image: Image.Image) -> Image.Image:
             holes_mask = holes_mask | center_mask
     
     # Apply the holes mask to alpha channel with some edge smoothing
-    # Create a smoother transition
-    from scipy.ndimage import gaussian_filter
-    try:
-        # Smooth the mask edges slightly for better quality
-        holes_mask_smooth = gaussian_filter(holes_mask.astype(float), sigma=0.5) > 0.5
-        alpha_array[holes_mask_smooth] = 0
-    except ImportError:
-        # Fallback without scipy
-        alpha_array[holes_mask] = 0
+    # Using PIL GaussianBlur instead of scipy
+    holes_mask_float = holes_mask.astype(np.float32) * 255
+    holes_mask_image = Image.fromarray(holes_mask_float.astype(np.uint8))
+    
+    # Apply Gaussian blur for smooth edges (replacing scipy)
+    holes_mask_blurred = holes_mask_image.filter(ImageFilter.GaussianBlur(radius=0.5))
+    holes_mask_smooth = np.array(holes_mask_blurred) > 128
+    
+    alpha_array[holes_mask_smooth] = 0
     
     # Final cleanup - remove very small isolated transparent areas
-    # This helps preserve quality by avoiding scattered transparent pixels
     a_new = Image.fromarray(alpha_array)
     
     # Optional: Apply a very light median filter to clean up noise
@@ -479,7 +480,7 @@ def ensure_ring_holes_transparent_refined(image: Image.Image) -> Image.Image:
     
     result = Image.merge('RGBA', (r, g, b, a_new))
     
-    logger.info(f"✅ Refined ring holes applied - {np.sum(holes_mask)} pixels made transparent")
+    logger.info(f"✅ Refined ring holes applied (PIL-based) - {np.sum(holes_mask)} pixels made transparent")
     return result
 
 def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
@@ -620,7 +621,7 @@ def enhance_cubic_sparkle_with_swinir(image: Image.Image, intensity=1.0) -> Imag
     return result
 
 def handler(event):
-    """RunPod handler function - V18 with Refined Ring Detection"""
+    """RunPod handler function - V18 with Refined Ring Detection (scipy fixed)"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -656,9 +657,9 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement with refined ring hole detection"""
+    """Process cubic detail enhancement with refined ring hole detection (scipy fixed)"""
     try:
-        logger.info("🚀 Fast loading version with Refined Ring Detection")
+        logger.info("🚀 Fast loading version with Refined Ring Detection (PIL-based)")
         logger.info("💎 SwinIR for refined detail enhancement")
         logger.info(f"Job input type: {type(job)}")
         
@@ -744,8 +745,8 @@ def process_cubic_enhancement(job):
             pattern_type = "none"
             detected_type = "보정없음"
         
-        # 3. Refined Ring Hole Detection
-        logger.info("🔍 Step 3: Refined ring hole detection for jewelry")
+        # 3. Refined Ring Hole Detection (scipy fixed)
+        logger.info("🔍 Step 3: Refined ring hole detection for jewelry (PIL-based)")
         image = ensure_ring_holes_transparent_refined(image)
         
         # 4. Refined Cubic Pre-enhancement
@@ -789,20 +790,23 @@ def process_cubic_enhancement(job):
                 "corrections_applied": [
                     "white_balance",
                     "pattern_enhancement" if apply_pattern else "pattern_skipped",
-                    "ring_hole_detection_refined",
+                    "ring_hole_detection_refined_pil",
                     "cubic_pre_enhancement_refined",
                     "swinir_detail" if apply_swinir else "swinir_skipped"
                 ],
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
-                "performance": "optimized_ring_detection_refined",
-                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(Refined) → 4.RefinedCubicPrep → 5.SwinIR",
-                "v18_refined_improvements": [
+                "performance": "optimized_ring_detection_pil_based",
+                "processing_order": "1.WB → 2.Pattern → 3.RingHoles(PIL) → 4.RefinedCubicPrep → 5.SwinIR",
+                "v18_fixed_improvements": [
+                    "Removed scipy dependency completely",
+                    "Using PIL GaussianBlur for edge smoothing",
+                    "All functionality preserved without scipy",
                     "More conservative gray detection (190-210 range)",
                     "Stricter color uniformity checks",
                     "Smaller morphological operations",
                     "Added uniformity check for center region",
-                    "Optional gaussian smoothing for edges",
+                    "PIL-based gaussian smoothing for edges",
                     "Median filter for noise reduction",
                     "Preserved image quality while detecting holes"
                 ]
