@@ -551,8 +551,8 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     cubic_mask = white_cubic | color_cubic | edge_cubic | highlights
     
     cubic_image = Image.fromarray((cubic_mask * 255).astype(np.uint8))
-    cubic_image = cubic_image.filter(ImageFilter.MinFilter(2))
-    cubic_image = cubic_image.filter(ImageFilter.MaxFilter(2))
+    cubic_image = cubic_image.filter(ImageFilter.MinFilter(3))  # Fixed: must be odd number
+    cubic_image = cubic_image.filter(ImageFilter.MaxFilter(3))  # Fixed: must be odd number
     cubic_mask = np.array(cubic_image) > 128
     
     return cubic_mask.astype(bool), white_cubic, color_cubic, highlights
