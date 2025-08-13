@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V20-ENHANCED
-# VERSION: Cubic-Sparkle-V20-Enhanced-Detail-RingFix
-# Updated: Enhanced cubic detail + improved ring hole detection
+# CUBIC DETAIL ENHANCEMENT HANDLER V20-ENHANCED-FIXED
+# VERSION: Cubic-Sparkle-V20-Enhanced-Detail-RingFix-Fixed
+# Updated: Fixed gray array dtype issue in ring hole detection
 ################################
 
-VERSION = "Cubic-Sparkle-V20-Enhanced-Detail-RingFix"
+VERSION = "Cubic-Sparkle-V20-Enhanced-Detail-RingFix-Fixed"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -416,7 +416,7 @@ def ensure_ring_holes_transparent_refined(image: Image.Image) -> Image.Image:
     alpha_array = np.array(a, dtype=np.uint8)
     
     # Convert to grayscale for analysis
-    gray = np.mean(rgb_array, axis=2)
+    gray = np.mean(rgb_array, axis=2).astype(np.uint8)  # FIXED: Convert to uint8 here
     
     # Method 1: Detect specific gray background colors (narrower range)
     gray_background_mask = (
@@ -461,7 +461,7 @@ def ensure_ring_holes_transparent_refined(image: Image.Image) -> Image.Image:
     
     # Method 4: Smooth out harsh lighting artifacts
     # Detect areas with sudden brightness changes
-    gray_blurred = Image.fromarray(gray).filter(ImageFilter.GaussianBlur(radius=3))
+    gray_blurred = Image.fromarray(gray).filter(ImageFilter.GaussianBlur(radius=3))  # gray is already uint8
     gray_blurred_array = np.array(gray_blurred)
     
     brightness_diff = np.abs(gray.astype(np.float32) - gray_blurred_array.astype(np.float32))
@@ -850,6 +850,11 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "enhanced_detail_processing",
                 "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.SwinIR",
+                "v20_fixes": [
+                    "Fixed gray array dtype issue in ring hole detection",
+                    "gray = np.mean(rgb_array, axis=2).astype(np.uint8)",
+                    "Ensures PIL Image.fromarray() receives correct uint8 type"
+                ],
                 "v20_improvements": [
                     "Increased all cubic detail enhancement values",
                     "Stronger edge and unsharp mask blending",
