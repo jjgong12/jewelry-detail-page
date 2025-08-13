@@ -13,31 +13,36 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V22-RUNPOD-FIXED
-# VERSION: Cubic-Sparkle-V22-RunPod-Compatible
-# Updated: Removed scipy dependency, improved ring highlight preservation
+# CUBIC DETAIL ENHANCEMENT HANDLER V23-RUNPOD-STABLE
+# VERSION: Cubic-Sparkle-V23-RunPod-Stable
+# Updated: Fixed dtype consistency, improved error handling
 ################################
 
-VERSION = "Cubic-Sparkle-V22-RunPod-Compatible"
+VERSION = "Cubic-Sparkle-V23-RunPod-Stable"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
     try:
         if not base64_str or len(base64_str) < 50:
-            raise ValueError("Invalid base64 string")
+            raise ValueError("Invalid base64 string - too short or empty")
         
+        # Remove data URL prefix if present
         if 'base64,' in base64_str:
             base64_str = base64_str.split('base64,')[-1]
         
+        # Remove whitespace
         base64_str = ''.join(base64_str.split())
         
+        # Filter to valid base64 characters only
         valid_chars = set(string.ascii_letters + string.digits + '+/=')
         base64_str = ''.join(c for c in base64_str if c in valid_chars)
         
+        # Try decoding with current padding
         try:
             decoded = base64.b64decode(base64_str, validate=True)
             return decoded
         except Exception:
+            # Add proper padding if needed
             no_pad = base64_str.rstrip('=')
             padding_needed = (4 - len(no_pad) % 4) % 4
             padded = no_pad + ('=' * padding_needed)
@@ -49,7 +54,7 @@ def decode_base64_fast(base64_str: str) -> bytes:
         raise ValueError(f"Invalid base64 data: {str(e)}")
 
 def image_to_base64(image):
-    """Convert image to base64 with padding - ALWAYS include padding"""
+    """Convert image to base64 with padding - ALWAYS include padding for Google Script/Make.com"""
     buffered = BytesIO()
     
     if image.mode != 'RGBA':
@@ -61,6 +66,7 @@ def image_to_base64(image):
     
     buffered.seek(0)
     base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    # Always return WITH padding
     return base64_str
 
 def find_input_data_robust(data, path="", depth=0, max_depth=10):
@@ -74,7 +80,7 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
         str_len = len(data)
         logger.info(f"  Found string at {path} with length {str_len}")
         
-        if str_len > 20:
+        if str_len > 100:  # Increased minimum for valid base64
             sample = data[:100].strip()
             if sample and all(c in string.ascii_letters + string.digits + '+/=' for c in sample[:50]):
                 logger.info(f"✅ Found potential base64 data at {path} (length: {str_len})")
@@ -90,10 +96,11 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
         for key, value in data.items():
             current_path = f"{path}.{key}" if path else key
             
-            if key in ['enhanced_image', 'image', 'base64', 'image_base64'] and isinstance(value, str) and len(value) > 1000:
+            # Skip already enhanced images to avoid loops
+            if key in ['enhanced_image', 'thumbnail'] and isinstance(value, str) and len(value) > 1000:
                 continue
                 
-            if isinstance(value, str) and len(value) > 20:
+            if isinstance(value, str) and len(value) > 100:
                 logger.info(f"  Checking string at {current_path}: length={len(value)}")
                 
                 sample = value[:100].strip()
@@ -106,6 +113,7 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
                     return result
         
         if base64_candidates:
+            # Sort by length (longest first)
             base64_candidates.sort(key=lambda x: x[2], reverse=True)
             best_path, best_value, best_len = base64_candidates[0]
             logger.info(f"✅ Selected best base64 candidate at {best_path} (length: {best_len})")
@@ -129,10 +137,10 @@ def detect_pattern_type(filename: str, default_pattern: str = "ab_pattern") -> s
     filename_lower = filename.lower()
     logger.info(f"🔍 Checking pattern for filename: {filename}")
     
-    if 'ac' in filename_lower:
+    if 'ac_' in filename_lower or '_ac' in filename_lower:
         logger.info("✅ Detected AC pattern (무도금화이트)")
         return "ac_pattern"
-    elif 'ab' in filename_lower:
+    elif 'ab_' in filename_lower or '_ab' in filename_lower:
         logger.info("✅ Detected AB pattern (무도금화이트-쿨톤)")
         return "ab_pattern"
     else:
@@ -149,6 +157,7 @@ def auto_white_balance_fast(image: Image.Image) -> Image.Image:
     
     img_array = np.array(rgb_img, dtype=np.float32)
     
+    # Sample image for performance
     sampled = img_array[::15, ::15]
     gray_mask = (
         (np.abs(sampled[:,:,0] - sampled[:,:,1]) < 15) & 
@@ -200,7 +209,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     if pattern_type == "ac_pattern":
         edge_blend = 0.25 * (1.0 - pass_num * 0.05)
         unsharp_blend = 0.15 * (1.0 - pass_num * 0.05)
-    else:
+    else:  # ab_pattern
         edge_blend = 0.20 * (1.0 - pass_num * 0.05)
         unsharp_blend = 0.12 * (1.0 - pass_num * 0.05)
     
@@ -279,10 +288,12 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         white_overlay = 0.10
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
-        img_array[:,:,0] *= 0.96
-        img_array[:,:,1] *= 0.98
-        img_array[:,:,2] *= 1.02
+        # Cool tone adjustment
+        img_array[:,:,0] *= 0.96  # Reduce red
+        img_array[:,:,1] *= 0.98  # Slightly reduce green
+        img_array[:,:,2] *= 1.02  # Increase blue
         
+        # Cool overlay
         cool_overlay = np.array([240, 248, 255], dtype=np.float32)
         img_array = img_array * 0.95 + cool_overlay * 0.05
         
@@ -307,7 +318,7 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:
+    else:  # other pattern
         logger.info("🔍 Other Pattern (기타색상) - Standard enhancement")
         white_overlay = 0.02
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
@@ -327,6 +338,7 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         sharpness = ImageEnhance.Sharpness(rgb_image)
         rgb_image = sharpness.enhance(1.3)
     
+    # Final sharpness adjustment
     sharpness = ImageEnhance.Sharpness(rgb_image)
     if pattern_type in ["ac_pattern", "ab_pattern"]:
         rgb_image = sharpness.enhance(1.4)
@@ -347,7 +359,7 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
         
         api_token = os.environ.get('REPLICATE_API_TOKEN')
         if not api_token:
-            logger.warning("No Replicate API token")
+            logger.warning("No Replicate API token - skipping SwinIR")
             return image
         
         client = replicate.Client(api_token=api_token)
@@ -394,7 +406,7 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
     return image
 
 def simple_morphology_operation(mask, operation='close', iterations=1):
-    """Simple morphology operations using PIL only"""
+    """Simple morphology operations using PIL only - NO scipy"""
     mask_image = Image.fromarray((mask * 255).astype(np.uint8))
     
     for _ in range(iterations):
@@ -424,7 +436,7 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
     rgb_array = np.array(image.convert('RGB'), dtype=np.uint8)
     alpha_array = np.array(a, dtype=np.uint8)
     
-    # Convert to grayscale
+    # Convert to grayscale - FIX: ensure uint8
     gray = np.mean(rgb_array, axis=2).astype(np.uint8)
     
     # Get image dimensions
@@ -446,16 +458,14 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
     outer_mask = distance_from_center > outer_ring_radius
     
     # Method 1: Detect true background (conservative)
-    # Only very specific gray values that are clearly background
     true_background = (
         (gray >= 198) & (gray <= 202) &  # Very narrow gray range
-        (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 5) &  # Perfectly neutral
-        (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 5) &
+        (np.abs(rgb_array[:,:,0].astype(np.float32) - rgb_array[:,:,1].astype(np.float32)) < 5) &
+        (np.abs(rgb_array[:,:,1].astype(np.float32) - rgb_array[:,:,2].astype(np.float32)) < 5) &
         (alpha_array > 250)
     )
     
     # Method 2: Detect obvious holes (very conservative)
-    # Only remove if it's clearly not metal
     obvious_holes = np.zeros_like(gray, dtype=bool)
     
     # In outer region, be more aggressive
@@ -463,8 +473,8 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
         outer_bright = (
             outer_mask &
             (gray > 240) &
-            (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 10) &
-            (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 10)
+            (np.abs(rgb_array[:,:,0].astype(np.float32) - rgb_array[:,:,1].astype(np.float32)) < 10) &
+            (np.abs(rgb_array[:,:,1].astype(np.float32) - rgb_array[:,:,2].astype(np.float32)) < 10)
         )
         obvious_holes |= outer_bright
     
@@ -480,13 +490,12 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
             ring_body_mask &
             (gray > 250) &  # Very bright
             (np.abs(gray.astype(np.float32) - gray_blurred_array.astype(np.float32)) < 5) &  # Uniform
-            (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 5) &
-            (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 5)
+            (np.abs(rgb_array[:,:,0].astype(np.float32) - rgb_array[:,:,1].astype(np.float32)) < 5) &
+            (np.abs(rgb_array[:,:,1].astype(np.float32) - rgb_array[:,:,2].astype(np.float32)) < 5)
         )
         obvious_holes |= uniformly_bright
     
     # In inner ring, be VERY conservative - preserve almost everything
-    # This is where the highlights you want to keep are located
     if np.any(inner_ring_mask):
         # Only remove if it's absolutely certain to be a hole
         inner_holes = (
@@ -520,7 +529,6 @@ def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
         new_alpha = (new_alpha * (1 - mask_smooth)).astype(np.uint8)
     
     # Ensure inner ring highlights are preserved
-    # Restore alpha for areas that should definitely be visible
     preserve_mask = (
         inner_ring_mask &  # In inner ring
         (gray > 220) &  # Bright (likely highlight)
@@ -564,6 +572,7 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     edges = image.filter(ImageFilter.FIND_EDGES)
     edges_array = np.array(edges.convert('L'))
     
+    # Detect different types of cubic regions
     white_cubic = (
         (v_array > 245 * sensitivity) &
         (s_array < 25) &
@@ -586,6 +595,7 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     
     cubic_mask = white_cubic | color_cubic | edge_cubic | highlights
     
+    # Clean up the mask
     cubic_image = Image.fromarray((cubic_mask * 255).astype(np.uint8))
     cubic_image = cubic_image.filter(ImageFilter.MinFilter(3))
     cubic_image = cubic_image.filter(ImageFilter.MaxFilter(3))
@@ -626,6 +636,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
         
         pass_factor = 1.0 - (pass_num * 0.1)
         
+        # Apply enhancements
         for c in range(3):
             rgb_array[:,:,c] = np.where(
                 cubic_mask,
@@ -639,6 +650,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
                 rgb_array[:,:,c]
             )
         
+        # Contrast adjustment
         if np.any(cubic_mask):
             mean_val = np.mean(rgb_array[cubic_mask])
             contrast_factor = 1.0 + (0.15 * intensity * pass_factor)
@@ -650,10 +662,12 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
                     rgb_array[:,:,c]
                 )
         
+        # Highlight boost
         if np.any(highlights):
             boost_factor = 1.0 + (0.08 * intensity * pass_factor)
             rgb_array[highlights] = np.minimum(rgb_array[highlights] * boost_factor, 255)
         
+        # Color saturation for colored cubics
         if np.any(color_cubic):
             rgb_temp = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
             hsv_temp = rgb_temp.convert('HSV')
@@ -685,6 +699,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
         r2, g2, b2 = rgb_enhanced.split()
         result = Image.merge('RGBA', (r2, g2, b2, a))
         
+        # Final sharpness
         sharpness = ImageEnhance.Sharpness(result)
         result = sharpness.enhance(1.0 + (0.15 * intensity * pass_factor))
     
@@ -693,7 +708,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V22 RunPod Compatible"""
+    """RunPod handler function - V23 RunPod Stable"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -749,6 +764,7 @@ def process_cubic_enhancement(job):
                 else:
                     logger.info(f"  {key}: {type(value)}")
         
+        # Find image data
         image_data_str = find_input_data_robust(job)
         
         if not image_data_str:
@@ -762,20 +778,21 @@ def process_cubic_enhancement(job):
                     if isinstance(value, str):
                         if len(value) == 0:
                             error_details.append(f"- '{key}' is empty string")
-                        elif len(value) < 20:
+                        elif len(value) < 100:
                             error_details.append(f"- '{key}' too short ({len(value)} chars)")
                         else:
                             sample = value[:50].strip()
                             if not all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
                                 error_details.append(f"- '{key}' doesn't look like base64")
             
-            error_details.append("\nExpected fields: 'enhancement', 'enhanced_image', 'image', 'base64', etc.")
-            error_details.append("Image data should be base64 encoded string.")
+            error_details.append("\nExpected fields: 'image', 'base64', 'enhanced_image', etc.")
+            error_details.append("Image data should be base64 encoded string (minimum 100 chars).")
             error_details.append("\nMake.com note: Check that the field mapping is correct.")
             error_details.append("The image field might be: {{4.data.output.output.enhanced_image}}")
             
             raise ValueError("\n".join(error_details))
         
+        # Extract parameters
         params = job if isinstance(job, dict) else {}
         filename = params.get('filename', '')
         intensity = float(params.get('intensity', 1.2))
@@ -787,6 +804,7 @@ def process_cubic_enhancement(job):
         
         logger.info(f"Parameters: filename={filename or 'None (using default)'}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
         
+        # Decode image
         image_bytes = decode_base64_fast(image_data_str)
         image = Image.open(BytesIO(image_bytes))
         
@@ -837,14 +855,17 @@ def process_cubic_enhancement(job):
             logger.info("⏭️ Step 6/6: Skipping SwinIR (disabled)")
             enhanced_image = image
         
+        # Convert to base64 with padding
         output_base64 = image_to_base64(enhanced_image)
         
+        # Calculate statistics
         cubic_mask, _, _, _ = detect_cubic_regions_enhanced(image)
         cubic_pixel_count = int(np.sum(cubic_mask))
         cubic_percentage = (cubic_pixel_count / (image.size[0] * image.size[1])) * 100
         
-        has_cubics = bool(cubic_pixel_count > 0)
+        has_cubics = bool(cubic_pixel_count > 0)  # Convert numpy bool to Python bool
         
+        # Return proper structure for Make.com
         return {
             "output": {
                 "enhanced_image": output_base64,
@@ -876,17 +897,17 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "runpod_compatible",
                 "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Simple) → 5.Cubic2(Strong) → 6.SwinIR",
-                "v22_improvements": [
-                    "Removed scipy dependency completely",
-                    "PIL-only morphology operations",
-                    "Radial zone-based detection (inner/body/outer)",
-                    "Conservative inner ring preservation",
-                    "Simplified but effective hole detection",
-                    "RunPod compatible - no external dependencies",
+                "v23_improvements": [
+                    "Fixed dtype consistency throughout",
+                    "Improved error messages with guidance",
+                    "Better filename pattern detection (ac_/ab_)",
+                    "Minimum base64 length check (100 chars)",
+                    "Explicit numpy bool to Python bool conversion",
+                    "Preserved all V22 improvements",
+                    "RunPod compatible - no scipy dependency",
                     "Inner ring highlights explicitly preserved",
-                    "Zone-specific thresholds for better accuracy",
-                    "Smooth transitions without scipy",
-                    "Fast and stable processing"
+                    "Zone-specific thresholds for accuracy",
+                    "Stable and fast processing"
                 ]
             }
         }
@@ -900,7 +921,8 @@ def process_cubic_enhancement(job):
                 "error": str(e),
                 "status": "failed",
                 "version": VERSION,
-                "traceback": traceback.format_exc()
+                "traceback": traceback.format_exc(),
+                "help": "Check that image data is base64 encoded and at least 100 characters long"
             }
         }
 
