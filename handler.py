@@ -3,23 +3,22 @@ import os
 import base64
 import numpy as np
 from io import BytesIO
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageDraw
 import logging
 import string
 import requests
 import json
-from scipy import ndimage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V21-HIGHLIGHT-PRESERVE
-# VERSION: Cubic-Sparkle-V21-Enhanced-Highlight-Preserve
-# Updated: Improved ring highlight preservation and natural processing
+# CUBIC DETAIL ENHANCEMENT HANDLER V22-RUNPOD-FIXED
+# VERSION: Cubic-Sparkle-V22-RunPod-Compatible
+# Updated: Removed scipy dependency, improved ring highlight preservation
 ################################
 
-VERSION = "Cubic-Sparkle-V21-Enhanced-Highlight-Preserve"
+VERSION = "Cubic-Sparkle-V22-RunPod-Compatible"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -394,188 +393,157 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
         
     return image
 
-def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
-    """Advanced ring hole detection - preserves metallic highlights naturally"""
+def simple_morphology_operation(mask, operation='close', iterations=1):
+    """Simple morphology operations using PIL only"""
+    mask_image = Image.fromarray((mask * 255).astype(np.uint8))
+    
+    for _ in range(iterations):
+        if operation == 'close':
+            # Dilation then erosion
+            mask_image = mask_image.filter(ImageFilter.MaxFilter(3))
+            mask_image = mask_image.filter(ImageFilter.MinFilter(3))
+        elif operation == 'open':
+            # Erosion then dilation
+            mask_image = mask_image.filter(ImageFilter.MinFilter(3))
+            mask_image = mask_image.filter(ImageFilter.MaxFilter(3))
+        elif operation == 'dilate':
+            mask_image = mask_image.filter(ImageFilter.MaxFilter(3))
+        elif operation == 'erode':
+            mask_image = mask_image.filter(ImageFilter.MinFilter(3))
+    
+    return np.array(mask_image) > 128
+
+def ensure_ring_holes_transparent_simple(image: Image.Image) -> Image.Image:
+    """Simplified ring hole detection without scipy - preserves inner highlights"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
-    logger.info("🔍 Advanced ring hole detection with natural highlight preservation")
+    logger.info("🔍 Simplified ring hole detection (RunPod compatible)")
     
     r, g, b, a = image.split()
     rgb_array = np.array(image.convert('RGB'), dtype=np.uint8)
     alpha_array = np.array(a, dtype=np.uint8)
     
-    # Convert to different color spaces for analysis
+    # Convert to grayscale
     gray = np.mean(rgb_array, axis=2).astype(np.uint8)
-    hsv = image.convert('HSV')
-    h, s, v = hsv.split()
-    h_array = np.array(h)
-    s_array = np.array(s)
-    v_array = np.array(v)
     
-    # Step 1: Detect true background (non-metallic gray areas)
-    logger.info("  Step 1: Detecting true background areas")
-    
-    # True background has very specific characteristics
-    background_mask = (
-        (gray > 195) & (gray < 205) &  # Narrow gray range
-        (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 8) &  # Very neutral
-        (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 8) &
-        (s_array < 10) &  # Almost no saturation
-        (alpha_array > 250)
-    )
-    
-    # Step 2: Gradient analysis to distinguish highlights from holes
-    logger.info("  Step 2: Gradient analysis for highlight detection")
-    
-    # Calculate gradients
-    grad_x = np.gradient(gray.astype(np.float32), axis=1)
-    grad_y = np.gradient(gray.astype(np.float32), axis=0)
-    gradient_magnitude = np.sqrt(grad_x**2 + grad_y**2)
-    
-    # Metallic highlights have gradients, holes don't
-    has_gradient = gradient_magnitude > 5
-    
-    # Step 3: Detect metallic highlights (should be preserved)
-    logger.info("  Step 3: Identifying metallic highlights to preserve")
-    
-    # Metallic highlights characteristics
-    metallic_highlight = (
-        (v_array > 240) &  # Very bright
-        (s_array < 30) &  # Low saturation but not zero
-        has_gradient &  # Has gradient transitions
-        (gradient_magnitude < 50)  # Not an edge
-    )
-    
-    # Step 4: Detect ring edges to understand structure
-    logger.info("  Step 4: Edge detection for ring structure")
-    
-    edges = image.filter(ImageFilter.FIND_EDGES)
-    edges_array = np.array(edges.convert('L'))
-    strong_edges = edges_array > 100
-    
-    # Dilate edges to create edge proximity mask
-    from scipy.ndimage import binary_dilation
-    edge_proximity = binary_dilation(strong_edges, iterations=3)
-    
-    # Step 5: Continuity analysis
-    logger.info("  Step 5: Continuity analysis for hole detection")
-    
-    # True holes are continuous regions without texture
-    potential_holes = (
-        (v_array > 245) &  # Very bright
-        (s_array < 15) &  # Very low saturation
-        (~has_gradient) &  # No gradient (flat area)
-        (~edge_proximity) &  # Not near edges
-        (alpha_array > 250)
-    )
-    
-    # Label connected components
-    from scipy.ndimage import label, binary_opening, binary_closing
-    
-    # Clean up the mask
-    potential_holes = binary_opening(potential_holes, iterations=1)
-    potential_holes = binary_closing(potential_holes, iterations=1)
-    
-    labeled_holes, num_features = label(potential_holes)
-    
-    # Step 6: Analyze each potential hole region
-    logger.info("  Step 6: Analyzing individual regions")
-    
-    final_holes_mask = np.zeros_like(potential_holes, dtype=bool)
-    
-    for i in range(1, num_features + 1):
-        region = labeled_holes == i
-        region_size = np.sum(region)
-        
-        if region_size < 20:  # Too small, probably noise
-            continue
-        
-        # Check if region is truly uniform (characteristic of holes)
-        region_gray_values = gray[region]
-        region_std = np.std(region_gray_values)
-        
-        # Check color uniformity
-        region_r = rgb_array[:,:,0][region]
-        region_g = rgb_array[:,:,1][region]
-        region_b = rgb_array[:,:,2][region]
-        
-        color_variation = np.std(region_r) + np.std(region_g) + np.std(region_b)
-        
-        # True holes have very uniform color
-        if region_std < 5 and color_variation < 15:
-            # Additional check: is it surrounded by metal?
-            region_dilated = binary_dilation(region, iterations=5)
-            surrounding = region_dilated & ~region
-            
-            if np.any(surrounding):
-                surrounding_gray = gray[surrounding]
-                # If surrounded by darker metal, it's likely a hole
-                if np.mean(surrounding_gray) < np.mean(region_gray_values) - 20:
-                    final_holes_mask |= region
-    
-    # Step 7: Special handling for inner ring highlights
-    logger.info("  Step 7: Processing inner ring area specially")
-    
+    # Get image dimensions
     h, w = alpha_array.shape
     center_y, center_x = h // 2, w // 2
     
     # Create radial distance map
-    y_indices, x_indices = np.ogrid[:h, :w]
+    y_indices, x_indices = np.meshgrid(range(h), range(w), indexing='ij')
     distance_from_center = np.sqrt((x_indices - center_x)**2 + (y_indices - center_y)**2)
     
-    # Inner ring area
-    inner_ring_radius = min(h, w) // 5
+    # Define ring regions
+    max_radius = min(h, w) // 2
+    inner_ring_radius = max_radius * 0.3  # Inner 30% is ring interior
+    outer_ring_radius = max_radius * 0.7  # 70% is where ring typically ends
+    
+    # Region masks
     inner_ring_mask = distance_from_center < inner_ring_radius
+    ring_body_mask = (distance_from_center >= inner_ring_radius) & (distance_from_center <= outer_ring_radius)
+    outer_mask = distance_from_center > outer_ring_radius
     
-    # In inner ring, be more conservative about removing highlights
-    inner_highlights = inner_ring_mask & metallic_highlight
+    # Method 1: Detect true background (conservative)
+    # Only very specific gray values that are clearly background
+    true_background = (
+        (gray >= 198) & (gray <= 202) &  # Very narrow gray range
+        (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 5) &  # Perfectly neutral
+        (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 5) &
+        (alpha_array > 250)
+    )
     
-    # Remove inner highlights from holes mask
-    final_holes_mask = final_holes_mask & ~inner_highlights
+    # Method 2: Detect obvious holes (very conservative)
+    # Only remove if it's clearly not metal
+    obvious_holes = np.zeros_like(gray, dtype=bool)
     
-    # Step 8: Apply transparency with smooth transitions
-    logger.info("  Step 8: Applying smooth transparency transitions")
+    # In outer region, be more aggressive
+    if np.any(outer_mask):
+        outer_bright = (
+            outer_mask &
+            (gray > 240) &
+            (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 10) &
+            (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 10)
+        )
+        obvious_holes |= outer_bright
     
-    # Create smooth alpha channel
+    # In ring body, be moderate
+    if np.any(ring_body_mask):
+        # Calculate local statistics using PIL
+        gray_image = Image.fromarray(gray)
+        gray_blurred = gray_image.filter(ImageFilter.GaussianBlur(radius=5))
+        gray_blurred_array = np.array(gray_blurred)
+        
+        # Areas that are uniformly bright and different from surroundings
+        uniformly_bright = (
+            ring_body_mask &
+            (gray > 250) &  # Very bright
+            (np.abs(gray.astype(np.float32) - gray_blurred_array.astype(np.float32)) < 5) &  # Uniform
+            (np.abs(rgb_array[:,:,0] - rgb_array[:,:,1]) < 5) &
+            (np.abs(rgb_array[:,:,1] - rgb_array[:,:,2]) < 5)
+        )
+        obvious_holes |= uniformly_bright
+    
+    # In inner ring, be VERY conservative - preserve almost everything
+    # This is where the highlights you want to keep are located
+    if np.any(inner_ring_mask):
+        # Only remove if it's absolutely certain to be a hole
+        inner_holes = (
+            inner_ring_mask &
+            true_background &  # Must match exact background color
+            (gray == 200)  # Exact match only
+        )
+        # Don't add inner holes to obvious_holes - keep highlights
+        logger.info(f"  Inner ring: Preserving highlights, found {np.sum(inner_holes)} potential holes (not removing)")
+    
+    # Combine detections
+    final_mask = true_background | obvious_holes
+    
+    # Clean up using PIL-based morphology
+    final_mask = simple_morphology_operation(final_mask, 'open', iterations=1)
+    final_mask = simple_morphology_operation(final_mask, 'close', iterations=1)
+    
+    # Apply to alpha channel with smooth transitions
     new_alpha = alpha_array.copy()
     
-    # Apply background mask
-    new_alpha[background_mask] = 0
-    
-    # Apply holes mask with feathering
-    if np.any(final_holes_mask):
-        # Create distance transform for smooth edges
-        from scipy.ndimage import distance_transform_edt
+    # Create smooth transition
+    if np.any(final_mask):
+        # Convert mask to image for smooth filtering
+        mask_image = Image.fromarray((final_mask * 255).astype(np.uint8))
         
-        holes_float = final_holes_mask.astype(np.float32)
-        # Small blur for smoother edges
-        holes_image = Image.fromarray((holes_float * 255).astype(np.uint8))
-        holes_blurred = holes_image.filter(ImageFilter.GaussianBlur(radius=1))
-        holes_smooth = np.array(holes_blurred) / 255.0
+        # Apply gaussian blur for smooth edges
+        mask_blurred = mask_image.filter(ImageFilter.GaussianBlur(radius=1.5))
+        mask_smooth = np.array(mask_blurred) / 255.0
         
         # Apply with gradient
-        new_alpha = (new_alpha * (1 - holes_smooth * 0.95)).astype(np.uint8)
+        new_alpha = (new_alpha * (1 - mask_smooth)).astype(np.uint8)
     
-    # Step 9: Preserve metallic highlights explicitly
-    logger.info("  Step 9: Ensuring metallic highlights are preserved")
+    # Ensure inner ring highlights are preserved
+    # Restore alpha for areas that should definitely be visible
+    preserve_mask = (
+        inner_ring_mask &  # In inner ring
+        (gray > 220) &  # Bright (likely highlight)
+        (alpha_array > 200)  # Was originally visible
+    )
     
-    # Restore alpha for confirmed metallic highlights
-    metallic_preserve = metallic_highlight & (gradient_magnitude > 3) & (gradient_magnitude < 30)
-    new_alpha[metallic_preserve] = np.maximum(new_alpha[metallic_preserve], 240)
+    if np.any(preserve_mask):
+        # Restore these pixels
+        new_alpha[preserve_mask] = np.maximum(new_alpha[preserve_mask], 250)
+        logger.info(f"  Preserved {np.sum(preserve_mask)} inner ring highlight pixels")
     
     # Final smoothing
     a_new = Image.fromarray(new_alpha)
     
-    # Very light smoothing to blend edges
-    if np.sum(final_holes_mask) > 50:
-        a_new = a_new.filter(ImageFilter.GaussianBlur(radius=0.5))
+    if np.sum(final_mask) > 100:
+        a_new = a_new.filter(ImageFilter.MedianFilter(3))
+        a_new = a_new.filter(ImageFilter.GaussianBlur(radius=0.3))
     
     result = Image.merge('RGBA', (r, g, b, a_new))
     
-    holes_count = np.sum(final_holes_mask)
-    highlights_preserved = np.sum(metallic_preserve)
-    logger.info(f"✅ Hole detection complete - {holes_count} hole pixels, {highlights_preserved} highlight pixels preserved")
+    removed_count = np.sum(final_mask)
+    preserved_count = np.sum(preserve_mask)
+    logger.info(f"✅ Simplified detection - {removed_count} pixels made transparent, {preserved_count} highlights preserved")
     
     return result
 
@@ -725,7 +693,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V21 with Natural Highlight Preservation"""
+    """RunPod handler function - V22 RunPod Compatible"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -761,10 +729,10 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement with natural highlight preservation"""
+    """Process cubic detail enhancement with simplified ring detection"""
     try:
-        logger.info("🚀 Natural Highlight Preservation Version")
-        logger.info("💎 Advanced ring processing with metallic highlight detection")
+        logger.info("🚀 RunPod Compatible Version - No scipy dependency")
+        logger.info("💎 Simplified ring processing with inner highlight preservation")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -853,9 +821,9 @@ def process_cubic_enhancement(job):
         logger.info("💎 Step 3/6: Enhanced cubic pre-processing")
         image = enhance_cubic_sparkle_gradual(image, intensity * 1.0, num_passes=3)
         
-        # Step 4: Advanced ring hole detection with natural highlight preservation
-        logger.info("🔍 Step 4/6: Advanced ring processing with highlight preservation")
-        image = ensure_ring_holes_transparent_advanced(image)
+        # Step 4: Simplified ring hole detection
+        logger.info("🔍 Step 4/6: Simplified ring processing (RunPod compatible)")
+        image = ensure_ring_holes_transparent_simple(image)
         
         # Step 5: Second cubic enhancement
         logger.info("💎 Step 5/6: Enhanced cubic final processing")
@@ -900,25 +868,25 @@ def process_cubic_enhancement(job):
                     "white_balance",
                     "pattern_enhancement_enhanced" if apply_pattern else "pattern_skipped",
                     "cubic_enhancement_strong",
-                    "ring_hole_detection_natural",
+                    "ring_hole_detection_simple",
                     "cubic_enhancement_final",
                     "swinir_detail_maximum" if apply_swinir else "swinir_skipped"
                 ],
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
-                "performance": "natural_highlight_preservation",
-                "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Natural) → 5.Cubic2(Strong) → 6.SwinIR",
-                "v21_improvements": [
-                    "Advanced gradient analysis for highlight detection",
-                    "Metallic highlight preservation system",
-                    "Continuity analysis for true hole detection",
-                    "Radial distance mapping for inner ring processing",
-                    "Multi-stage region analysis with statistics",
-                    "Smooth alpha transitions with feathering",
-                    "Edge proximity detection for structure understanding",
-                    "Color uniformity checks for hole validation",
-                    "Preserved natural lighting on ring surfaces",
-                    "scipy.ndimage integration for better morphology"
+                "performance": "runpod_compatible",
+                "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Simple) → 5.Cubic2(Strong) → 6.SwinIR",
+                "v22_improvements": [
+                    "Removed scipy dependency completely",
+                    "PIL-only morphology operations",
+                    "Radial zone-based detection (inner/body/outer)",
+                    "Conservative inner ring preservation",
+                    "Simplified but effective hole detection",
+                    "RunPod compatible - no external dependencies",
+                    "Inner ring highlights explicitly preserved",
+                    "Zone-specific thresholds for better accuracy",
+                    "Smooth transitions without scipy",
+                    "Fast and stable processing"
                 ]
             }
         }
