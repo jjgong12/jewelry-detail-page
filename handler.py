@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V24-RUNPOD-STABLE
-# VERSION: Cubic-Sparkle-V24-RunPod-Stable
-# Updated: Enhanced ring hole detection with highlight preservation
+# CUBIC DETAIL ENHANCEMENT HANDLER V24-RUNPOD-STABLE-THUMBNAIL-FIX
+# VERSION: Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix
+# Updated: Fixed thumbnail processing - now correctly handles thumbnail input
 ################################
 
-VERSION = "Cubic-Sparkle-V24-RunPod-Stable"
+VERSION = "Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -70,7 +70,7 @@ def image_to_base64(image):
     return base64_str
 
 def find_input_data_robust(data, path="", depth=0, max_depth=10):
-    """More robust input data extraction with detailed logging"""
+    """More robust input data extraction with detailed logging - FIXED for thumbnail"""
     if depth > max_depth:
         return None
     
@@ -93,19 +93,32 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
         
         base64_candidates = []
         
+        # Check if this is a thumbnail-only request
+        is_thumbnail_request = 'thumbnail' in data and 'enhanced_image' not in data and 'image' not in data
+        
         for key, value in data.items():
             current_path = f"{path}.{key}" if path else key
             
-            # Skip already enhanced images to avoid loops
-            if key in ['enhanced_image', 'thumbnail'] and isinstance(value, str) and len(value) > 1000:
+            # FIXED: Don't skip thumbnail if it's the main image data
+            if key == 'enhanced_image' and isinstance(value, str) and len(value) > 1000:
+                # Skip enhanced_image to avoid loops
                 continue
+            elif key == 'thumbnail' and isinstance(value, str) and len(value) > 1000:
+                # Only skip thumbnail if we have other image sources
+                if not is_thumbnail_request:
+                    logger.info(f"  Found thumbnail but looking for other sources first")
+                    # Don't skip, but give it lower priority
+                else:
+                    logger.info(f"  This is a thumbnail request - will process thumbnail")
                 
             if isinstance(value, str) and len(value) > 100:
                 logger.info(f"  Checking string at {current_path}: length={len(value)}")
                 
                 sample = value[:100].strip()
                 if sample and all(c in string.ascii_letters + string.digits + '+/=' for c in sample[:50]):
-                    base64_candidates.append((current_path, value, len(value)))
+                    # Prioritize non-thumbnail keys unless it's a thumbnail-only request
+                    priority = 0 if key == 'thumbnail' and not is_thumbnail_request else 1
+                    base64_candidates.append((current_path, value, len(value), priority))
             
             if isinstance(value, (dict, list)):
                 result = find_input_data_robust(value, current_path, depth + 1, max_depth)
@@ -113,9 +126,9 @@ def find_input_data_robust(data, path="", depth=0, max_depth=10):
                     return result
         
         if base64_candidates:
-            # Sort by length (longest first)
-            base64_candidates.sort(key=lambda x: x[2], reverse=True)
-            best_path, best_value, best_len = base64_candidates[0]
+            # Sort by priority first, then by length (longest first)
+            base64_candidates.sort(key=lambda x: (x[3], x[2]), reverse=True)
+            best_path, best_value, best_len, _ = base64_candidates[0]
             logger.info(f"✅ Selected best base64 candidate at {best_path} (length: {best_len})")
             return best_value
     
@@ -860,7 +873,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V24 RunPod Stable"""
+    """RunPod handler function - V24 RunPod Stable with Thumbnail Fix"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -900,6 +913,7 @@ def process_cubic_enhancement(job):
     try:
         logger.info("🚀 RunPod Compatible Version - Advanced highlight preservation")
         logger.info("💎 Multi-stage verification for accurate hole detection")
+        logger.info("🔧 THUMBNAIL FIX: Now correctly handles thumbnail input")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -937,10 +951,10 @@ def process_cubic_enhancement(job):
                             if not all(c in string.ascii_letters + string.digits + '+/=' for c in sample):
                                 error_details.append(f"- '{key}' doesn't look like base64")
             
-            error_details.append("\nExpected fields: 'image', 'base64', 'enhanced_image', etc.")
+            error_details.append("\nExpected fields: 'image', 'base64', 'enhanced_image', 'thumbnail', etc.")
             error_details.append("Image data should be base64 encoded string (minimum 100 chars).")
             error_details.append("\nMake.com note: Check that the field mapping is correct.")
-            error_details.append("The image field might be: {{4.data.output.output.enhanced_image}}")
+            error_details.append("The image field might be: {{4.data.output.output.enhanced_image}} or {{4.data.output.output.thumbnail}}")
             
             raise ValueError("\n".join(error_details))
         
@@ -1050,6 +1064,8 @@ def process_cubic_enhancement(job):
                 "performance": "runpod_compatible",
                 "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.SwinIR",
                 "v24_improvements": [
+                    "THUMBNAIL FIX: Now correctly processes thumbnail input",
+                    "Enhanced input detection for thumbnail vs enhanced_image",
                     "Multi-stage verification for hole detection",
                     "Region-specific thresholds (inner/middle/outer)",
                     "Pixel continuity verification",
@@ -1075,7 +1091,7 @@ def process_cubic_enhancement(job):
                 "status": "failed",
                 "version": VERSION,
                 "traceback": traceback.format_exc(),
-                "help": "Check that image data is base64 encoded and at least 100 characters long"
+                "help": "Check that image data is base64 encoded and at least 100 characters long. For thumbnail: use 'thumbnail' key."
             }
         }
 
