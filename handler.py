@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V24-RUNPOD-STABLE-THUMBNAIL-FIX
-# VERSION: Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix
-# Updated: Fixed thumbnail processing - now correctly handles thumbnail input
+# CUBIC DETAIL ENHANCEMENT HANDLER V24-RUNPOD-STABLE-THUMBNAIL-FIX-CONTRAST
+# VERSION: Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix-Contrast
+# Updated: Fixed thumbnail processing + Increased OTHER pattern contrast
 ################################
 
-VERSION = "Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix"
+VERSION = "Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix-Contrast"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -258,7 +258,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement with enhanced multi-pass cubic detail"""
+    """Apply pattern enhancement with enhanced multi-pass cubic detail - INCREASED CONTRAST FOR OTHER"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -331,8 +331,8 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:  # other pattern
-        logger.info("🔍 Other Pattern (기타색상) - Standard enhancement")
+    else:  # other pattern - INCREASED CONTRAST
+        logger.info("🔍 Other Pattern (기타색상) - Enhanced contrast enhancement")
         white_overlay = 0.02
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         img_array = np.clip(img_array, 0, 255)
@@ -345,8 +345,10 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.99)
         
+        # INCREASED CONTRAST FOR OTHER PATTERN
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.08)
+        rgb_image = contrast.enhance(1.25)  # Increased from 1.08 to 1.25
+        logger.info("  ✅ Applied enhanced contrast 1.25 for OTHER pattern")
         
         sharpness = ImageEnhance.Sharpness(rgb_image)
         rgb_image = sharpness.enhance(1.3)
@@ -873,7 +875,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V24 RunPod Stable with Thumbnail Fix"""
+    """RunPod handler function - V24 RunPod Stable with Thumbnail Fix and Contrast Enhancement"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -914,6 +916,7 @@ def process_cubic_enhancement(job):
         logger.info("🚀 RunPod Compatible Version - Advanced highlight preservation")
         logger.info("💎 Multi-stage verification for accurate hole detection")
         logger.info("🔧 THUMBNAIL FIX: Now correctly handles thumbnail input")
+        logger.info("⚡ CONTRAST ENHANCEMENT: Increased contrast for OTHER pattern")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -992,7 +995,7 @@ def process_cubic_enhancement(job):
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
-                "other": "기타색상(0.02)"
+                "other": "기타색상(0.02) - Contrast 1.25"  # Updated display
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -1064,6 +1067,7 @@ def process_cubic_enhancement(job):
                 "performance": "runpod_compatible",
                 "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.SwinIR",
                 "v24_improvements": [
+                    "CONTRAST ENHANCEMENT: OTHER pattern contrast increased to 1.25",
                     "THUMBNAIL FIX: Now correctly processes thumbnail input",
                     "Enhanced input detection for thumbnail vs enhanced_image",
                     "Multi-stage verification for hole detection",
