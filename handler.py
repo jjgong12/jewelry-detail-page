@@ -6,20 +6,18 @@ from io import BytesIO
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageDraw
 import logging
 import string
-import requests
 import json
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V27-DEEPER-COLORS-OTHER
-# VERSION: Cubic-Sparkle-V27-Deeper-Colors-OTHER
-# Updated: OTHER pattern - deeper, richer colors with enhanced saturation
+# CUBIC DETAIL ENHANCEMENT HANDLER V28-NO-REPLICATE
+# VERSION: Cubic-Sparkle-V28-No-Replicate
+# Updated: Replicate removed, enhanced local detail processing
 ################################
 
-VERSION = "Cubic-Sparkle-V27-Deeper-Colors-OTHER"
+VERSION = "Cubic-Sparkle-V28-No-Replicate"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -370,19 +368,10 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
     
     return enhanced_image
 
-def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
-    """Apply SwinIR enhancement - delayed loading"""
+def apply_advanced_detail_enhancement(image: Image.Image) -> Image.Image:
+    """Advanced detail enhancement replacing SwinIR - using local processing only"""
     try:
-        logger.info("🎨 Applying SwinIR enhancement for cubic detail")
-        
-        import replicate
-        
-        api_token = os.environ.get('REPLICATE_API_TOKEN')
-        if not api_token:
-            logger.warning("No Replicate API token - skipping SwinIR")
-            return image
-        
-        client = replicate.Client(api_token=api_token)
+        logger.info("🎨 Applying advanced local detail enhancement (replacing SwinIR)")
         
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -390,40 +379,81 @@ def apply_swinir_enhancement(image: Image.Image) -> Image.Image:
         r, g, b, a = image.split()
         rgb_image = Image.merge('RGB', (r, g, b))
         
-        buffered = BytesIO()
-        rgb_image.save(buffered, format="PNG", optimize=True, compress_level=3)
-        buffered.seek(0)
-        img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-        img_data_url = f"data:image/png;base64,{img_base64}"
+        # Multi-pass detail enhancement
+        enhanced = rgb_image
         
-        output = client.run(
-            "jingyunliang/swinir:660d922d33153019e8c263a3bba265de882e7f4f70396546b6c9c8f9d47a021a",
-            input={
-                "image": img_data_url,
-                "task_type": "Real-World Image Super-Resolution",
-                "scale": 1,
-                "noise_level": 10,
-                "jpeg_quality": 50
-            }
-        )
+        # Pass 1: Strong unsharp mask
+        logger.info("  Pass 1: Strong unsharp mask")
+        enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=3, percent=200, threshold=2))
         
-        if output:
-            if isinstance(output, str):
-                response = requests.get(output)
-                enhanced_image = Image.open(BytesIO(response.content))
-            else:
-                enhanced_image = Image.open(BytesIO(base64.b64decode(output)))
-            
-            r2, g2, b2 = enhanced_image.split()
-            result = Image.merge('RGBA', (r2, g2, b2, a))
-            
-            logger.info("✅ SwinIR enhancement successful")
-            return result
-            
+        # Pass 2: Edge enhancement
+        logger.info("  Pass 2: Edge enhancement")
+        edges = enhanced.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        enhanced_array = np.array(enhanced, dtype=np.float32)
+        edges_array = np.array(edges, dtype=np.float32)
+        
+        # Blend edges with original
+        blend_factor = 0.3
+        enhanced_array = enhanced_array * (1 - blend_factor) + edges_array * blend_factor
+        enhanced = Image.fromarray(np.clip(enhanced_array, 0, 255).astype(np.uint8))
+        
+        # Pass 3: Local contrast enhancement
+        logger.info("  Pass 3: Local contrast enhancement")
+        
+        # Apply CLAHE-like local contrast
+        img_array = np.array(enhanced, dtype=np.float32)
+        
+        # Convert to LAB for better contrast processing
+        lab = enhanced.convert('LAB')
+        l, a_channel, b_channel = lab.split()
+        
+        # Enhance L channel
+        l_enhanced = ImageEnhance.Contrast(l).enhance(1.3)
+        l_enhanced = ImageEnhance.Sharpness(l_enhanced).enhance(1.2)
+        
+        # Reconstruct LAB and convert back to RGB
+        lab_enhanced = Image.merge('LAB', (l_enhanced, a_channel, b_channel))
+        enhanced = lab_enhanced.convert('RGB')
+        
+        # Pass 4: Detail extraction and amplification
+        logger.info("  Pass 4: Detail extraction and amplification")
+        
+        # Create detail layer
+        blurred = enhanced.filter(ImageFilter.GaussianBlur(radius=2))
+        detail_array = np.array(enhanced, dtype=np.float32) - np.array(blurred, dtype=np.float32)
+        
+        # Amplify details
+        detail_boost = 1.5
+        enhanced_array = np.array(enhanced, dtype=np.float32) + detail_array * detail_boost
+        enhanced = Image.fromarray(np.clip(enhanced_array, 0, 255).astype(np.uint8))
+        
+        # Pass 5: Fine detail sharpening
+        logger.info("  Pass 5: Fine detail sharpening")
+        
+        # Apply multiple sharpening passes with decreasing radius
+        for radius, percent in [(1, 150), (0.5, 100)]:
+            enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=radius, percent=percent, threshold=1))
+        
+        # Pass 6: Micro-contrast enhancement
+        logger.info("  Pass 6: Micro-contrast enhancement")
+        
+        contrast = ImageEnhance.Contrast(enhanced)
+        enhanced = contrast.enhance(1.1)
+        
+        # Final sharpness pass
+        sharpness = ImageEnhance.Sharpness(enhanced)
+        enhanced = sharpness.enhance(1.15)
+        
+        # Merge back with alpha
+        r2, g2, b2 = enhanced.split()
+        result = Image.merge('RGBA', (r2, g2, b2, a))
+        
+        logger.info("✅ Advanced detail enhancement complete")
+        return result
+        
     except Exception as e:
-        logger.warning(f"SwinIR error: {str(e)}")
-        
-    return image
+        logger.warning(f"Advanced detail enhancement error: {str(e)}")
+        return image
 
 def simple_morphology_operation(mask, operation='close', iterations=1):
     """Simple morphology operations using PIL only - NO scipy"""
@@ -880,7 +910,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V27 RunPod with Deeper Colors OTHER Pattern"""
+    """RunPod handler function - V28 RunPod without Replicate"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -918,8 +948,8 @@ def handler(event):
 def process_cubic_enhancement(job):
     """Process cubic detail enhancement with advanced ring detection"""
     try:
-        logger.info("🚀 RunPod Compatible Version - Advanced highlight preservation")
-        logger.info("💎 Multi-stage verification for accurate hole detection")
+        logger.info("🚀 RunPod V28 - No Replicate Dependencies")
+        logger.info("💎 Advanced local detail enhancement")
         logger.info("🌈 OTHER PATTERN: Deeper & Richer Colors for enhanced saturation")
         logger.info(f"Job input type: {type(job)}")
         
@@ -970,12 +1000,12 @@ def process_cubic_enhancement(job):
         filename = params.get('filename', '')
         intensity = float(params.get('intensity', 1.2))
         intensity = max(0.1, min(2.0, intensity))
-        apply_swinir = params.get('apply_swinir', True)
+        apply_detail = params.get('apply_detail', True)
         apply_pattern = params.get('pattern_enhancement', True)
         
         default_pattern = params.get('default_pattern', 'ab_pattern')
         
-        logger.info(f"Parameters: filename={filename or 'None (using default)'}, intensity={intensity}, swinir={apply_swinir}, pattern={apply_pattern}")
+        logger.info(f"Parameters: filename={filename or 'None (using default)'}, intensity={intensity}, detail={apply_detail}, pattern={apply_pattern}")
         
         # Decode image
         image_bytes = decode_base64_fast(image_data_str)
@@ -1020,12 +1050,12 @@ def process_cubic_enhancement(job):
         logger.info("💎 Step 5/6: Enhanced cubic final processing")
         image = enhance_cubic_sparkle_gradual(image, intensity * 0.8, num_passes=2)
         
-        # Step 6: SwinIR Enhancement
-        if apply_swinir:
-            logger.info("🚀 Step 6/6: Applying SwinIR for maximum detail")
-            enhanced_image = apply_swinir_enhancement(image)
+        # Step 6: Advanced Detail Enhancement (replacing SwinIR)
+        if apply_detail:
+            logger.info("🚀 Step 6/6: Applying advanced local detail enhancement")
+            enhanced_image = apply_advanced_detail_enhancement(image)
         else:
-            logger.info("⏭️ Step 6/6: Skipping SwinIR (disabled)")
+            logger.info("⏭️ Step 6/6: Skipping detail enhancement (disabled)")
             enhanced_image = image
         
         # Convert to base64 with padding
@@ -1064,22 +1094,24 @@ def process_cubic_enhancement(job):
                     "cubic_enhancement_strong",
                     "ring_hole_detection_advanced",
                     "cubic_enhancement_final",
-                    "swinir_detail_maximum" if apply_swinir else "swinir_skipped"
+                    "advanced_detail_enhancement" if apply_detail else "detail_skipped"
                 ],
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "runpod_compatible",
-                "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.SwinIR",
-                "v27_improvements": [
-                    "OTHER PATTERN: Enhanced color saturation 1.30 (increased from 1.05) for deep, rich colors",
-                    "OTHER PATTERN: Balanced brightness 0.92 (adjusted from 0.88) for rich but not too dark tone",
-                    "OTHER PATTERN: Enhanced contrast 1.15 (increased from 1.10) for better color depth",
-                    "OTHER PATTERN: Strong sharpness 1.25 (reduced from 1.35) for clarity without over-processing",
-                    "OTHER PATTERN: Moderate additional final sharpness 1.10 (reduced from 1.15)",
-                    "Focus on deeper, richer colors like rose gold and white gold tones",
-                    "Preserved all V26 improvements including multi-stage verification",
-                    "Maintained advanced highlight preservation logic",
-                    "Enhanced color saturation for more vibrant and defined color representation"
+                "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.LocalDetail",
+                "v28_improvements": [
+                    "Removed all Replicate dependencies",
+                    "Replaced SwinIR with advanced local detail enhancement",
+                    "Multi-pass detail enhancement with 6 stages",
+                    "Strong unsharp mask (radius=3, percent=200)",
+                    "Edge enhancement blending (30% factor)",
+                    "Local contrast via LAB color space",
+                    "Detail extraction and amplification (1.5x boost)",
+                    "Multiple sharpening passes with varying radius",
+                    "Micro-contrast enhancement",
+                    "All processing done locally - no external API calls",
+                    "Maintained all V27 color improvements for OTHER pattern"
                 ]
             }
         }
