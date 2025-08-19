@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V25-RUNPOD-OTHER-PATTERN-MODIFIED
-# VERSION: Cubic-Sparkle-V25-RunPod-Other-Pattern-Modified
-# Updated: Modified OTHER pattern - no white overlay, reduced brightness
+# CUBIC DETAIL ENHANCEMENT HANDLER V26-DARKER-SHARPER-OTHER
+# VERSION: Cubic-Sparkle-V26-Darker-Sharper-OTHER
+# Updated: OTHER pattern - darker, sharper, more defined
 ################################
 
-VERSION = "Cubic-Sparkle-V25-RunPod-Other-Pattern-Modified"
+VERSION = "Cubic-Sparkle-V26-Darker-Sharper-OTHER"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -258,7 +258,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement with enhanced multi-pass cubic detail - MODIFIED OTHER PATTERN"""
+    """Apply pattern enhancement with enhanced multi-pass cubic detail - DARKER & SHARPER OTHER"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -331,36 +331,38 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:  # other pattern - MODIFIED: NO WHITE OVERLAY, REDUCED BRIGHTNESS
-        logger.info("🔍 Other Pattern (기타색상) - Modified: No white overlay, reduced brightness")
+    else:  # other pattern - DARKER & SHARPER
+        logger.info("🔍 Other Pattern (기타색상) - Darker & Sharper enhancement")
         
-        # NO WHITE OVERLAY - Skip the white overlay completely
-        # img_array stays as is without modification
-        
+        # NO WHITE OVERLAY - Keep original color tone
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # REDUCED BRIGHTNESS - Changed from 1.05 to 0.95
+        # DARKER - Reduced brightness for less bright feeling
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(0.95)
-        logger.info("  ✅ Applied reduced brightness 0.95 for OTHER pattern")
+        rgb_image = brightness.enhance(0.88)
+        logger.info("  ✅ Applied darker brightness 0.88 for OTHER pattern")
         
+        # ENHANCED COLOR SATURATION for clarity
         color = ImageEnhance.Color(rgb_image)
-        rgb_image = color.enhance(0.99)
+        rgb_image = color.enhance(1.05)
+        logger.info("  ✅ Applied enhanced color 1.05 for clarity")
         
-        # Keep the enhanced contrast as requested earlier
+        # MODERATE CONTRAST for definition without over-brightening
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.25)
-        logger.info("  ✅ Applied enhanced contrast 1.25 for OTHER pattern")
+        rgb_image = contrast.enhance(1.10)
+        logger.info("  ✅ Applied moderate contrast 1.10 for OTHER pattern")
         
+        # STRONG SHARPNESS for clear details
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.3)
+        rgb_image = sharpness.enhance(1.35)
+        logger.info("  ✅ Applied strong sharpness 1.35 for clarity")
     
     # Final sharpness adjustment
     sharpness = ImageEnhance.Sharpness(rgb_image)
     if pattern_type in ["ac_pattern", "ab_pattern"]:
         rgb_image = sharpness.enhance(1.4)
     else:
-        rgb_image = sharpness.enhance(1.25)
+        rgb_image = sharpness.enhance(1.15)  # Additional sharpness for OTHER
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -877,7 +879,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V25 RunPod with Modified OTHER Pattern"""
+    """RunPod handler function - V26 RunPod with Darker & Sharper OTHER Pattern"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -917,7 +919,7 @@ def process_cubic_enhancement(job):
     try:
         logger.info("🚀 RunPod Compatible Version - Advanced highlight preservation")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🔧 OTHER PATTERN MODIFIED: No white overlay, reduced brightness")
+        logger.info("🔧 OTHER PATTERN: Darker & Sharper for clarity")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -996,7 +998,7 @@ def process_cubic_enhancement(job):
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
-                "other": "기타색상(No overlay) - Brightness 0.95, Contrast 1.25"  # Updated display
+                "other": "기타색상(No overlay) - Brightness 0.88, Contrast 1.10, Sharpness 1.35"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -1067,18 +1069,15 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "runpod_compatible",
                 "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.SwinIR",
-                "v25_improvements": [
-                    "OTHER PATTERN MODIFIED: Removed white overlay completely",
-                    "OTHER PATTERN: Reduced brightness from 1.05 to 0.95",
-                    "OTHER PATTERN: Maintained contrast at 1.25",
-                    "All V24 improvements preserved including thumbnail fix",
-                    "Multi-stage verification for hole detection",
-                    "Region-specific thresholds (inner/middle/outer)",
-                    "Pixel continuity verification",
-                    "Morphological pattern verification",
-                    "Enhanced highlight preservation logic",
-                    "Gradient-based highlight detection",
-                    "Edge-based highlight protection"
+                "v26_improvements": [
+                    "OTHER PATTERN: Darker brightness 0.88 (reduced from 0.95)",
+                    "OTHER PATTERN: Enhanced color saturation 1.05 for clarity",
+                    "OTHER PATTERN: Moderate contrast 1.10 (reduced from 1.25)",
+                    "OTHER PATTERN: Strong sharpness 1.35 for maximum clarity",
+                    "OTHER PATTERN: Additional final sharpness 1.15",
+                    "Preserved all V25 improvements including multi-stage verification",
+                    "Maintained advanced highlight preservation logic",
+                    "Balanced darker tone with enhanced sharpness for clear details"
                 ]
             }
         }
