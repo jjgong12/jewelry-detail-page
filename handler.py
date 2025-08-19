@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V26-DARKER-SHARPER-OTHER
-# VERSION: Cubic-Sparkle-V26-Darker-Sharper-OTHER
-# Updated: OTHER pattern - darker, sharper, more defined
+# CUBIC DETAIL ENHANCEMENT HANDLER V27-DEEPER-COLORS-OTHER
+# VERSION: Cubic-Sparkle-V27-Deeper-Colors-OTHER
+# Updated: OTHER pattern - deeper, richer colors with enhanced saturation
 ################################
 
-VERSION = "Cubic-Sparkle-V26-Darker-Sharper-OTHER"
+VERSION = "Cubic-Sparkle-V27-Deeper-Colors-OTHER"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -258,7 +258,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement with enhanced multi-pass cubic detail - DARKER & SHARPER OTHER"""
+    """Apply pattern enhancement with enhanced multi-pass cubic detail - DEEPER COLORS OTHER"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -331,38 +331,38 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:  # other pattern - DARKER & SHARPER
-        logger.info("🔍 Other Pattern (기타색상) - Darker & Sharper enhancement")
+    else:  # other pattern - DEEPER & RICHER COLORS
+        logger.info("🔍 Other Pattern (기타색상) - Deeper & Richer Colors enhancement")
         
         # NO WHITE OVERLAY - Keep original color tone
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # DARKER - Reduced brightness for less bright feeling
-        brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(0.88)
-        logger.info("  ✅ Applied darker brightness 0.88 for OTHER pattern")
-        
-        # ENHANCED COLOR SATURATION for clarity
+        # ENHANCED COLOR SATURATION for deep, rich colors
         color = ImageEnhance.Color(rgb_image)
-        rgb_image = color.enhance(1.05)
-        logger.info("  ✅ Applied enhanced color 1.05 for clarity")
+        rgb_image = color.enhance(1.30)
+        logger.info("  ✅ Applied deep color saturation 1.30 for rich OTHER pattern colors")
         
-        # MODERATE CONTRAST for definition without over-brightening
+        # BALANCED BRIGHTNESS - not too dark, but rich 
+        brightness = ImageEnhance.Brightness(rgb_image)
+        rgb_image = brightness.enhance(0.92)
+        logger.info("  ✅ Applied balanced brightness 0.92 for OTHER pattern")
+        
+        # ENHANCED CONTRAST for color depth and definition
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.10)
-        logger.info("  ✅ Applied moderate contrast 1.10 for OTHER pattern")
+        rgb_image = contrast.enhance(1.15)
+        logger.info("  ✅ Applied enhanced contrast 1.15 for OTHER pattern depth")
         
         # STRONG SHARPNESS for clear details
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.35)
-        logger.info("  ✅ Applied strong sharpness 1.35 for clarity")
+        rgb_image = sharpness.enhance(1.25)
+        logger.info("  ✅ Applied strong sharpness 1.25 for clarity")
     
     # Final sharpness adjustment
     sharpness = ImageEnhance.Sharpness(rgb_image)
     if pattern_type in ["ac_pattern", "ab_pattern"]:
         rgb_image = sharpness.enhance(1.4)
     else:
-        rgb_image = sharpness.enhance(1.15)  # Additional sharpness for OTHER
+        rgb_image = sharpness.enhance(1.10)  # Moderate additional sharpness for OTHER
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -879,7 +879,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V26 RunPod with Darker & Sharper OTHER Pattern"""
+    """RunPod handler function - V27 RunPod with Deeper Colors OTHER Pattern"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -919,7 +919,7 @@ def process_cubic_enhancement(job):
     try:
         logger.info("🚀 RunPod Compatible Version - Advanced highlight preservation")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🔧 OTHER PATTERN: Darker & Sharper for clarity")
+        logger.info("🌈 OTHER PATTERN: Deeper & Richer Colors for enhanced saturation")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -998,7 +998,7 @@ def process_cubic_enhancement(job):
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
-                "other": "기타색상(No overlay) - Brightness 0.88, Contrast 1.10, Sharpness 1.35"
+                "other": "기타색상(No overlay) - Color 1.30, Brightness 0.92, Contrast 1.15, Sharpness 1.25"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -1069,15 +1069,16 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "runpod_compatible",
                 "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.SwinIR",
-                "v26_improvements": [
-                    "OTHER PATTERN: Darker brightness 0.88 (reduced from 0.95)",
-                    "OTHER PATTERN: Enhanced color saturation 1.05 for clarity",
-                    "OTHER PATTERN: Moderate contrast 1.10 (reduced from 1.25)",
-                    "OTHER PATTERN: Strong sharpness 1.35 for maximum clarity",
-                    "OTHER PATTERN: Additional final sharpness 1.15",
-                    "Preserved all V25 improvements including multi-stage verification",
+                "v27_improvements": [
+                    "OTHER PATTERN: Enhanced color saturation 1.30 (increased from 1.05) for deep, rich colors",
+                    "OTHER PATTERN: Balanced brightness 0.92 (adjusted from 0.88) for rich but not too dark tone",
+                    "OTHER PATTERN: Enhanced contrast 1.15 (increased from 1.10) for better color depth",
+                    "OTHER PATTERN: Strong sharpness 1.25 (reduced from 1.35) for clarity without over-processing",
+                    "OTHER PATTERN: Moderate additional final sharpness 1.10 (reduced from 1.15)",
+                    "Focus on deeper, richer colors like rose gold and white gold tones",
+                    "Preserved all V26 improvements including multi-stage verification",
                     "Maintained advanced highlight preservation logic",
-                    "Balanced darker tone with enhanced sharpness for clear details"
+                    "Enhanced color saturation for more vibrant and defined color representation"
                 ]
             }
         }
