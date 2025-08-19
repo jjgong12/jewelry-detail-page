@@ -13,12 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V24-RUNPOD-STABLE-THUMBNAIL-FIX-CONTRAST
-# VERSION: Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix-Contrast
-# Updated: Fixed thumbnail processing + Increased OTHER pattern contrast
+# CUBIC DETAIL ENHANCEMENT HANDLER V25-RUNPOD-OTHER-PATTERN-MODIFIED
+# VERSION: Cubic-Sparkle-V25-RunPod-Other-Pattern-Modified
+# Updated: Modified OTHER pattern - no white overlay, reduced brightness
 ################################
 
-VERSION = "Cubic-Sparkle-V24-RunPod-Stable-Thumbnail-Fix-Contrast"
+VERSION = "Cubic-Sparkle-V25-RunPod-Other-Pattern-Modified"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -258,7 +258,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement with enhanced multi-pass cubic detail - INCREASED CONTRAST FOR OTHER"""
+    """Apply pattern enhancement with enhanced multi-pass cubic detail - MODIFIED OTHER PATTERN"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -331,23 +331,25 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:  # other pattern - INCREASED CONTRAST
-        logger.info("🔍 Other Pattern (기타색상) - Enhanced contrast enhancement")
-        white_overlay = 0.02
-        img_array = img_array * (1 - white_overlay) + 255 * white_overlay
-        img_array = np.clip(img_array, 0, 255)
+    else:  # other pattern - MODIFIED: NO WHITE OVERLAY, REDUCED BRIGHTNESS
+        logger.info("🔍 Other Pattern (기타색상) - Modified: No white overlay, reduced brightness")
+        
+        # NO WHITE OVERLAY - Skip the white overlay completely
+        # img_array stays as is without modification
         
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
+        # REDUCED BRIGHTNESS - Changed from 1.05 to 0.95
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.05)
+        rgb_image = brightness.enhance(0.95)
+        logger.info("  ✅ Applied reduced brightness 0.95 for OTHER pattern")
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.99)
         
-        # INCREASED CONTRAST FOR OTHER PATTERN
+        # Keep the enhanced contrast as requested earlier
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.25)  # Increased from 1.08 to 1.25
+        rgb_image = contrast.enhance(1.25)
         logger.info("  ✅ Applied enhanced contrast 1.25 for OTHER pattern")
         
         sharpness = ImageEnhance.Sharpness(rgb_image)
@@ -875,7 +877,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V24 RunPod Stable with Thumbnail Fix and Contrast Enhancement"""
+    """RunPod handler function - V25 RunPod with Modified OTHER Pattern"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -915,8 +917,7 @@ def process_cubic_enhancement(job):
     try:
         logger.info("🚀 RunPod Compatible Version - Advanced highlight preservation")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🔧 THUMBNAIL FIX: Now correctly handles thumbnail input")
-        logger.info("⚡ CONTRAST ENHANCEMENT: Increased contrast for OTHER pattern")
+        logger.info("🔧 OTHER PATTERN MODIFIED: No white overlay, reduced brightness")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -995,7 +996,7 @@ def process_cubic_enhancement(job):
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
-                "other": "기타색상(0.02) - Contrast 1.25"  # Updated display
+                "other": "기타색상(No overlay) - Brightness 0.95, Contrast 1.25"  # Updated display
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -1066,21 +1067,18 @@ def process_cubic_enhancement(job):
                 "compression": "level_3",
                 "performance": "runpod_compatible",
                 "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.SwinIR",
-                "v24_improvements": [
-                    "CONTRAST ENHANCEMENT: OTHER pattern contrast increased to 1.25",
-                    "THUMBNAIL FIX: Now correctly processes thumbnail input",
-                    "Enhanced input detection for thumbnail vs enhanced_image",
+                "v25_improvements": [
+                    "OTHER PATTERN MODIFIED: Removed white overlay completely",
+                    "OTHER PATTERN: Reduced brightness from 1.05 to 0.95",
+                    "OTHER PATTERN: Maintained contrast at 1.25",
+                    "All V24 improvements preserved including thumbnail fix",
                     "Multi-stage verification for hole detection",
                     "Region-specific thresholds (inner/middle/outer)",
                     "Pixel continuity verification",
                     "Morphological pattern verification",
                     "Enhanced highlight preservation logic",
                     "Gradient-based highlight detection",
-                    "Edge-based highlight protection",
-                    "Color variation analysis for highlights",
-                    "Differentiated blur radii by region",
-                    "Exact background color matching for inner ring",
-                    "All V23 improvements preserved"
+                    "Edge-based highlight protection"
                 ]
             }
         }
