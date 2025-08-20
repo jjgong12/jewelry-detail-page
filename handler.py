@@ -12,12 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V28-ENHANCED-OTHER
-# VERSION: Cubic-Sparkle-V28-Enhanced-Other-Color
-# Updated: OTHER pattern with much stronger color saturation
+# CUBIC DETAIL ENHANCEMENT HANDLER V28-ULTRA-OTHER
+# VERSION: Cubic-Sparkle-V28-Ultra-Other-Color
+# Updated: OTHER pattern with ULTRA strong color saturation
 ################################
 
-VERSION = "Cubic-Sparkle-V28-Enhanced-Other-Color"
+VERSION = "Cubic-Sparkle-V28-Ultra-Other-Color"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -257,7 +257,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement with enhanced multi-pass cubic detail - MUCH STRONGER OTHER COLORS"""
+    """Apply pattern enhancement with enhanced multi-pass cubic detail - ULTRA STRONG OTHER COLORS"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -330,69 +330,87 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:  # other pattern - MUCH STRONGER COLOR ENHANCEMENT
-        logger.info("🔍 Other Pattern (기타색상) - EXTREME Color Enhancement")
+    else:  # other pattern - ULTRA STRONG COLOR ENHANCEMENT
+        logger.info("🔍 Other Pattern (기타색상) - ULTRA EXTREME Color Enhancement")
         
         # NO WHITE OVERLAY - Keep original color tone
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # EXTREME COLOR SATURATION - 매우 강한 색상 포화도
+        # ULTRA EXTREME COLOR SATURATION - 초강력 색상 포화도
         color = ImageEnhance.Color(rgb_image)
-        rgb_image = color.enhance(1.65)  # 1.30 -> 1.65로 대폭 증가
-        logger.info("  ✅ Applied EXTREME color saturation 1.65 for VIVID OTHER pattern colors")
+        rgb_image = color.enhance(2.20)  # 1.65 -> 2.20으로 대폭 증가!
+        logger.info("  ✅ Applied ULTRA EXTREME color saturation 2.20 for MAXIMUM VIVID colors")
         
-        # DARKER BRIGHTNESS - 더 진한 색감을 위해 밝기 감소
+        # MUCH DARKER BRIGHTNESS - 훨씬 진한 색감
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(0.85)  # 0.92 -> 0.85로 더 어둡게
-        logger.info("  ✅ Applied darker brightness 0.85 for DEEP OTHER pattern")
+        rgb_image = brightness.enhance(0.72)  # 0.85 -> 0.72로 더욱 어둡게
+        logger.info("  ✅ Applied much darker brightness 0.72 for DEEPEST color tones")
         
-        # STRONGER CONTRAST - 더 강한 대비
+        # MAXIMUM CONTRAST - 최대 대비
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.35)  # 1.15 -> 1.35로 증가
-        logger.info("  ✅ Applied STRONG contrast 1.35 for OTHER pattern depth")
+        rgb_image = contrast.enhance(1.55)  # 1.35 -> 1.55로 대폭 증가
+        logger.info("  ✅ Applied MAXIMUM contrast 1.55 for ultimate depth")
         
-        # ADDITIONAL COLOR BOOST - HSV 색상 공간에서 추가 조정
+        # EXTREME HSV COLOR BOOST - HSV 색상 공간에서 극한 조정
         hsv_image = rgb_image.convert('HSV')
         h, s, v = hsv_image.split()
         
-        # Saturation 추가 부스트
+        # Saturation 극한 부스트
         s_array = np.array(s, dtype=np.float32)
-        s_array = np.minimum(s_array * 1.25, 255)  # 추가 25% 포화도 증가
+        s_array = np.minimum(s_array * 1.45, 255)  # 1.25 -> 1.45로 증가
         s = Image.fromarray(s_array.astype(np.uint8))
         
-        # Value(명도) 약간 감소하여 색이 더 진하게
+        # Value(명도) 더 감소하여 색이 훨씬 진하게
         v_array = np.array(v, dtype=np.float32)
-        v_array = v_array * 0.95  # 5% 명도 감소
+        v_array = v_array * 0.88  # 0.95 -> 0.88로 더 감소
         v = Image.fromarray(v_array.astype(np.uint8))
         
         hsv_enhanced = Image.merge('HSV', (h, s, v))
         rgb_image = hsv_enhanced.convert('RGB')
-        logger.info("  ✅ Applied HSV color boost - Saturation x1.25, Value x0.95")
+        logger.info("  ✅ Applied EXTREME HSV boost - Saturation x1.45, Value x0.88")
         
-        # MAXIMUM SHARPNESS for crystal clear details
+        # Additional color channel manipulation for richer colors
+        rgb_array = np.array(rgb_image, dtype=np.float32)
+        
+        # Boost warm colors (yellow/rose gold)
+        warm_mask = (rgb_array[:,:,0] > rgb_array[:,:,2]) | (rgb_array[:,:,1] > rgb_array[:,:,2])
+        if np.any(warm_mask):
+            # Enhance reds and greens for gold tones
+            rgb_array[:,:,0] = np.where(warm_mask, np.minimum(rgb_array[:,:,0] * 1.15, 255), rgb_array[:,:,0])
+            rgb_array[:,:,1] = np.where(warm_mask, np.minimum(rgb_array[:,:,1] * 1.10, 255), rgb_array[:,:,1])
+            logger.info("  ✅ Applied warm color boost for gold tones")
+        
+        rgb_image = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
+        
+        # ULTRA SHARPNESS for crystal clear details
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.35)  # 1.25 -> 1.35로 증가
-        logger.info("  ✅ Applied MAXIMUM sharpness 1.35 for ultra clarity")
+        rgb_image = sharpness.enhance(1.45)  # 1.35 -> 1.45로 증가
+        logger.info("  ✅ Applied ULTRA sharpness 1.45 for maximum clarity")
         
-        # EDGE ENHANCEMENT for OTHER pattern
+        # STRONGER EDGE ENHANCEMENT for OTHER pattern
         edges = rgb_image.filter(ImageFilter.EDGE_ENHANCE_MORE)
         rgb_array = np.array(rgb_image, dtype=np.float32)
         edges_array = np.array(edges, dtype=np.float32)
         
-        # 엣지 블렌딩으로 디테일 강화
-        edge_blend = 0.15
+        # 더 강한 엣지 블렌딩
+        edge_blend = 0.20  # 0.15 -> 0.20으로 증가
         for c in range(3):
             rgb_array[:,:,c] = rgb_array[:,:,c] * (1 - edge_blend) + edges_array[:,:,c] * edge_blend
         
         rgb_image = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
-        logger.info("  ✅ Applied edge enhancement blend 15% for detail boost")
+        logger.info("  ✅ Applied stronger edge enhancement blend 20% for maximum detail")
+        
+        # Final color boost
+        color_final = ImageEnhance.Color(rgb_image)
+        rgb_image = color_final.enhance(1.08)  # 추가 8% 색상 부스트
+        logger.info("  ✅ Applied final color boost 1.08 for ultimate vibrancy")
     
     # Final sharpness adjustment
     sharpness = ImageEnhance.Sharpness(rgb_image)
     if pattern_type in ["ac_pattern", "ab_pattern"]:
         rgb_image = sharpness.enhance(1.4)
     else:
-        rgb_image = sharpness.enhance(1.15)  # Additional sharpness for OTHER
+        rgb_image = sharpness.enhance(1.20)  # Additional sharpness for OTHER
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -854,7 +872,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V28 Enhanced Other Color"""
+    """RunPod handler function - V28 Ultra Other Color"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -892,9 +910,9 @@ def handler(event):
 def process_cubic_enhancement(job):
     """Process cubic detail enhancement with advanced ring detection"""
     try:
-        logger.info("🚀 RunPod V28 - Enhanced OTHER Pattern Colors")
+        logger.info("🚀 RunPod V28 - ULTRA OTHER Pattern Colors")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🌈 OTHER PATTERN: EXTREME Color Enhancement for VIVID results")
+        logger.info("🌈 OTHER PATTERN: ULTRA EXTREME Color Enhancement for MAXIMUM VIVID results")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -967,12 +985,12 @@ def process_cubic_enhancement(job):
         
         # Step 2: Pattern Enhancement with enhanced detail
         if apply_pattern:
-            logger.info("🎨 Step 2/5: Enhanced pattern detail with EXTREME color for OTHER")
+            logger.info("🎨 Step 2/5: Enhanced pattern detail with ULTRA EXTREME color for OTHER")
             pattern_type = detect_pattern_type(filename, default_pattern=default_pattern)
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
-                "other": "기타색상(EXTREME) - Color 1.65, Brightness 0.85, Contrast 1.35, Sharpness 1.35, HSV Boost"
+                "other": "기타색상(ULTRA) - Color 2.20, Brightness 0.72, Contrast 1.55, HSV x1.45/0.88, Edge 20%"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -1025,7 +1043,7 @@ def process_cubic_enhancement(job):
                 },
                 "corrections_applied": [
                     "white_balance",
-                    "pattern_enhancement_extreme" if apply_pattern else "pattern_skipped",
+                    "pattern_enhancement_ultra" if apply_pattern else "pattern_skipped",
                     "cubic_enhancement_strong",
                     "ring_hole_detection_advanced",
                     "cubic_enhancement_final"
@@ -1033,16 +1051,17 @@ def process_cubic_enhancement(job):
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "runpod_compatible_no_external_api",
-                "processing_order": "1.WB → 2.Pattern(EXTREME) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
-                "v28_enhanced_changes": [
-                    "OTHER PATTERN: EXTREME color saturation 1.65 (increased from 1.30)",
-                    "OTHER PATTERN: Darker brightness 0.85 (decreased from 0.92)",
-                    "OTHER PATTERN: Stronger contrast 1.35 (increased from 1.15)",
-                    "OTHER PATTERN: Maximum sharpness 1.35 (increased from 1.25)",
-                    "OTHER PATTERN: Added HSV color space boost - Saturation x1.25, Value x0.95",
-                    "OTHER PATTERN: Added edge enhancement blend 15% for detail boost",
-                    "OTHER PATTERN: Additional final sharpness 1.15",
-                    "Result: VIVID, DEEP, RICH colors for OTHER pattern jewelry"
+                "processing_order": "1.WB → 2.Pattern(ULTRA) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
+                "v28_ultra_changes": [
+                    "OTHER PATTERN: ULTRA color saturation 2.20 (massively increased)",
+                    "OTHER PATTERN: Much darker brightness 0.72 (for deepest colors)",
+                    "OTHER PATTERN: Maximum contrast 1.55 (ultra depth)",
+                    "OTHER PATTERN: Extreme HSV boost - Saturation x1.45, Value x0.88",
+                    "OTHER PATTERN: Warm color boost for gold tones",
+                    "OTHER PATTERN: Stronger edge enhancement 20%",
+                    "OTHER PATTERN: Final color boost 1.08",
+                    "OTHER PATTERN: Ultra sharpness 1.45",
+                    "Result: MAXIMUM VIVID, ULTRA DEEP colors matching original"
                 ]
             }
         }
