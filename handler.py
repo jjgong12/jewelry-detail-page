@@ -12,12 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V29-MINIMAL-OTHER
-# VERSION: Cubic-Sparkle-V29-Minimal-Other
-# Updated: Minimal OTHER pattern for preserving natural metallic colors
+# CUBIC DETAIL ENHANCEMENT HANDLER V29-SIMPLE-OTHER
+# VERSION: Cubic-Sparkle-V29-Simple-Other
+# Updated: OTHER pattern - Only contrast and sharpness
 ################################
 
-VERSION = "Cubic-Sparkle-V29-Minimal-Other"
+VERSION = "Cubic-Sparkle-V29-Simple-Other"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -257,7 +257,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement with MINIMAL OTHER pattern for natural colors"""
+    """Apply pattern enhancement - OTHER pattern only has contrast and sharpness"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -330,32 +330,29 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:  # other pattern - MINIMAL approach for natural metallic colors
-        logger.info("🔍 Other Pattern (기타색상) - Minimal Natural Enhancement")
+    else:  # other pattern - ONLY contrast and sharpness
+        logger.info("🔍 Other Pattern (기타색상) - Only Contrast & Sharpness")
         
-        # NO WHITE OVERLAY - Keep original color tone
+        # Convert to PIL Image without any processing
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # ONLY SUBTLE CONTRAST for depth
+        # ONLY apply contrast
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.10)  # Very subtle contrast boost
-        logger.info("  ✅ Applied subtle contrast 1.10 for natural depth")
+        rgb_image = contrast.enhance(1.20)  # Increase contrast
+        logger.info("  ✅ Applied contrast 1.20")
         
-        # MINIMAL SHARPNESS for clarity
+        # ONLY apply sharpness
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.15)  # Gentle sharpness
-        logger.info("  ✅ Applied gentle sharpness 1.15 for clarity")
+        rgb_image = sharpness.enhance(1.30)  # Increase sharpness
+        logger.info("  ✅ Applied sharpness 1.30")
         
-        # Skip all other enhancements - preserve original colors
-        logger.info("  ✅ Preserved original metallic colors without color/brightness adjustments")
-        logger.info("  ✅ No HSV manipulation, edge enhancement, or color boosts applied")
+        logger.info("  ✅ No other enhancements - preserving original colors")
     
     # Final sharpness adjustment
-    sharpness = ImageEnhance.Sharpness(rgb_image)
     if pattern_type in ["ac_pattern", "ab_pattern"]:
+        sharpness = ImageEnhance.Sharpness(rgb_image)
         rgb_image = sharpness.enhance(1.4)
-    else:
-        rgb_image = sharpness.enhance(1.05)  # Even gentler for OTHER
+    # No additional sharpness for OTHER - already applied above
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -817,7 +814,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V29 Minimal Other"""
+    """RunPod handler function - V29 Simple Other"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -855,9 +852,9 @@ def handler(event):
 def process_cubic_enhancement(job):
     """Process cubic detail enhancement with advanced ring detection"""
     try:
-        logger.info("🚀 RunPod V29 - MINIMAL OTHER Pattern for Natural Colors")
+        logger.info("🚀 RunPod V29 - SIMPLE OTHER Pattern")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🌈 OTHER PATTERN: Minimal enhancement preserving natural metallic colors")
+        logger.info("🌈 OTHER PATTERN: Only Contrast 1.20 & Sharpness 1.30")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -928,14 +925,14 @@ def process_cubic_enhancement(job):
         logger.info("⚖️ Step 1/5: Applying white balance")
         image = auto_white_balance_fast(image)
         
-        # Step 2: Pattern Enhancement with minimal colors
+        # Step 2: Pattern Enhancement - simple for OTHER
         if apply_pattern:
-            logger.info("🎨 Step 2/5: Minimal pattern enhancement for natural colors")
+            logger.info("🎨 Step 2/5: Pattern enhancement")
             pattern_type = detect_pattern_type(filename, default_pattern=default_pattern)
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
-                "other": "기타색상(최소) - Contrast 1.10, Sharpness 1.15 only"
+                "other": "기타색상 - Contrast 1.20, Sharpness 1.30 only"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -988,7 +985,7 @@ def process_cubic_enhancement(job):
                 },
                 "corrections_applied": [
                     "white_balance",
-                    "pattern_enhancement_minimal" if apply_pattern else "pattern_skipped",
+                    "pattern_enhancement_simple" if apply_pattern else "pattern_skipped",
                     "cubic_enhancement_strong",
                     "ring_hole_detection_advanced",
                     "cubic_enhancement_final"
@@ -996,17 +993,16 @@ def process_cubic_enhancement(job):
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "runpod_compatible_no_external_api",
-                "processing_order": "1.WB → 2.Pattern(Minimal) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
-                "v29_minimal_changes": [
-                    "OTHER PATTERN: NO color saturation adjustment",
-                    "OTHER PATTERN: NO brightness adjustment",
-                    "OTHER PATTERN: Subtle contrast 1.10 only",
-                    "OTHER PATTERN: Gentle sharpness 1.15 only",
-                    "OTHER PATTERN: NO HSV manipulation",
-                    "OTHER PATTERN: NO edge enhancement",
-                    "OTHER PATTERN: NO warm color boost",
-                    "OTHER PATTERN: Final sharpness reduced to 1.05",
-                    "Result: Natural metallic colors preserved with minimal enhancement"
+                "processing_order": "1.WB → 2.Pattern(Simple) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
+                "v29_simple_changes": [
+                    "OTHER PATTERN: Only Contrast 1.20 applied",
+                    "OTHER PATTERN: Only Sharpness 1.30 applied",
+                    "OTHER PATTERN: No color adjustments",
+                    "OTHER PATTERN: No brightness adjustments",
+                    "OTHER PATTERN: No HSV manipulation",
+                    "OTHER PATTERN: No edge enhancement",
+                    "OTHER PATTERN: Original colors 100% preserved",
+                    "Result: Original image with only enhanced contrast and sharpness"
                 ]
             }
         }
