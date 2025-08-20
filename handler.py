@@ -12,12 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V29-BALANCED
-# VERSION: Cubic-Sparkle-V29-Balanced-Other-Color
-# Updated: Balanced OTHER pattern for natural metallic colors
+# CUBIC DETAIL ENHANCEMENT HANDLER V29-MINIMAL-OTHER
+# VERSION: Cubic-Sparkle-V29-Minimal-Other
+# Updated: Minimal OTHER pattern for preserving natural metallic colors
 ################################
 
-VERSION = "Cubic-Sparkle-V29-Balanced-Other-Color"
+VERSION = "Cubic-Sparkle-V29-Minimal-Other"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -257,7 +257,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement with BALANCED OTHER pattern for natural colors"""
+    """Apply pattern enhancement with MINIMAL OTHER pattern for natural colors"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -330,85 +330,32 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.05)
         
-    else:  # other pattern - BALANCED for natural metallic colors
-        logger.info("🔍 Other Pattern (기타색상) - Balanced Natural Enhancement")
+    else:  # other pattern - MINIMAL approach for natural metallic colors
+        logger.info("🔍 Other Pattern (기타색상) - Minimal Natural Enhancement")
         
         # NO WHITE OVERLAY - Keep original color tone
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # MODERATE COLOR SATURATION - 적절한 색상 포화도
-        color = ImageEnhance.Color(rgb_image)
-        rgb_image = color.enhance(1.35)  # 2.20 -> 1.35로 대폭 감소 (자연스러운 색상)
-        logger.info("  ✅ Applied moderate color saturation 1.35 for natural metallic colors")
-        
-        # BALANCED BRIGHTNESS - 균형잡힌 밝기
-        brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(0.95)  # 0.72 -> 0.95로 증가 (원본과 유사한 밝기)
-        logger.info("  ✅ Applied balanced brightness 0.95 for natural tones")
-        
-        # MODERATE CONTRAST - 적절한 대비
+        # ONLY SUBTLE CONTRAST for depth
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.20)  # 1.55 -> 1.20으로 감소 (자연스러운 대비)
-        logger.info("  ✅ Applied moderate contrast 1.20 for balanced depth")
+        rgb_image = contrast.enhance(1.10)  # Very subtle contrast boost
+        logger.info("  ✅ Applied subtle contrast 1.10 for natural depth")
         
-        # GENTLE HSV COLOR BOOST - HSV 색상 공간에서 부드러운 조정
-        hsv_image = rgb_image.convert('HSV')
-        h, s, v = hsv_image.split()
-        
-        # Saturation 부드러운 부스트
-        s_array = np.array(s, dtype=np.float32)
-        s_array = np.minimum(s_array * 1.15, 255)  # 1.45 -> 1.15로 감소
-        s = Image.fromarray(s_array.astype(np.uint8))
-        
-        # Value(명도) 미세 조정
-        v_array = np.array(v, dtype=np.float32)
-        v_array = v_array * 0.98  # 0.88 -> 0.98로 증가 (거의 원본 유지)
-        v = Image.fromarray(v_array.astype(np.uint8))
-        
-        hsv_enhanced = Image.merge('HSV', (h, s, v))
-        rgb_image = hsv_enhanced.convert('RGB')
-        logger.info("  ✅ Applied gentle HSV boost - Saturation x1.15, Value x0.98")
-        
-        # Additional color channel manipulation for metallic tones
-        rgb_array = np.array(rgb_image, dtype=np.float32)
-        
-        # Gentle boost for warm metallic colors (yellow/rose gold)
-        warm_mask = (rgb_array[:,:,0] > rgb_array[:,:,2]) | (rgb_array[:,:,1] > rgb_array[:,:,2])
-        if np.any(warm_mask):
-            # Subtle enhancement for gold tones
-            rgb_array[:,:,0] = np.where(warm_mask, np.minimum(rgb_array[:,:,0] * 1.05, 255), rgb_array[:,:,0])
-            rgb_array[:,:,1] = np.where(warm_mask, np.minimum(rgb_array[:,:,1] * 1.03, 255), rgb_array[:,:,1])
-            logger.info("  ✅ Applied subtle warm color boost for metallic tones")
-        
-        rgb_image = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
-        
-        # MODERATE SHARPNESS for clear but natural details
+        # MINIMAL SHARPNESS for clarity
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.25)  # 1.45 -> 1.25로 감소
-        logger.info("  ✅ Applied moderate sharpness 1.25 for natural clarity")
+        rgb_image = sharpness.enhance(1.15)  # Gentle sharpness
+        logger.info("  ✅ Applied gentle sharpness 1.15 for clarity")
         
-        # SUBTLE EDGE ENHANCEMENT for OTHER pattern
-        edges = rgb_image.filter(ImageFilter.EDGE_ENHANCE)  # EDGE_ENHANCE_MORE -> EDGE_ENHANCE로 변경
-        rgb_array = np.array(rgb_image, dtype=np.float32)
-        edges_array = np.array(edges, dtype=np.float32)
-        
-        # 부드러운 엣지 블렌딩
-        edge_blend = 0.08  # 0.20 -> 0.08로 대폭 감소
-        for c in range(3):
-            rgb_array[:,:,c] = rgb_array[:,:,c] * (1 - edge_blend) + edges_array[:,:,c] * edge_blend
-        
-        rgb_image = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
-        logger.info("  ✅ Applied subtle edge enhancement blend 8% for smooth details")
-        
-        # Skip final color boost - already balanced
-        logger.info("  ✅ Skipped final color boost - already well balanced")
+        # Skip all other enhancements - preserve original colors
+        logger.info("  ✅ Preserved original metallic colors without color/brightness adjustments")
+        logger.info("  ✅ No HSV manipulation, edge enhancement, or color boosts applied")
     
     # Final sharpness adjustment
     sharpness = ImageEnhance.Sharpness(rgb_image)
     if pattern_type in ["ac_pattern", "ab_pattern"]:
         rgb_image = sharpness.enhance(1.4)
     else:
-        rgb_image = sharpness.enhance(1.10)  # 1.20 -> 1.10 for OTHER (gentler)
+        rgb_image = sharpness.enhance(1.05)  # Even gentler for OTHER
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -870,7 +817,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V29 Balanced"""
+    """RunPod handler function - V29 Minimal Other"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -908,9 +855,9 @@ def handler(event):
 def process_cubic_enhancement(job):
     """Process cubic detail enhancement with advanced ring detection"""
     try:
-        logger.info("🚀 RunPod V29 - BALANCED OTHER Pattern Colors")
+        logger.info("🚀 RunPod V29 - MINIMAL OTHER Pattern for Natural Colors")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🌈 OTHER PATTERN: Balanced Natural Enhancement for metallic colors")
+        logger.info("🌈 OTHER PATTERN: Minimal enhancement preserving natural metallic colors")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -981,14 +928,14 @@ def process_cubic_enhancement(job):
         logger.info("⚖️ Step 1/5: Applying white balance")
         image = auto_white_balance_fast(image)
         
-        # Step 2: Pattern Enhancement with balanced colors
+        # Step 2: Pattern Enhancement with minimal colors
         if apply_pattern:
-            logger.info("🎨 Step 2/5: Balanced pattern enhancement for natural colors")
+            logger.info("🎨 Step 2/5: Minimal pattern enhancement for natural colors")
             pattern_type = detect_pattern_type(filename, default_pattern=default_pattern)
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10)",
                 "ab_pattern": "무도금화이트-쿨톤(0.10)",
-                "other": "기타색상(균형) - Color 1.35, Brightness 0.95, Contrast 1.20, HSV x1.15/0.98, Edge 8%"
+                "other": "기타색상(최소) - Contrast 1.10, Sharpness 1.15 only"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -1041,7 +988,7 @@ def process_cubic_enhancement(job):
                 },
                 "corrections_applied": [
                     "white_balance",
-                    "pattern_enhancement_balanced" if apply_pattern else "pattern_skipped",
+                    "pattern_enhancement_minimal" if apply_pattern else "pattern_skipped",
                     "cubic_enhancement_strong",
                     "ring_hole_detection_advanced",
                     "cubic_enhancement_final"
@@ -1049,17 +996,17 @@ def process_cubic_enhancement(job):
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "runpod_compatible_no_external_api",
-                "processing_order": "1.WB → 2.Pattern(Balanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
-                "v29_balanced_changes": [
-                    "OTHER PATTERN: Moderate color saturation 1.35 (natural metallic)",
-                    "OTHER PATTERN: Balanced brightness 0.95 (preserves original)",
-                    "OTHER PATTERN: Moderate contrast 1.20 (natural depth)",
-                    "OTHER PATTERN: Gentle HSV boost - Saturation x1.15, Value x0.98",
-                    "OTHER PATTERN: Subtle warm color boost for metallic tones",
-                    "OTHER PATTERN: Subtle edge enhancement 8%",
-                    "OTHER PATTERN: Moderate sharpness 1.25",
-                    "OTHER PATTERN: Gentler final sharpness 1.10",
-                    "Result: Natural metallic colors with preserved texture"
+                "processing_order": "1.WB → 2.Pattern(Minimal) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
+                "v29_minimal_changes": [
+                    "OTHER PATTERN: NO color saturation adjustment",
+                    "OTHER PATTERN: NO brightness adjustment",
+                    "OTHER PATTERN: Subtle contrast 1.10 only",
+                    "OTHER PATTERN: Gentle sharpness 1.15 only",
+                    "OTHER PATTERN: NO HSV manipulation",
+                    "OTHER PATTERN: NO edge enhancement",
+                    "OTHER PATTERN: NO warm color boost",
+                    "OTHER PATTERN: Final sharpness reduced to 1.05",
+                    "Result: Natural metallic colors preserved with minimal enhancement"
                 ]
             }
         }
