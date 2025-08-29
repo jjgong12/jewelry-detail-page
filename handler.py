@@ -12,12 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V29-SIMPLE-OTHER
-# VERSION: Cubic-Sparkle-V29-Simple-Other-Adjusted
-# Updated: AB/AC pattern brightness 1.10, contrast 1.03, sharpness 1.30
+# CUBIC DETAIL ENHANCEMENT HANDLER V29-SIMPLE-OTHER-COLOR
+# VERSION: Cubic-Sparkle-V29-Simple-Other-Color-Enhanced
+# Updated: OTHER pattern with Color enhancement 1.15
 ################################
 
-VERSION = "Cubic-Sparkle-V29-Simple-Other-Adjusted"
+VERSION = "Cubic-Sparkle-V29-Simple-Other-Color-Enhanced"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -257,7 +257,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement - ADJUSTED AB/AC values"""
+    """Apply pattern enhancement - ADJUSTED AB/AC values, ENHANCED OTHER"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -332,23 +332,28 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         contrast = ImageEnhance.Contrast(rgb_image)
         rgb_image = contrast.enhance(1.03)  # Changed from 1.05 to 1.03
         
-    else:  # other pattern - ONLY contrast and sharpness
-        logger.info("🔍 Other Pattern (기타색상) - Only Contrast & Sharpness")
+    else:  # other pattern - ENHANCED COLOR SATURATION
+        logger.info("🔍 Other Pattern (기타색상) - Enhanced Color + Contrast + Sharpness")
         
         # Convert to PIL Image without any processing
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # ONLY apply contrast
-        contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.20)  # Increase contrast
-        logger.info("  ✅ Applied contrast 1.20")
+        # Apply COLOR enhancement FIRST
+        color = ImageEnhance.Color(rgb_image)
+        rgb_image = color.enhance(1.15)  # Increase saturation
+        logger.info("  ✅ Applied color saturation 1.15")
         
-        # ONLY apply sharpness
+        # Apply contrast (reduced)
+        contrast = ImageEnhance.Contrast(rgb_image)
+        rgb_image = contrast.enhance(1.10)  # Reduced from 1.20 to 1.10
+        logger.info("  ✅ Applied contrast 1.10")
+        
+        # Apply sharpness
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.30)  # Increase sharpness
+        rgb_image = sharpness.enhance(1.30)  # Keep sharpness
         logger.info("  ✅ Applied sharpness 1.30")
         
-        logger.info("  ✅ No other enhancements - preserving original colors")
+        logger.info("  ✅ Enhanced colors while preserving details")
     
     # Final sharpness adjustment - ADJUSTED FOR AB/AC PATTERNS
     if pattern_type in ["ac_pattern", "ab_pattern"]:
@@ -816,7 +821,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V29 Simple Other"""
+    """RunPod handler function - V29 Simple Other Enhanced"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -854,9 +859,9 @@ def handler(event):
 def process_cubic_enhancement(job):
     """Process cubic detail enhancement with advanced ring detection"""
     try:
-        logger.info("🚀 RunPod V29 - ADJUSTED AB/AC Pattern")
+        logger.info("🚀 RunPod V29 - OTHER Pattern Color Enhanced")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🌈 AB/AC PATTERN: Adjusted brightness 1.10, contrast 1.03, sharpness 1.30")
+        logger.info("🌈 OTHER PATTERN: Color 1.15, Contrast 1.10, Sharpness 1.30")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -927,14 +932,14 @@ def process_cubic_enhancement(job):
         logger.info("⚖️ Step 1/5: Applying white balance")
         image = auto_white_balance_fast(image)
         
-        # Step 2: Pattern Enhancement - adjusted for AB/AC
+        # Step 2: Pattern Enhancement - enhanced OTHER
         if apply_pattern:
             logger.info("🎨 Step 2/5: Pattern enhancement")
             pattern_type = detect_pattern_type(filename, default_pattern=default_pattern)
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10) - Adjusted: Brightness 1.10, Contrast 1.03, Sharpness 1.30",
                 "ab_pattern": "무도금화이트-쿨톤(0.10) - Adjusted: Brightness 1.10, Contrast 1.03, Sharpness 1.30",
-                "other": "기타색상 - Contrast 1.20, Sharpness 1.30 only"
+                "other": "기타색상 - Enhanced: Color 1.15, Contrast 1.10, Sharpness 1.30"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -987,7 +992,7 @@ def process_cubic_enhancement(job):
                 },
                 "corrections_applied": [
                     "white_balance",
-                    "pattern_enhancement_adjusted" if apply_pattern else "pattern_skipped",
+                    "pattern_enhancement_with_color" if apply_pattern else "pattern_skipped",
                     "cubic_enhancement_strong",
                     "ring_hole_detection_advanced",
                     "cubic_enhancement_final"
@@ -995,14 +1000,13 @@ def process_cubic_enhancement(job):
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "runpod_compatible_no_external_api",
-                "processing_order": "1.WB → 2.Pattern(Adjusted) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
-                "v29_adjusted_changes": [
-                    "AB/AC PATTERN: Brightness reduced from 1.17 to 1.10",
-                    "AB/AC PATTERN: Contrast reduced from 1.05 to 1.03",
-                    "AB/AC PATTERN: Sharpness reduced from 1.40 to 1.30",
-                    "AB/AC PATTERN: More natural enhancement with less intensity",
-                    "OTHER PATTERN: Unchanged - Contrast 1.20, Sharpness 1.30",
-                    "Result: More balanced enhancement for AB/AC patterns"
+                "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
+                "v29_enhanced_changes": [
+                    "AB/AC PATTERN: Brightness 1.10, Contrast 1.03, Sharpness 1.30",
+                    "OTHER PATTERN: NEW Color 1.15 for vibrant colors",
+                    "OTHER PATTERN: Contrast reduced from 1.20 to 1.10",
+                    "OTHER PATTERN: Sharpness kept at 1.30",
+                    "Result: Vivid colors for OTHER pattern while preserving details"
                 ]
             }
         }
