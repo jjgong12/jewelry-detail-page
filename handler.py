@@ -12,12 +12,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V29-SIMPLE-OTHER-COLOR
-# VERSION: Cubic-Sparkle-V29-Simple-Other-Color-Enhanced
-# Updated: OTHER pattern with Color enhancement 1.15
+# CUBIC DETAIL ENHANCEMENT HANDLER V30-ENHANCED-OTHER
+# VERSION: Cubic-Sparkle-V30-Enhanced-Other-Pattern
+# Updated: OTHER pattern with Enhanced Color 1.25, Contrast 1.15, Sharpness 1.40
 ################################
 
-VERSION = "Cubic-Sparkle-V29-Simple-Other-Color-Enhanced"
+VERSION = "Cubic-Sparkle-V30-Enhanced-Other-Pattern"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -257,7 +257,7 @@ def gradual_cubic_detail_pass(image: Image.Image, pattern_type: str, pass_num: i
     return result
 
 def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> Image.Image:
-    """Apply pattern enhancement - ADJUSTED AB/AC values, ENHANCED OTHER"""
+    """Apply pattern enhancement - ADJUSTED AB/AC values, ENHANCED OTHER V30"""
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
     
@@ -286,13 +286,13 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         
         # ADJUSTED VALUES FOR AC PATTERN
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.10)  # Changed from 1.17 to 1.10
+        rgb_image = brightness.enhance(1.10)
         
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.98)
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.03)  # Changed from 1.05 to 1.03
+        rgb_image = contrast.enhance(1.03)
         
     elif pattern_type == "ab_pattern":
         logger.info("🔍 AB Pattern (무도금화이트-쿨톤) - Adjusted enhancement")
@@ -327,38 +327,38 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         rgb_image = color.enhance(0.88)
         
         brightness = ImageEnhance.Brightness(rgb_image)
-        rgb_image = brightness.enhance(1.10)  # Changed from 1.17 to 1.10
+        rgb_image = brightness.enhance(1.10)
         
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.03)  # Changed from 1.05 to 1.03
+        rgb_image = contrast.enhance(1.03)
         
-    else:  # other pattern - ENHANCED COLOR SATURATION
-        logger.info("🔍 Other Pattern (기타색상) - Enhanced Color + Contrast + Sharpness")
+    else:  # other pattern - V30 ENHANCED COLOR AND SHARPNESS
+        logger.info("🔍 Other Pattern (기타색상) - V30 Enhanced Color + Contrast + Sharpness")
         
         # Convert to PIL Image without any processing
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # Apply COLOR enhancement FIRST
+        # Apply COLOR enhancement FIRST - INCREASED
         color = ImageEnhance.Color(rgb_image)
-        rgb_image = color.enhance(1.15)  # Increase saturation
-        logger.info("  ✅ Applied color saturation 1.15")
+        rgb_image = color.enhance(1.25)  # Increased from 1.15 to 1.25
+        logger.info("  ✅ Applied color saturation 1.25 (enhanced)")
         
-        # Apply contrast (reduced)
+        # Apply contrast - INCREASED
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.10)  # Reduced from 1.20 to 1.10
-        logger.info("  ✅ Applied contrast 1.10")
+        rgb_image = contrast.enhance(1.15)  # Increased from 1.10 to 1.15
+        logger.info("  ✅ Applied contrast 1.15 (enhanced)")
         
-        # Apply sharpness
+        # Apply sharpness - INCREASED
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.30)  # Keep sharpness
-        logger.info("  ✅ Applied sharpness 1.30")
+        rgb_image = sharpness.enhance(1.40)  # Increased from 1.30 to 1.40
+        logger.info("  ✅ Applied sharpness 1.40 (enhanced)")
         
-        logger.info("  ✅ Enhanced colors while preserving details")
+        logger.info("  ✅ V30: Enhanced colors and sharpness for vivid results")
     
     # Final sharpness adjustment - ADJUSTED FOR AB/AC PATTERNS
     if pattern_type in ["ac_pattern", "ab_pattern"]:
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.30)  # Changed from 1.40 to 1.30
+        rgb_image = sharpness.enhance(1.30)
     # No additional sharpness for OTHER - already applied above
     
     r2, g2, b2 = rgb_image.split()
@@ -821,7 +821,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V29 Simple Other Enhanced"""
+    """RunPod handler function - V30 Enhanced Other Pattern"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -859,9 +859,9 @@ def handler(event):
 def process_cubic_enhancement(job):
     """Process cubic detail enhancement with advanced ring detection"""
     try:
-        logger.info("🚀 RunPod V29 - OTHER Pattern Color Enhanced")
+        logger.info("🚀 RunPod V30 - Enhanced OTHER Pattern")
         logger.info("💎 Multi-stage verification for accurate hole detection")
-        logger.info("🌈 OTHER PATTERN: Color 1.15, Contrast 1.10, Sharpness 1.30")
+        logger.info("🌈 OTHER PATTERN V30: Color 1.25, Contrast 1.15, Sharpness 1.40")
         logger.info(f"Job input type: {type(job)}")
         
         if isinstance(job, dict):
@@ -939,7 +939,7 @@ def process_cubic_enhancement(job):
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10) - Adjusted: Brightness 1.10, Contrast 1.03, Sharpness 1.30",
                 "ab_pattern": "무도금화이트-쿨톤(0.10) - Adjusted: Brightness 1.10, Contrast 1.03, Sharpness 1.30",
-                "other": "기타색상 - Enhanced: Color 1.15, Contrast 1.10, Sharpness 1.30"
+                "other": "기타색상 - V30 Enhanced: Color 1.25, Contrast 1.15, Sharpness 1.40"
             }.get(pattern_type, "기타색상")
             
             logger.info(f"Detected pattern: {pattern_type} - {detected_type}")
@@ -992,7 +992,7 @@ def process_cubic_enhancement(job):
                 },
                 "corrections_applied": [
                     "white_balance",
-                    "pattern_enhancement_with_color" if apply_pattern else "pattern_skipped",
+                    "pattern_enhancement_v30" if apply_pattern else "pattern_skipped",
                     "cubic_enhancement_strong",
                     "ring_hole_detection_advanced",
                     "cubic_enhancement_final"
@@ -1000,13 +1000,13 @@ def process_cubic_enhancement(job):
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "runpod_compatible_no_external_api",
-                "processing_order": "1.WB → 2.Pattern(Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
-                "v29_enhanced_changes": [
-                    "AB/AC PATTERN: Brightness 1.10, Contrast 1.03, Sharpness 1.30",
-                    "OTHER PATTERN: NEW Color 1.15 for vibrant colors",
-                    "OTHER PATTERN: Contrast reduced from 1.20 to 1.10",
-                    "OTHER PATTERN: Sharpness kept at 1.30",
-                    "Result: Vivid colors for OTHER pattern while preserving details"
+                "processing_order": "1.WB → 2.Pattern(V30 Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
+                "v30_enhanced_changes": [
+                    "AB/AC PATTERN: Brightness 1.10, Contrast 1.03, Sharpness 1.30 (unchanged)",
+                    "OTHER PATTERN: Color increased 1.15 → 1.25 for more vivid colors",
+                    "OTHER PATTERN: Contrast increased 1.10 → 1.15 for better depth",
+                    "OTHER PATTERN: Sharpness increased 1.30 → 1.40 for sharper details",
+                    "Result: MORE vivid colors and sharper details for OTHER pattern"
                 ]
             }
         }
