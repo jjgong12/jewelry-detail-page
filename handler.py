@@ -7,17 +7,19 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageDraw
 import logging
 import string
 import json
+import cv2
+from rembg import remove, new_session
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ################################
-# CUBIC DETAIL ENHANCEMENT HANDLER V30-ENHANCED-OTHER
-# VERSION: Cubic-Sparkle-V30-Enhanced-Other-Pattern
-# Updated: OTHER pattern with Enhanced Color 1.25, Contrast 1.15, Sharpness 1.40
+# CUBIC DETAIL ENHANCEMENT HANDLER V30-ENHANCED-OTHER WITH BACKGROUND REMOVAL
+# VERSION: Cubic-Sparkle-V30-Enhanced-Other-Pattern-BG-Removal
+# Updated: Added advanced background removal post-processing
 ################################
 
-VERSION = "Cubic-Sparkle-V30-Enhanced-Other-Pattern"
+VERSION = "Cubic-Sparkle-V30-Enhanced-Other-Pattern-BG-Removal"
 
 def decode_base64_fast(base64_str: str) -> bytes:
     """Fast base64 decode with padding handling"""
@@ -67,6 +69,137 @@ def image_to_base64(image):
     base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
     # Always return WITH padding
     return base64_str
+
+def remove_white_edges_advanced(img):
+    """Advanced white/light edge removal around the object"""
+    if img.mode != 'RGBA':
+        img = img.convert('RGBA')
+    
+    data = np.array(img)
+    alpha = data[:, :, 3]
+    
+    # Find edges of the alpha channel
+    edges = cv2.Canny(alpha, 50, 150)
+    
+    # Dilate edges to capture halos
+    kernel = np.ones((5,5), np.uint8)
+    dilated_edges = cv2.dilate(edges, kernel, iterations=3)
+    
+    # Process edge pixels
+    for y in range(data.shape[0]):
+        for x in range(data.shape[1]):
+            if dilated_edges[y, x] > 0:  # Edge pixel
+                r, g, b, a = data[y, x]
+                
+                # Check for white/light halos
+                if a > 0 and a < 255:
+                    brightness = (r + g + b) / 3
+                    
+                    if brightness > 200:  # Light pixel
+                        # Make fully transparent
+                        data[y, x] = [0, 0, 0, 0]
+                    elif brightness > 150:  # Semi-light pixel
+                        # Reduce alpha significantly
+                        data[y, x, 3] = int(a * 0.3)
+                
+                # Check for near-white opaque pixels at edges
+                elif a == 255:
+                    brightness = (r + g + b) / 3
+                    # Check color uniformity (gray detection)
+                    color_diff = max(abs(r-g), abs(g-b), abs(r-b))
+                    
+                    if brightness > 240 and color_diff < 10:
+                        # Likely a white halo - remove it
+                        data[y, x] = [0, 0, 0, 0]
+                    elif brightness > 220 and color_diff < 5:
+                        # Gray halo - make semi-transparent
+                        data[y, x, 3] = 100
+    
+    return Image.fromarray(data, 'RGBA')
+
+def enhanced_background_removal(image):
+    """Enhanced background removal with multiple passes and edge cleaning"""
+    if image.mode != 'RGBA':
+        image = image.convert('RGBA')
+    
+    logger.info("🔄 Starting enhanced background removal...")
+    
+    # Pass 1: Use u2net model
+    logger.info("  Pass 1: U2Net background removal")
+    session_u2net = new_session('u2net')
+    output = remove(image, session=session_u2net, 
+                   alpha_matting=True,
+                   alpha_matting_foreground_threshold=240,
+                   alpha_matting_background_threshold=50,
+                   alpha_matting_erode_size=10)
+    
+    # Pass 2: Try u2netp for comparison (higher quality)
+    logger.info("  Pass 2: U2NetP background removal for comparison")
+    session_u2netp = new_session('u2netp')
+    output_p = remove(image, session=session_u2netp,
+                     alpha_matting=True,
+                     alpha_matting_foreground_threshold=270,
+                     alpha_matting_background_threshold=10,
+                     alpha_matting_erode_size=5)
+    
+    # Combine results - take the intersection (more conservative)
+    data1 = np.array(output)
+    data2 = np.array(output_p)
+    
+    # Use the more conservative alpha (lower value = more transparent)
+    combined_alpha = np.minimum(data1[:,:,3], data2[:,:,3])
+    data1[:,:,3] = combined_alpha
+    
+    output = Image.fromarray(data1, 'RGBA')
+    
+    # Pass 3: Remove white edges
+    logger.info("  Pass 3: Removing white/light edges")
+    output = remove_white_edges_advanced(output)
+    
+    # Pass 4: Clean up semi-transparent pixels
+    logger.info("  Pass 4: Cleaning semi-transparent pixels")
+    data = np.array(output)
+    alpha = data[:, :, 3]
+    
+    # Make binary decision on alpha channel
+    threshold = 200  # Increased threshold for more aggressive removal
+    alpha[alpha < threshold] = 0
+    alpha[alpha >= threshold] = 255
+    
+    # Additional check for white/gray pixels
+    rgb_sum = data[:,:,0].astype(float) + data[:,:,1].astype(float) + data[:,:,2].astype(float)
+    gray_mask = (
+        (np.abs(data[:,:,0].astype(float) - data[:,:,1].astype(float)) < 10) & 
+        (np.abs(data[:,:,1].astype(float) - data[:,:,2].astype(float)) < 10) &
+        (rgb_sum > 600)  # Sum of RGB > 600 means very light gray/white
+    )
+    
+    # Make gray/white pixels transparent
+    alpha[gray_mask] = 0
+    
+    data[:, :, 3] = alpha
+    output = Image.fromarray(data, 'RGBA')
+    
+    # Pass 5: Final edge smoothing
+    logger.info("  Pass 5: Final edge smoothing")
+    # Apply median filter to remove isolated pixels
+    alpha_img = Image.fromarray(alpha)
+    alpha_img = alpha_img.filter(ImageFilter.MedianFilter(3))
+    
+    # Slight gaussian blur for smoother edges
+    alpha_img = alpha_img.filter(ImageFilter.GaussianBlur(radius=0.5))
+    
+    # Re-threshold to maintain hard edges
+    alpha_array = np.array(alpha_img)
+    alpha_array[alpha_array < 128] = 0
+    alpha_array[alpha_array >= 128] = 255
+    
+    # Apply final alpha
+    r, g, b, _ = output.split()
+    output = Image.merge('RGBA', (r, g, b, Image.fromarray(alpha_array)))
+    
+    logger.info("✅ Enhanced background removal complete")
+    return output
 
 def find_input_data_robust(data, path="", depth=0, max_depth=10):
     """More robust input data extraction with detailed logging - FIXED for thumbnail"""
@@ -284,7 +417,6 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         r_temp, g_temp, b_temp, _ = temp_rgba.split()
         rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
         
-        # ADJUSTED VALUES FOR AC PATTERN
         brightness = ImageEnhance.Brightness(rgb_image)
         rgb_image = brightness.enhance(1.10)
         
@@ -301,12 +433,10 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         white_overlay = 0.10
         img_array = img_array * (1 - white_overlay) + 255 * white_overlay
         
-        # Cool tone adjustment
-        img_array[:,:,0] *= 0.96  # Reduce red
-        img_array[:,:,1] *= 0.98  # Slightly reduce green
-        img_array[:,:,2] *= 1.02  # Increase blue
+        img_array[:,:,0] *= 0.96
+        img_array[:,:,1] *= 0.98
+        img_array[:,:,2] *= 1.02
         
-        # Cool overlay
         cool_overlay = np.array([240, 248, 255], dtype=np.float32)
         img_array = img_array * 0.95 + cool_overlay * 0.05
         
@@ -322,7 +452,6 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
         r_temp, g_temp, b_temp, _ = temp_rgba.split()
         rgb_image = Image.merge('RGB', (r_temp, g_temp, b_temp))
         
-        # ADJUSTED VALUES FOR AB PATTERN
         color = ImageEnhance.Color(rgb_image)
         rgb_image = color.enhance(0.88)
         
@@ -335,31 +464,25 @@ def apply_pattern_enhancement_gradual(image: Image.Image, pattern_type: str) -> 
     else:  # other pattern - V30 ENHANCED COLOR AND SHARPNESS
         logger.info("🔍 Other Pattern (기타색상) - V30 Enhanced Color + Contrast + Sharpness")
         
-        # Convert to PIL Image without any processing
         rgb_image = Image.fromarray(img_array.astype(np.uint8))
         
-        # Apply COLOR enhancement FIRST - INCREASED
         color = ImageEnhance.Color(rgb_image)
-        rgb_image = color.enhance(1.25)  # Increased from 1.15 to 1.25
+        rgb_image = color.enhance(1.25)
         logger.info("  ✅ Applied color saturation 1.25 (enhanced)")
         
-        # Apply contrast - INCREASED
         contrast = ImageEnhance.Contrast(rgb_image)
-        rgb_image = contrast.enhance(1.15)  # Increased from 1.10 to 1.15
+        rgb_image = contrast.enhance(1.15)
         logger.info("  ✅ Applied contrast 1.15 (enhanced)")
         
-        # Apply sharpness - INCREASED
         sharpness = ImageEnhance.Sharpness(rgb_image)
-        rgb_image = sharpness.enhance(1.40)  # Increased from 1.30 to 1.40
+        rgb_image = sharpness.enhance(1.40)
         logger.info("  ✅ Applied sharpness 1.40 (enhanced)")
         
         logger.info("  ✅ V30: Enhanced colors and sharpness for vivid results")
     
-    # Final sharpness adjustment - ADJUSTED FOR AB/AC PATTERNS
     if pattern_type in ["ac_pattern", "ab_pattern"]:
         sharpness = ImageEnhance.Sharpness(rgb_image)
         rgb_image = sharpness.enhance(1.30)
-    # No additional sharpness for OTHER - already applied above
     
     r2, g2, b2 = rgb_image.split()
     enhanced_image = Image.merge('RGBA', (r2, g2, b2, a))
@@ -372,11 +495,9 @@ def simple_morphology_operation(mask, operation='close', iterations=1):
     
     for _ in range(iterations):
         if operation == 'close':
-            # Dilation then erosion
             mask_image = mask_image.filter(ImageFilter.MaxFilter(3))
             mask_image = mask_image.filter(ImageFilter.MinFilter(3))
         elif operation == 'open':
-            # Erosion then dilation
             mask_image = mask_image.filter(ImageFilter.MinFilter(3))
             mask_image = mask_image.filter(ImageFilter.MaxFilter(3))
         elif operation == 'dilate':
@@ -390,23 +511,19 @@ def check_pixel_continuity(gray, x, y, window=5):
     """Check if a pixel is part of a continuous uniform region"""
     h, w = gray.shape
     
-    # Get window bounds
     x_min = max(0, x - window)
     x_max = min(w, x + window + 1)
     y_min = max(0, y - window)
     y_max = min(h, y + window + 1)
     
-    # Extract window
     window_pixels = gray[y_min:y_max, x_min:x_max]
     
     if window_pixels.size == 0:
         return False
     
-    # Check uniformity
     std_dev = np.std(window_pixels)
     mean_val = np.mean(window_pixels)
     
-    # Uniform if low standard deviation and similar to center pixel
     is_uniform = (std_dev < 3) and (abs(gray[y, x] - mean_val) < 2)
     
     return is_uniform
@@ -415,27 +532,22 @@ def verify_morphological_pattern(mask, x, y, pattern_size=7):
     """Verify if the region forms a circular/elliptical pattern (likely a hole)"""
     h, w = mask.shape
     
-    # Get region bounds
     half_size = pattern_size // 2
     x_min = max(0, x - half_size)
     x_max = min(w, x + half_size + 1)
     y_min = max(0, y - half_size)
     y_max = min(h, y + half_size + 1)
     
-    # Extract region
     region = mask[y_min:y_max, x_min:x_max]
     
-    if region.size < 9:  # Too small to analyze
+    if region.size < 9:
         return False
     
-    # Count true pixels
     true_count = np.sum(region)
     total_count = region.size
     
-    # A hole should have most pixels marked as background
     fill_ratio = true_count / total_count if total_count > 0 else 0
     
-    # Holes typically have fill ratio > 0.6 (mostly filled)
     return fill_ratio > 0.6
 
 def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
@@ -449,24 +561,19 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
     rgb_array = np.array(image.convert('RGB'), dtype=np.uint8)
     alpha_array = np.array(a, dtype=np.uint8)
     
-    # Convert to grayscale
     gray = np.mean(rgb_array, axis=2).astype(np.uint8)
     
-    # Get image dimensions
     h, w = alpha_array.shape
     center_y, center_x = h // 2, w // 2
     
-    # Create radial distance map
     y_indices, x_indices = np.meshgrid(range(h), range(w), indexing='ij')
     distance_from_center = np.sqrt((x_indices - center_x)**2 + (y_indices - center_y)**2)
     
-    # Define ring regions with differentiated processing
     max_radius = min(h, w) // 2
-    inner_ring_radius = max_radius * 0.35  # Inner 35% - very conservative
-    middle_ring_radius = max_radius * 0.60  # Middle ring
-    outer_ring_radius = max_radius * 0.85  # Outer ring
+    inner_ring_radius = max_radius * 0.35
+    middle_ring_radius = max_radius * 0.60
+    outer_ring_radius = max_radius * 0.85
     
-    # Create region masks
     inner_ring_mask = distance_from_center < inner_ring_radius
     middle_ring_mask = (distance_from_center >= inner_ring_radius) & (distance_from_center < middle_ring_radius)
     outer_ring_mask = (distance_from_center >= middle_ring_radius) & (distance_from_center <= outer_ring_radius)
@@ -474,10 +581,8 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
     
     logger.info(f"  Region distribution - Inner: {np.sum(inner_ring_mask)}, Middle: {np.sum(middle_ring_mask)}, Outer: {np.sum(outer_ring_mask)}")
     
-    # Stage 1: Color-based detection with region-specific thresholds
     background_candidates = np.zeros_like(gray, dtype=bool)
     
-    # Define exact background color (RGB 200,200,200)
     exact_background = (
         (rgb_array[:,:,0] >= 198) & (rgb_array[:,:,0] <= 202) &
         (rgb_array[:,:,1] >= 198) & (rgb_array[:,:,1] <= 202) &
@@ -485,17 +590,15 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
         (alpha_array > 250)
     )
     
-    # Inner ring: ONLY exact background color
     if np.any(inner_ring_mask):
         inner_candidates = inner_ring_mask & exact_background
         background_candidates |= inner_candidates
         logger.info(f"    Inner ring: {np.sum(inner_candidates)} exact background pixels")
     
-    # Middle ring: Slightly relaxed but still conservative
     if np.any(middle_ring_mask):
         middle_candidates = (
             middle_ring_mask &
-            (gray >= 195) & (gray <= 205) &  # Slightly wider range
+            (gray >= 195) & (gray <= 205) &
             (np.abs(rgb_array[:,:,0].astype(np.float32) - rgb_array[:,:,1].astype(np.float32)) < 3) &
             (np.abs(rgb_array[:,:,1].astype(np.float32) - rgb_array[:,:,2].astype(np.float32)) < 3) &
             (alpha_array > 250)
@@ -503,11 +606,10 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
         background_candidates |= middle_candidates
         logger.info(f"    Middle ring: {np.sum(middle_candidates)} background candidates")
     
-    # Outer ring: More aggressive detection
     if np.any(outer_ring_mask):
         outer_candidates = (
             outer_ring_mask &
-            (gray > 240) &  # Bright areas
+            (gray > 240) &
             (np.abs(rgb_array[:,:,0].astype(np.float32) - rgb_array[:,:,1].astype(np.float32)) < 8) &
             (np.abs(rgb_array[:,:,1].astype(np.float32) - rgb_array[:,:,2].astype(np.float32)) < 8) &
             (alpha_array > 200)
@@ -515,7 +617,6 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
         background_candidates |= outer_candidates
         logger.info(f"    Outer ring: {np.sum(outer_candidates)} background candidates")
     
-    # Beyond ring: Most aggressive
     if np.any(beyond_ring_mask):
         beyond_candidates = (
             beyond_ring_mask &
@@ -526,27 +627,23 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
         background_candidates |= beyond_candidates
         logger.info(f"    Beyond ring: {np.sum(beyond_candidates)} background candidates")
     
-    # Stage 2: Continuity verification
     logger.info("  Stage 2: Verifying pixel continuity...")
     continuity_verified = np.zeros_like(background_candidates, dtype=bool)
     
-    # Only check continuity for pixels that passed Stage 1
     candidate_coords = np.where(background_candidates)
-    sample_rate = 5  # Check every 5th pixel for performance
+    sample_rate = 5
     
     for idx in range(0, len(candidate_coords[0]), sample_rate):
         y, x = candidate_coords[0][idx], candidate_coords[1][idx]
         
-        # Different window sizes for different regions
         if inner_ring_mask[y, x]:
-            window_size = 7  # Larger window for inner ring (more strict)
+            window_size = 7
         elif middle_ring_mask[y, x]:
             window_size = 5
         else:
-            window_size = 3  # Smaller window for outer regions
+            window_size = 3
         
         if check_pixel_continuity(gray, x, y, window=window_size):
-            # Mark this pixel and nearby pixels as verified
             y_min = max(0, y - 1)
             y_max = min(h, y + 2)
             x_min = max(0, x - 1)
@@ -555,27 +652,23 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
     
     logger.info(f"    Continuity verified: {np.sum(continuity_verified)} pixels")
     
-    # Stage 3: Morphological pattern verification
     logger.info("  Stage 3: Verifying morphological patterns...")
     final_mask = np.zeros_like(continuity_verified, dtype=bool)
     
-    # Check if regions form hole-like patterns
     verified_coords = np.where(continuity_verified)
-    sample_rate = 10  # Check every 10th pixel for performance
+    sample_rate = 10
     
     for idx in range(0, len(verified_coords[0]), sample_rate):
         y, x = verified_coords[0][idx], verified_coords[1][idx]
         
-        # Different pattern sizes for different regions
         if inner_ring_mask[y, x]:
-            pattern_size = 9  # Larger pattern check for inner ring
+            pattern_size = 9
         elif middle_ring_mask[y, x]:
             pattern_size = 7
         else:
             pattern_size = 5
         
         if verify_morphological_pattern(continuity_verified, x, y, pattern_size=pattern_size):
-            # Mark region as final
             half_size = pattern_size // 2
             y_min = max(0, y - half_size)
             y_max = min(h, y + half_size + 1)
@@ -585,75 +678,61 @@ def ensure_ring_holes_transparent_advanced(image: Image.Image) -> Image.Image:
     
     logger.info(f"    Morphological verification: {np.sum(final_mask)} pixels")
     
-    # Highlight preservation: Protect highlights even if they passed other tests
     highlight_mask = (
-        (gray > 245) &  # Very bright
-        (np.max(rgb_array, axis=2) - np.min(rgb_array, axis=2) > 10)  # Has color variation (not pure gray)
+        (gray > 245) &
+        (np.max(rgb_array, axis=2) - np.min(rgb_array, axis=2) > 10)
     )
     
-    # Edge detection for highlight patterns
     edges = image.filter(ImageFilter.FIND_EDGES)
     edges_array = np.array(edges.convert('L'))
     edge_highlights = (edges_array > 50) & (gray > 230)
     
-    # Gradient detection for highlights
     gray_image = Image.fromarray(gray)
     gray_blurred = gray_image.filter(ImageFilter.GaussianBlur(radius=3))
     gray_blurred_array = np.array(gray_blurred)
     gradient_mask = np.abs(gray.astype(np.float32) - gray_blurred_array.astype(np.float32)) > 15
     
-    # Combined highlight protection
     protect_mask = (
-        (inner_ring_mask & (highlight_mask | edge_highlights | gradient_mask)) |  # Protect all inner highlights
-        (middle_ring_mask & highlight_mask & gradient_mask) |  # Protect strong middle highlights
-        (outer_ring_mask & highlight_mask & edge_highlights & gradient_mask)  # Only protect very strong outer highlights
+        (inner_ring_mask & (highlight_mask | edge_highlights | gradient_mask)) |
+        (middle_ring_mask & highlight_mask & gradient_mask) |
+        (outer_ring_mask & highlight_mask & edge_highlights & gradient_mask)
     )
     
-    # Remove protected areas from final mask
     final_mask = final_mask & ~protect_mask
     
     logger.info(f"  Protected {np.sum(protect_mask)} highlight pixels")
     
-    # Clean up using morphology
     final_mask = simple_morphology_operation(final_mask, 'open', iterations=1)
     final_mask = simple_morphology_operation(final_mask, 'close', iterations=1)
     
-    # Apply to alpha channel with smooth transitions
     new_alpha = alpha_array.copy()
     
     if np.any(final_mask):
-        # Create smooth transition
         mask_image = Image.fromarray((final_mask * 255).astype(np.uint8))
         
-        # Different blur radii for different regions
         mask_smooth = np.zeros_like(final_mask, dtype=np.float32)
         
-        # Inner ring: very subtle transition
         inner_final = final_mask & inner_ring_mask
         if np.any(inner_final):
             inner_image = Image.fromarray((inner_final * 255).astype(np.uint8))
             inner_blurred = inner_image.filter(ImageFilter.GaussianBlur(radius=0.5))
             mask_smooth += np.array(inner_blurred) / 255.0
         
-        # Middle ring: moderate transition
         middle_final = final_mask & middle_ring_mask
         if np.any(middle_final):
             middle_image = Image.fromarray((middle_final * 255).astype(np.uint8))
             middle_blurred = middle_image.filter(ImageFilter.GaussianBlur(radius=1.0))
             mask_smooth += np.array(middle_blurred) / 255.0
         
-        # Outer ring: smoother transition
         outer_final = final_mask & (outer_ring_mask | beyond_ring_mask)
         if np.any(outer_final):
             outer_image = Image.fromarray((outer_final * 255).astype(np.uint8))
             outer_blurred = outer_image.filter(ImageFilter.GaussianBlur(radius=1.5))
             mask_smooth += np.array(outer_blurred) / 255.0
         
-        # Apply with gradient
         mask_smooth = np.clip(mask_smooth, 0, 1)
         new_alpha = (new_alpha * (1 - mask_smooth)).astype(np.uint8)
     
-    # Final smoothing
     a_new = Image.fromarray(new_alpha)
     
     if np.sum(final_mask) > 100:
@@ -685,7 +764,6 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     edges = image.filter(ImageFilter.FIND_EDGES)
     edges_array = np.array(edges.convert('L'))
     
-    # Detect different types of cubic regions
     white_cubic = (
         (v_array > 245 * sensitivity) &
         (s_array < 25) &
@@ -708,7 +786,6 @@ def detect_cubic_regions_enhanced(image: Image.Image, sensitivity=1.0):
     
     cubic_mask = white_cubic | color_cubic | edge_cubic | highlights
     
-    # Clean up the mask
     cubic_image = Image.fromarray((cubic_mask * 255).astype(np.uint8))
     cubic_image = cubic_image.filter(ImageFilter.MinFilter(3))
     cubic_image = cubic_image.filter(ImageFilter.MaxFilter(3))
@@ -749,7 +826,6 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
         
         pass_factor = 1.0 - (pass_num * 0.1)
         
-        # Apply enhancements
         for c in range(3):
             rgb_array[:,:,c] = np.where(
                 cubic_mask,
@@ -763,7 +839,6 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
                 rgb_array[:,:,c]
             )
         
-        # Contrast adjustment
         if np.any(cubic_mask):
             mean_val = np.mean(rgb_array[cubic_mask])
             contrast_factor = 1.0 + (0.15 * intensity * pass_factor)
@@ -775,12 +850,10 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
                     rgb_array[:,:,c]
                 )
         
-        # Highlight boost
         if np.any(highlights):
             boost_factor = 1.0 + (0.08 * intensity * pass_factor)
             rgb_array[highlights] = np.minimum(rgb_array[highlights] * boost_factor, 255)
         
-        # Color saturation for colored cubics
         if np.any(color_cubic):
             rgb_temp = Image.fromarray(np.clip(rgb_array, 0, 255).astype(np.uint8))
             hsv_temp = rgb_temp.convert('HSV')
@@ -812,7 +885,6 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
         r2, g2, b2 = rgb_enhanced.split()
         result = Image.merge('RGBA', (r2, g2, b2, a))
         
-        # Final sharpness
         sharpness = ImageEnhance.Sharpness(result)
         result = sharpness.enhance(1.0 + (0.15 * intensity * pass_factor))
     
@@ -821,7 +893,7 @@ def enhance_cubic_sparkle_gradual(image: Image.Image, intensity=1.0, num_passes=
     return result
 
 def handler(event):
-    """RunPod handler function - V30 Enhanced Other Pattern"""
+    """RunPod handler function - V30 Enhanced Other Pattern with Background Removal"""
     logger.info(f"=== Cubic Detail Enhancement {VERSION} Started ===")
     logger.info(f"Handler received event type: {type(event)}")
     
@@ -857,10 +929,11 @@ def handler(event):
         }
 
 def process_cubic_enhancement(job):
-    """Process cubic detail enhancement with advanced ring detection"""
+    """Process cubic detail enhancement with advanced ring detection and background removal"""
     try:
-        logger.info("🚀 RunPod V30 - Enhanced OTHER Pattern")
+        logger.info("🚀 RunPod V30 - Enhanced OTHER Pattern with Background Removal")
         logger.info("💎 Multi-stage verification for accurate hole detection")
+        logger.info("🔄 Advanced background removal post-processing")
         logger.info("🌈 OTHER PATTERN V30: Color 1.25, Contrast 1.15, Sharpness 1.40")
         logger.info(f"Job input type: {type(job)}")
         
@@ -912,10 +985,11 @@ def process_cubic_enhancement(job):
         intensity = float(params.get('intensity', 1.2))
         intensity = max(0.1, min(2.0, intensity))
         apply_pattern = params.get('pattern_enhancement', True)
+        apply_bg_removal = params.get('background_removal', False)  # New parameter
         
         default_pattern = params.get('default_pattern', 'ab_pattern')
         
-        logger.info(f"Parameters: filename={filename or 'None (using default)'}, intensity={intensity}, pattern={apply_pattern}")
+        logger.info(f"Parameters: filename={filename or 'None (using default)'}, intensity={intensity}, pattern={apply_pattern}, bg_removal={apply_bg_removal}")
         
         # Decode image
         image_bytes = decode_base64_fast(image_data_str)
@@ -928,13 +1002,18 @@ def process_cubic_enhancement(job):
         original_size = image.size
         logger.info(f"Input image size: {original_size}")
         
+        # Step 0: Background Removal (if requested)
+        if apply_bg_removal:
+            logger.info("🎯 Step 0/6: Advanced background removal")
+            image = enhanced_background_removal(image)
+        
         # Step 1: White Balance
-        logger.info("⚖️ Step 1/5: Applying white balance")
+        logger.info("⚖️ Step 1/6: Applying white balance")
         image = auto_white_balance_fast(image)
         
         # Step 2: Pattern Enhancement - enhanced OTHER
         if apply_pattern:
-            logger.info("🎨 Step 2/5: Pattern enhancement")
+            logger.info("🎨 Step 2/6: Pattern enhancement")
             pattern_type = detect_pattern_type(filename, default_pattern=default_pattern)
             detected_type = {
                 "ac_pattern": "무도금화이트(0.10) - Adjusted: Brightness 1.10, Contrast 1.03, Sharpness 1.30",
@@ -949,16 +1028,21 @@ def process_cubic_enhancement(job):
             detected_type = "보정없음"
         
         # Step 3: First cubic enhancement
-        logger.info("💎 Step 3/5: Enhanced cubic pre-processing")
+        logger.info("💎 Step 3/6: Enhanced cubic pre-processing")
         image = enhance_cubic_sparkle_gradual(image, intensity * 1.0, num_passes=3)
         
         # Step 4: Advanced ring hole detection with multi-stage verification
-        logger.info("🔍 Step 4/5: Advanced ring processing with highlight preservation")
+        logger.info("🔍 Step 4/6: Advanced ring processing with highlight preservation")
         image = ensure_ring_holes_transparent_advanced(image)
         
         # Step 5: Second cubic enhancement (replaces SwinIR)
-        logger.info("💎 Step 5/5: Enhanced cubic final processing (no external API)")
+        logger.info("💎 Step 5/6: Enhanced cubic final processing (no external API)")
         enhanced_image = enhance_cubic_sparkle_gradual(image, intensity * 0.8, num_passes=2)
+        
+        # Step 6: Final background cleanup (if background removal was applied)
+        if apply_bg_removal:
+            logger.info("🧹 Step 6/6: Final background cleanup")
+            enhanced_image = remove_white_edges_advanced(enhanced_image)
         
         # Convert to base64 with padding
         output_base64 = image_to_base64(enhanced_image)
@@ -968,7 +1052,7 @@ def process_cubic_enhancement(job):
         cubic_pixel_count = int(np.sum(cubic_mask))
         cubic_percentage = (cubic_pixel_count / (image.size[0] * image.size[1])) * 100
         
-        has_cubics = bool(cubic_pixel_count > 0)  # Convert numpy bool to Python bool
+        has_cubics = bool(cubic_pixel_count > 0)
         
         # Return proper structure for Make.com
         return {
@@ -985,28 +1069,32 @@ def process_cubic_enhancement(job):
                 "detected_type": detected_type,
                 "intensity": intensity,
                 "filename_received": filename if filename else "None (using default)",
+                "background_removal_applied": apply_bg_removal,
                 "cubic_statistics": {
                     "cubic_pixels": cubic_pixel_count,
                     "cubic_percentage": round(cubic_percentage, 2),
                     "has_cubics": has_cubics
                 },
                 "corrections_applied": [
+                    "background_removal_advanced" if apply_bg_removal else "background_kept",
                     "white_balance",
                     "pattern_enhancement_v30" if apply_pattern else "pattern_skipped",
                     "cubic_enhancement_strong",
                     "ring_hole_detection_advanced",
-                    "cubic_enhancement_final"
+                    "cubic_enhancement_final",
+                    "final_background_cleanup" if apply_bg_removal else "no_final_cleanup"
                 ],
                 "base64_padding": "INCLUDED",
                 "compression": "level_3",
                 "performance": "runpod_compatible_no_external_api",
-                "processing_order": "1.WB → 2.Pattern(V30 Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong)",
+                "processing_order": "0.BG Removal (if enabled) → 1.WB → 2.Pattern(V30 Enhanced) → 3.Cubic1(Strong) → 4.RingHoles(Advanced) → 5.Cubic2(Strong) → 6.Final Cleanup",
                 "v30_enhanced_changes": [
                     "AB/AC PATTERN: Brightness 1.10, Contrast 1.03, Sharpness 1.30 (unchanged)",
                     "OTHER PATTERN: Color increased 1.15 → 1.25 for more vivid colors",
                     "OTHER PATTERN: Contrast increased 1.10 → 1.15 for better depth",
                     "OTHER PATTERN: Sharpness increased 1.30 → 1.40 for sharper details",
-                    "Result: MORE vivid colors and sharper details for OTHER pattern"
+                    "BACKGROUND REMOVAL: Added advanced multi-pass removal with edge cleaning",
+                    "Result: MORE vivid colors, sharper details, and clean transparent backgrounds"
                 ]
             }
         }
@@ -1021,7 +1109,7 @@ def process_cubic_enhancement(job):
                 "status": "failed",
                 "version": VERSION,
                 "traceback": traceback.format_exc(),
-                "help": "Check that image data is base64 encoded and at least 100 characters long. For thumbnail: use 'thumbnail' key."
+                "help": "Check that image data is base64 encoded and at least 100 characters long. For thumbnail: use 'thumbnail' key. For background removal: set 'background_removal' to true."
             }
         }
 
